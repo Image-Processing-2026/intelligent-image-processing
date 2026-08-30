@@ -1,0 +1,21 @@
+# Core Framework & API
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+pydantic>=2.6.0
+python-dotenv>=1.0.1
+
+# Classical Image Processing Engine
+opencv-python-headless>=4.9.0
+scikit-image>=0.22.0
+numpy>=1.24.0,<2.0.0
+pillow>=10.2.0
+
+# AI Agent & Multimodal VLM
+langgraph>=0.0.30
+google-generativeai>=0.4.1
+
+# Region Detection & Segmentation
+mediapipe>=0.10.11
+
+# Demo Frontend
+gradio>=4.20.0

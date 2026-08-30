@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Distribution / Packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment variables & keys
+.env
+*.env.local
+
+# IDEs & Personal AI Tool Configs
+.idea/
+.vscode/
+*.swp
+*.swo
+.cursor/
+.windsurf/
+.claude/
+.gemini/
+*.cursorrules
+
+# Personal Member Workspaces (Scratchpads & Personal AI Prompts)
+personal/
+
+# Model weights & large datasets
+weights/
+*.pth
+*.pt
+*.onnx
+data/synthetic/clean/*
+data/synthetic/degraded/*
+data/real/*
+!data/synthetic/clean/.gitkeep
+!data/synthetic/degraded/.gitkeep
+!data/real/.gitkeep
+
