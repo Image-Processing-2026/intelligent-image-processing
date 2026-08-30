@@ -4,8 +4,10 @@ Bao gồm: Gamma Correction, Cân bằng lược đồ xám (Histogram Equalizat
 """
 
 from typing import Optional, Tuple
+
 import cv2
 import numpy as np
+
 from .base import apply_region_op
 
 
@@ -20,9 +22,7 @@ def _raw_gamma(image: np.ndarray, gamma: float = 1.0) -> np.ndarray:
 
 
 def apply_gamma(
-    image: np.ndarray,
-    mask: Optional[np.ndarray] = None,
-    gamma: float = 1.0
+    image: np.ndarray, mask: Optional[np.ndarray] = None, gamma: float = 1.0
 ) -> np.ndarray:
     """
     Hiệu chỉnh độ sáng phi tuyến tính theo vùng bằng hàm Gamma.
@@ -32,19 +32,17 @@ def apply_gamma(
 
 
 def _raw_clahe(
-    image: np.ndarray,
-    clip_limit: float = 2.0,
-    tile_grid_size: Tuple[int, int] = (8, 8)
+    image: np.ndarray, clip_limit: float = 2.0, tile_grid_size: Tuple[int, int] = (8, 8)
 ) -> np.ndarray:
     """Cân bằng lược đồ độ sáng cục bộ thích ứng có giới hạn độ tương phản (CLAHE) trong không gian LAB."""
     # Chuyển đổi sang không gian màu LAB để chỉ xử lý kênh độ sáng L
     lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB)
-    l, a, b = cv2.split(lab)
+    l_ch, a_ch, b_ch = cv2.split(lab)
 
     clahe_op = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
-    l_enhanced = clahe_op.apply(l)
+    l_enhanced = clahe_op.apply(l_ch)
 
-    lab_merged = cv2.merge((l_enhanced, a, b))
+    lab_merged = cv2.merge((l_enhanced, a_ch, b_ch))
     return cv2.cvtColor(lab_merged, cv2.COLOR_LAB2RGB)
 
 
@@ -52,15 +50,11 @@ def apply_clahe(
     image: np.ndarray,
     mask: Optional[np.ndarray] = None,
     clip_limit: float = 2.0,
-    tile_grid_size: Tuple[int, int] = (8, 8)
+    tile_grid_size: Tuple[int, int] = (8, 8),
 ) -> np.ndarray:
     """
     Áp dụng CLAHE lên vùng ảnh chỉ định để cải thiện độ tương phản cục bộ.
     """
     return apply_region_op(
-        image,
-        mask,
-        _raw_clahe,
-        clip_limit=clip_limit,
-        tile_grid_size=tile_grid_size
+        image, mask, _raw_clahe, clip_limit=clip_limit, tile_grid_size=tile_grid_size
     )

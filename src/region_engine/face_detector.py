@@ -3,7 +3,9 @@ Nhận diện khuôn mặt và tạo mặt nạ bằng MediaPipe (Chạy tối �
 """
 
 from typing import List
+
 import numpy as np
+
 from .mask_utils import create_soft_mask
 
 
@@ -23,8 +25,11 @@ def detect_faces(image: np.ndarray, feather_radius: int = 20) -> List[np.ndarray
 
     try:
         import mediapipe as mp
+
         mp_face_detection = mp.solutions.face_detection
-        with mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5) as face_detection:
+        with mp_face_detection.FaceDetection(
+            model_selection=1, min_detection_confidence=0.5
+        ) as face_detection:
             results = face_detection.process(image)
             if results.detections:
                 for detection in results.detections:

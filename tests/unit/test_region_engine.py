@@ -3,8 +3,9 @@ Unit tests for Module 2: Region Engine & Mask Utilities.
 """
 
 import numpy as np
+
 from src.region_engine.mask_utils import blend_regions, create_soft_mask
-from src.region_engine.spatial import create_bbox_mask, create_quadrant_mask
+from src.region_engine.spatial import create_quadrant_mask
 
 
 def test_soft_mask_creation():

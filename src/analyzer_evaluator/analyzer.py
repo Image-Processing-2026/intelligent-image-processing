@@ -4,6 +4,7 @@ Tính toán độ sáng, độ tương phản, mức độ nhiễu, độ mờ/s
 """
 
 from typing import Any, Dict
+
 import cv2
 import numpy as np
 from pydantic import BaseModel, Field
@@ -11,6 +12,7 @@ from pydantic import BaseModel, Field
 
 class TechnicalMetrics(BaseModel):
     """Mô hình dữ liệu chứa các chỉ số kỹ thuật của ảnh."""
+
     brightness_mean: float = Field(..., description="Độ sáng trung bình [0, 255]")
     brightness_level: str = Field(..., description="Mức độ: underexposed, normal, overexposed")
     contrast_std: float = Field(..., description="Độ lệch chuẩn thể hiện độ tương phản")
@@ -102,5 +104,5 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
         sharpness_laplacian_var=sharpness_laplacian_var,
         blur_level=blur_level,
         color_cast=color_cast,
-        histogram_stats={"gray_min": int(np.min(gray)), "gray_max": int(np.max(gray))}
+        histogram_stats={"gray_min": int(np.min(gray)), "gray_max": int(np.max(gray))},
     )

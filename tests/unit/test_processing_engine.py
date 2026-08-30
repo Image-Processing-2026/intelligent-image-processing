@@ -3,7 +3,7 @@ Unit tests for Module 3: Image Processing Engine.
 """
 
 import numpy as np
-from src.processing_engine.color import apply_color_balance
+
 from src.processing_engine.denoise import apply_denoise
 from src.processing_engine.exposure_contrast import apply_clahe, apply_gamma
 from src.processing_engine.sharpen import apply_sharpen

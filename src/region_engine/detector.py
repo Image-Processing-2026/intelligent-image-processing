@@ -3,17 +3,12 @@ Phân đoạn ngữ nghĩa dựa trên câu lệnh văn bản (Open-Vocabulary S
 Tích hợp GroundingDINO và MobileSAM/SAM2 để tạo mặt nạ vùng theo yêu cầu của Agent (ví dụ: 'sky', 'background').
 """
 
-from typing import Optional
 import numpy as np
-from .mask_utils import create_soft_mask
+
 from .spatial import create_quadrant_mask
 
 
-def segment_by_prompt(
-    image: np.ndarray,
-    text_prompt: str,
-    feather_radius: int = 15
-) -> np.ndarray:
+def segment_by_prompt(image: np.ndarray, text_prompt: str, feather_radius: int = 15) -> np.ndarray:
     """
     Chuyển đổi mô tả văn bản thành mặt nạ vùng mềm (soft-mask).
 

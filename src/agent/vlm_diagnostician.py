@@ -6,10 +6,11 @@ Kết hợp chỉ số kỹ thuật từ Module 1 và thị giác máy tính đ�
 import json
 import os
 from typing import Any, Dict
+
 import numpy as np
 from PIL import Image
-from .state import TreatmentPlan
 
+from .state import TreatmentPlan
 
 SYSTEM_PROMPT = """
 Bạn là "AI Image Doctor" - một chuyên gia chẩn đoán và xử lý ảnh theo phương pháp kinh điển (Classical Image Processing).
@@ -43,9 +44,7 @@ Trả về kết quả dưới định dạng JSON thuần túy theo cấu trúc
 
 
 def diagnose_and_plan(
-    image: np.ndarray,
-    metrics: Dict[str, Any],
-    iteration: int = 1
+    image: np.ndarray, metrics: Dict[str, Any], iteration: int = 1
 ) -> TreatmentPlan:
     """
     Gọi mô hình Gemini VLM để phân tích và tạo kế hoạch điều trị.
@@ -57,45 +56,52 @@ def diagnose_and_plan(
         actions = []
         order = 1
         if metrics.get("noise_level") in ["medium", "severe"]:
-            actions.append({
-                "region_id": "full_image",
-                "target_prompt": "full",
-                "detected_issue": "high_noise",
-                "operation": "denoise",
-                "parameters": {"method": "bilateral", "strength": 1.0},
-                "order": order
-            })
+            actions.append(
+                {
+                    "region_id": "full_image",
+                    "target_prompt": "full",
+                    "detected_issue": "high_noise",
+                    "operation": "denoise",
+                    "parameters": {"method": "bilateral", "strength": 1.0},
+                    "order": order,
+                }
+            )
             order += 1
 
         if metrics.get("brightness_level") == "underexposed":
-            actions.append({
-                "region_id": "full_image",
-                "target_prompt": "full",
-                "detected_issue": "underexposed",
-                "operation": "gamma_correct",
-                "parameters": {"gamma": 1.3},
-                "order": order
-            })
+            actions.append(
+                {
+                    "region_id": "full_image",
+                    "target_prompt": "full",
+                    "detected_issue": "underexposed",
+                    "operation": "gamma_correct",
+                    "parameters": {"gamma": 1.3},
+                    "order": order,
+                }
+            )
             order += 1
         elif metrics.get("contrast_level") == "low":
-            actions.append({
-                "region_id": "full_image",
-                "target_prompt": "full",
-                "detected_issue": "low_contrast",
-                "operation": "clahe",
-                "parameters": {"clip_limit": 2.0},
-                "order": order
-            })
+            actions.append(
+                {
+                    "region_id": "full_image",
+                    "target_prompt": "full",
+                    "detected_issue": "low_contrast",
+                    "operation": "clahe",
+                    "parameters": {"clip_limit": 2.0},
+                    "order": order,
+                }
+            )
             order += 1
 
         return TreatmentPlan(
             iteration=iteration,
             reasoning="Chế độ Fallback Rule-Based: Điều chỉnh dựa trên ngưỡng thống kê kỹ thuật.",
-            actions=actions
+            actions=actions,
         )
 
     try:
         import google.generativeai as genai
+
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel("gemini-1.5-flash")
 
@@ -117,5 +123,5 @@ def diagnose_and_plan(
         return TreatmentPlan(
             iteration=iteration,
             reasoning="Gặp sự cố khi gọi Gemini API, chuyển sang chế độ tự phục hồi.",
-            actions=[]
+            actions=[],
         )

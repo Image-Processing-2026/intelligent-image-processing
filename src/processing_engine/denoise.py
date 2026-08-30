@@ -4,15 +4,17 @@ Bao gồm: Lọc Gauss, Lọc Trung vị (Median), Lọc Song phương (Bilatera
 """
 
 from typing import Literal, Optional
+
 import cv2
 import numpy as np
+
 from .base import apply_region_op
 
 
 def _raw_denoise(
     image: np.ndarray,
     method: Literal["gaussian", "median", "bilateral", "nlm"] = "bilateral",
-    strength: float = 1.0
+    strength: float = 1.0,
 ) -> np.ndarray:
     """Thuật toán khử nhiễu thuần túy trên toàn ảnh."""
     if method == "gaussian":
@@ -44,15 +46,9 @@ def apply_denoise(
     image: np.ndarray,
     mask: Optional[np.ndarray] = None,
     method: Literal["gaussian", "median", "bilateral", "nlm"] = "bilateral",
-    strength: float = 1.0
+    strength: float = 1.0,
 ) -> np.ndarray:
     """
     Khử nhiễu cục bộ theo mặt nạ mềm hoặc toàn cục.
     """
-    return apply_region_op(
-        image,
-        mask,
-        _raw_denoise,
-        method=method,
-        strength=strength
-    )
+    return apply_region_op(image, mask, _raw_denoise, method=method, strength=strength)

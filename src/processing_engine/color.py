@@ -3,15 +3,15 @@ Hiệu chỉnh màu sắc và cân bằng trắng (Color Correction & White Bala
 """
 
 from typing import Optional
+
 import cv2
 import numpy as np
+
 from .base import apply_region_op
 
 
 def _raw_color_balance(
-    image: np.ndarray,
-    saturation_scale: float = 1.0,
-    temperature_shift: float = 0.0
+    image: np.ndarray, saturation_scale: float = 1.0, temperature_shift: float = 0.0
 ) -> np.ndarray:
     """Hiệu chỉnh màu sắc và cân bằng nhiệt độ màu."""
     # 1. Điều chỉnh độ bão hòa màu trong không gian HSV
@@ -35,7 +35,7 @@ def apply_color_balance(
     image: np.ndarray,
     mask: Optional[np.ndarray] = None,
     saturation_scale: float = 1.0,
-    temperature_shift: float = 0.0
+    temperature_shift: float = 0.0,
 ) -> np.ndarray:
     """
     Cân chỉnh màu sắc cho vùng ảnh xác định theo mặt nạ mềm.
@@ -45,5 +45,5 @@ def apply_color_balance(
         mask,
         _raw_color_balance,
         saturation_scale=saturation_scale,
-        temperature_shift=temperature_shift
+        temperature_shift=temperature_shift,
     )

@@ -4,6 +4,7 @@ Kiểm tra tính hợp lệ của kế hoạch điều trị (Plan Validator).
 """
 
 from typing import List, Set
+
 from .state import RegionOperation, TreatmentPlan
 
 ALLOWED_OPERATIONS: Set[str] = {

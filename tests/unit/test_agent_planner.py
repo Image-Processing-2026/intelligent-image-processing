@@ -17,23 +17,23 @@ def test_validate_and_sort_plan():
                 target_prompt="full",
                 detected_issue="blur",
                 operation="sharpen",
-                order=1
+                order=1,
             ),
             RegionOperation(
                 region_id="2",
                 target_prompt="full",
                 detected_issue="noise",
                 operation="denoise",
-                order=2
+                order=2,
             ),
             RegionOperation(
                 region_id="3",
                 target_prompt="full",
                 detected_issue="invalid",
                 operation="deep_fake_beautify",  # Invalid operation
-                order=3
+                order=3,
             ),
-        ]
+        ],
     )
 
     validated = validate_and_sort_plan(raw_plan)

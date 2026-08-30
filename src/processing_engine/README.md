@@ -21,10 +21,10 @@ All operations take `image: np.ndarray` (RGB uint8), an optional `mask: np.ndarr
 ### 2.1 Base Blending Mechanism (`base.py`)
 ```python
 def apply_region_op(
-    image: np.ndarray, 
-    mask: np.ndarray | None, 
-    op_func: Callable[[np.ndarray, ...], np.ndarray], 
-    **kwargs
+    image: np.ndarray,
+    mask: np.ndarray | None,
+    op_func: Callable[[np.ndarray, ...], np.ndarray],
+    **kwargs,
 ) -> np.ndarray:
     """
     Áp dụng hàm op_func lên ảnh và tự động hòa trộn theo mặt nạ mềm (nếu có).

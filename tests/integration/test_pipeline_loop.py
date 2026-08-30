@@ -3,6 +3,7 @@ Integration test for the full LangGraph closed-loop pipeline.
 """
 
 import numpy as np
+
 from src.agent.graph import run_pipeline
 
 
@@ -14,10 +15,7 @@ def test_full_pipeline_synthetic():
     degraded_img = np.clip(clean_img.astype(np.int16) + noise, 0, 255).astype(np.uint8)
 
     result_state = run_pipeline(
-        image=degraded_img,
-        ground_truth=clean_img,
-        is_synthetic=True,
-        max_iterations=2
+        image=degraded_img, ground_truth=clean_img, is_synthetic=True, max_iterations=2
     )
 
     assert result_state["current_image"].shape == degraded_img.shape

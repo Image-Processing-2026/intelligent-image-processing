@@ -4,29 +4,40 @@ Lưu trữ toàn bộ dữ liệu ảnh, chỉ số kỹ thuật, lịch sử x�
 """
 
 from typing import Any, Dict, List, Optional, TypedDict
+
 import numpy as np
 from pydantic import BaseModel, Field
 
 
 class RegionOperation(BaseModel):
     """Chi tiết từng thao tác xử lý trên một vùng cụ thể."""
+
     region_id: str = Field(..., description="Tên vùng, ví dụ: 'sky', 'face', 'full'")
     target_prompt: str = Field(..., description="Từ khóa nhận diện vùng hoặc mô tả không gian")
-    detected_issue: str = Field(..., description="Vấn đề kỹ thuật: underexposed, noise, low_contrast, etc.")
-    operation: str = Field(..., description="Tên thao tác trong toolbox: denoise, gamma_correct, clahe, sharpen, color_correct")
+    detected_issue: str = Field(
+        ..., description="Vấn đề kỹ thuật: underexposed, noise, low_contrast, etc."
+    )
+    operation: str = Field(
+        ...,
+        description="Tên thao tác trong toolbox: denoise, gamma_correct, clahe, sharpen, color_correct",
+    )
     parameters: Dict[str, Any] = Field(default_factory=dict, description="Các siêu tham số cụ thể")
     order: int = Field(default=0, description="Thứ tự ưu tiên xử lý")
 
 
 class TreatmentPlan(BaseModel):
     """Kế hoạch xử lý tổng thể do VLM đưa ra cho một vòng lặp."""
+
     iteration: int = 1
     reasoning: str = Field(..., description="Lý do chuyên môn từ mô hình VLM")
-    actions: List[RegionOperation] = Field(default_factory=list, description="Danh sách các thao tác thực thi")
+    actions: List[RegionOperation] = Field(
+        default_factory=list, description="Danh sách các thao tác thực thi"
+    )
 
 
 class HistoryItem(BaseModel):
     """Bản ghi lịch sử sau mỗi vòng lặp."""
+
     iteration: int
     plan: TreatmentPlan
     metrics_before: Dict[str, Any]
@@ -37,6 +48,7 @@ class HistoryItem(BaseModel):
 
 class DoctorState(TypedDict):
     """Kiểu dữ liệu trạng thái được truyền qua lại giữa các Node trong LangGraph."""
+
     original_image: np.ndarray
     current_image: np.ndarray
     ground_truth_image: Optional[np.ndarray]

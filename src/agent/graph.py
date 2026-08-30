@@ -4,17 +4,20 @@ Quản lý chu trình khép kín: Analyze -> Diagnose -> Plan -> Process -> Eval
 """
 
 from typing import Any, Dict, Optional
+
 import numpy as np
 
 # Đảm bảo tương thích ngược nếu langchain phiên bản cũ/mới bị xung đột module attribute
 try:
     import langchain
+
     if not hasattr(langchain, "debug"):
         langchain.debug = False
 except ImportError:
     pass
 
 from langgraph.graph import END, StateGraph
+
 from src.analyzer_evaluator.analyzer import analyze_image
 from src.analyzer_evaluator.no_reference_eval import evaluate_no_reference
 from src.analyzer_evaluator.reference_eval import evaluate_reference
@@ -39,7 +42,7 @@ def diagnose_and_plan_node(state: DoctorState) -> Dict[str, Any]:
     plan = diagnose_and_plan(
         image=state["current_image"],
         metrics=state["technical_metrics"],
-        iteration=state["iteration"]
+        iteration=state["iteration"],
     )
     validated_plan = validate_and_sort_plan(plan)
     return {"treatment_plan": validated_plan}
@@ -63,8 +66,7 @@ def evaluate_node(state: DoctorState) -> Dict[str, Any]:
         eval_metrics = evaluate_reference(state["current_image"], gt)
     else:
         eval_metrics = evaluate_no_reference(
-            current_image=state["current_image"],
-            previous_image=state["original_image"]
+            current_image=state["current_image"], previous_image=state["original_image"]
         )
 
     return {"evaluation_result": eval_metrics}
@@ -82,7 +84,7 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
         metrics_before=state["technical_metrics"],
         metrics_after=analyze_image(state["current_image"]).model_dump(),
         eval_score=state["evaluation_result"],
-        decision="SHIP"
+        decision="SHIP",
     )
     new_history = list(state.get("history", [])) + [history_entry]
 
@@ -98,11 +100,7 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
             decision = "SHIP" if iteration >= 2 else "RE_PROCESS"
 
     history_entry.decision = decision
-    return {
-        "iteration": iteration + 1,
-        "decision": decision,
-        "history": new_history
-    }
+    return {"iteration": iteration + 1, "decision": decision, "history": new_history}
 
 
 def should_continue(state: DoctorState) -> str:
@@ -133,12 +131,7 @@ def build_doctor_graph():
     workflow.add_edge("evaluate", "decide")
 
     workflow.add_conditional_edges(
-        "decide",
-        should_continue,
-        {
-            "re_process": "analyze",
-            "ship": END
-        }
+        "decide", should_continue, {"re_process": "analyze", "ship": END}
     )
 
     return workflow.compile()
@@ -148,7 +141,7 @@ def run_pipeline(
     image: np.ndarray,
     ground_truth: Optional[np.ndarray] = None,
     is_synthetic: bool = False,
-    max_iterations: int = 3
+    max_iterations: int = 3,
 ) -> DoctorState:
     """Hàm giao tiếp ngoài để chạy toàn bộ chu trình xử lý ảnh."""
     app = build_doctor_graph()
@@ -164,6 +157,6 @@ def run_pipeline(
         "evaluation_result": {},
         "history": [],
         "decision": "INITIALIZING",
-        "error_message": None
+        "error_message": None,
     }
     return app.invoke(initial_state)

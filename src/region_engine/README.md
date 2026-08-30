@@ -23,10 +23,9 @@ def create_soft_mask(binary_mask: np.ndarray, feather_radius: int = 15) -> np.nd
     Làm mịn biên mặt nạ nhị phân thành mặt nạ mềm (soft mask) float32 [0.0, 1.0].
     """
 
+
 def blend_regions(
-    original_image: np.ndarray, 
-    processed_image: np.ndarray, 
-    soft_mask: np.ndarray
+    original_image: np.ndarray, processed_image: np.ndarray, soft_mask: np.ndarray
 ) -> np.ndarray:
     """
     Hòa trộn ảnh gốc và ảnh đã xử lý thông qua mặt nạ mềm:

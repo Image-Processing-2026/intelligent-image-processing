@@ -4,15 +4,17 @@ Bao gồm: Mặt nạ làm nét (Unsharp Masking) và Toán tử vi phân bậc 
 """
 
 from typing import Literal, Optional
+
 import cv2
 import numpy as np
+
 from .base import apply_region_op
 
 
 def _raw_sharpen(
     image: np.ndarray,
     method: Literal["unsharp_mask", "laplacian"] = "unsharp_mask",
-    amount: float = 1.0
+    amount: float = 1.0,
 ) -> np.ndarray:
     """Thuật toán làm nét thuần túy."""
     if method == "unsharp_mask":
@@ -23,9 +25,7 @@ def _raw_sharpen(
 
     elif method == "laplacian":
         # Kernel vi phân Laplacian 3x3
-        kernel = np.array([[0, -1, 0],
-                           [-1, 4 + amount, -1],
-                           [0, -1, 0]], dtype=np.float32)
+        kernel = np.array([[0, -1, 0], [-1, 4 + amount, -1], [0, -1, 0]], dtype=np.float32)
         sharpened = cv2.filter2D(image, -1, kernel)
         return np.clip(sharpened, 0, 255).astype(np.uint8)
 
@@ -36,7 +36,7 @@ def apply_sharpen(
     image: np.ndarray,
     mask: Optional[np.ndarray] = None,
     method: Literal["unsharp_mask", "laplacian"] = "unsharp_mask",
-    amount: float = 1.0
+    amount: float = 1.0,
 ) -> np.ndarray:
     """
     Tăng cường độ sắc nét cho vùng chỉ định thông qua mặt nạ mềm.

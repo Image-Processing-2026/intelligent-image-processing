@@ -5,14 +5,16 @@ Cung cấp các endpoint: /diagnose, /process, /health.
 
 import base64
 from io import BytesIO
-import cv2
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+
 import numpy as np
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from PIL import Image
+
 from src.agent.graph import run_pipeline
 from src.agent.planner import validate_and_sort_plan
 from src.agent.vlm_diagnostician import diagnose_and_plan
 from src.analyzer_evaluator.analyzer import analyze_image
+
 from .schemas import DiagnoseResponse, ProcessResponse
 
 router = APIRouter(prefix="/api/v1")
@@ -47,10 +49,7 @@ async def diagnose_image_endpoint(file: UploadFile = File(...)):
         metrics = analyze_image(img).model_dump()
         plan = diagnose_and_plan(img, metrics, iteration=1)
         validated_plan = validate_and_sort_plan(plan)
-        return DiagnoseResponse(
-            technical_metrics=metrics,
-            treatment_plan=validated_plan
-        )
+        return DiagnoseResponse(technical_metrics=metrics, treatment_plan=validated_plan)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -59,7 +58,7 @@ async def diagnose_image_endpoint(file: UploadFile = File(...)):
 async def process_image_endpoint(
     file: UploadFile = File(...),
     ground_truth: UploadFile = File(None),
-    max_iterations: int = Form(3)
+    max_iterations: int = Form(3),
 ):
     """Thực thi toàn bộ chu trình xử lý ảnh khép kín với LangGraph."""
     try:
@@ -75,10 +74,7 @@ async def process_image_endpoint(
 
         # Chạy quy trình LangGraph
         result_state = run_pipeline(
-            image=img,
-            ground_truth=gt_img,
-            is_synthetic=is_synthetic,
-            max_iterations=max_iterations
+            image=img, ground_truth=gt_img, is_synthetic=is_synthetic, max_iterations=max_iterations
         )
 
         history_serialized = [
@@ -91,7 +87,7 @@ async def process_image_endpoint(
             total_iterations=result_state["iteration"] - 1,
             final_decision=result_state["decision"],
             final_evaluation=result_state.get("evaluation_result", {}),
-            history=history_serialized
+            history=history_serialized,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -4,15 +4,14 @@ Khung cơ bản và bộ hòa trộn vùng xử lý (Base Region Operation Wrapp
 """
 
 from typing import Any, Callable, Optional
+
 import numpy as np
+
 from src.region_engine.mask_utils import blend_regions
 
 
 def apply_region_op(
-    image: np.ndarray,
-    mask: Optional[np.ndarray],
-    op_func: Callable[..., np.ndarray],
-    **kwargs: Any
+    image: np.ndarray, mask: Optional[np.ndarray], op_func: Callable[..., np.ndarray], **kwargs: Any
 ) -> np.ndarray:
     """
     Hàm bọc (wrapper) tiêu chuẩn áp dụng thuật toán xử lý ảnh lên vùng chỉ định.

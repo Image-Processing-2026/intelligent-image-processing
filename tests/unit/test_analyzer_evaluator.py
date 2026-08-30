@@ -3,6 +3,7 @@ Unit tests for Module 1: Analyzer & Evaluator.
 """
 
 import numpy as np
+
 from src.analyzer_evaluator.analyzer import analyze_image
 from src.analyzer_evaluator.no_reference_eval import evaluate_no_reference
 from src.analyzer_evaluator.reference_eval import evaluate_reference

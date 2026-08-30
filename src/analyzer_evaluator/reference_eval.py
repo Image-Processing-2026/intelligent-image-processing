@@ -4,20 +4,21 @@ Chỉ áp dụng cho tập kiểm thử nhân tạo (Synthetic Benchmark) có gr
 """
 
 from typing import Dict
+
 import cv2
 import numpy as np
 
 try:
     from skimage.metrics import peak_signal_noise_ratio as compute_psnr
     from skimage.metrics import structural_similarity as compute_ssim
+
     SKIMAGE_AVAILABLE = True
 except ImportError:
     SKIMAGE_AVAILABLE = False
 
 
 def evaluate_reference(
-    current_image: np.ndarray,
-    ground_truth_image: np.ndarray
+    current_image: np.ndarray, ground_truth_image: np.ndarray
 ) -> Dict[str, float]:
     """
     Tính toán các chỉ số so khớp điểm ảnh giữa ảnh hiện tại và ground-truth.
@@ -34,11 +35,13 @@ def evaluate_reference(
         ground_truth_image = cv2.resize(
             ground_truth_image,
             (current_image.shape[1], current_image.shape[0]),
-            interpolation=cv2.INTER_AREA
+            interpolation=cv2.INTER_AREA,
         )
 
     # 1. Tính toán MSE (Mean Squared Error)
-    mse_val = float(np.mean((ground_truth_image.astype(np.float64) - current_image.astype(np.float64)) ** 2))
+    mse_val = float(
+        np.mean((ground_truth_image.astype(np.float64) - current_image.astype(np.float64)) ** 2)
+    )
 
     # 2. Tính toán PSNR (Peak Signal-to-Noise Ratio)
     if mse_val == 0:
@@ -51,12 +54,11 @@ def evaluate_reference(
     # 3. Tính toán SSIM (Structural Similarity Index)
     if SKIMAGE_AVAILABLE:
         channel_axis = 2 if len(current_image.shape) == 3 else None
-        ssim_val = float(compute_ssim(
-            ground_truth_image,
-            current_image,
-            data_range=255,
-            channel_axis=channel_axis
-        ))
+        ssim_val = float(
+            compute_ssim(
+                ground_truth_image, current_image, data_range=255, channel_axis=channel_axis
+            )
+        )
     else:
         # Fallback SSIM đơn giản dựa trên covariance và variance nếu chưa cài scikit-image
         c1 = (0.01 * 255) ** 2
@@ -68,11 +70,9 @@ def evaluate_reference(
         sigma1_sq = np.var(img1)
         sigma2_sq = np.var(img2)
         sigma12 = np.mean((img1 - mu1) * (img2 - mu2))
-        ssim_val = float(((2 * mu1 * mu2 + c1) * (2 * sigma12 + c2)) / ((mu1**2 + mu2**2 + c1) * (sigma1_sq + sigma2_sq + c2)))
+        ssim_val = float(
+            ((2 * mu1 * mu2 + c1) * (2 * sigma12 + c2))
+            / ((mu1**2 + mu2**2 + c1) * (sigma1_sq + sigma2_sq + c2))
+        )
 
-    return {
-        "psnr": psnr_val,
-        "ssim": ssim_val,
-        "mse": mse_val
-    }
-
+    return {"psnr": psnr_val, "ssim": ssim_val, "mse": mse_val}

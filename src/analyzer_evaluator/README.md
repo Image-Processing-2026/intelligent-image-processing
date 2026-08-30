@@ -32,13 +32,12 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
 ### 2.2 Reference-Based Evaluation (`reference_eval.py`)
 ```python
 def evaluate_reference(
-    current_image: np.ndarray, 
-    ground_truth_image: np.ndarray
+    current_image: np.ndarray, ground_truth_image: np.ndarray
 ) -> dict[str, float]:
     """
     Đánh giá độ tương đồng pixel giữa ảnh hiện tại và ảnh gốc mẫu (ground truth).
     Chỉ sử dụng cho tập kiểm thử nhân tạo (synthetic dataset).
-    
+
     Returns:
         {"psnr": float, "ssim": float, "mse": float}
     """
@@ -47,13 +46,12 @@ def evaluate_reference(
 ### 2.3 No-Reference Evaluation (`no_reference_eval.py`)
 ```python
 def evaluate_no_reference(
-    current_image: np.ndarray, 
-    previous_image: np.ndarray | None = None
+    current_image: np.ndarray, previous_image: np.ndarray | None = None
 ) -> dict[str, float]:
     """
     Đánh giá chất lượng ảnh thực tế không có ảnh gốc mẫu.
     Tính điểm BRISQUE/NIQE và đo lường độ cải thiện so với vòng lặp trước.
-    
+
     Returns:
         {"brisque": float, "niqe": float, "delta_contrast": float, "delta_sharpness": float}
     """
