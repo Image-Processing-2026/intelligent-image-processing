@@ -3,26 +3,10 @@ Trích xuất chỉ số kỹ thuật ảnh (Technical Metrics Analyzer).
 Tính toán độ sáng, độ tương phản, mức độ nhiễu, độ mờ/sắc nét và phân bố histogram.
 """
 
-from typing import Any, Dict
-
 import cv2
 import numpy as np
-from pydantic import BaseModel, Field
 
-
-class TechnicalMetrics(BaseModel):
-    """Mô hình dữ liệu chứa các chỉ số kỹ thuật của ảnh."""
-
-    brightness_mean: float = Field(..., description="Độ sáng trung bình [0, 255]")
-    brightness_level: str = Field(..., description="Mức độ: underexposed, normal, overexposed")
-    contrast_std: float = Field(..., description="Độ lệch chuẩn thể hiện độ tương phản")
-    contrast_level: str = Field(..., description="Mức độ: low, normal, high")
-    noise_variance: float = Field(..., description="Ước lượng phương sai nhiễu")
-    noise_level: str = Field(..., description="Mức độ nhiễu: clean, low, medium, severe")
-    sharpness_laplacian_var: float = Field(..., description="Phương sai toán tử Laplacian")
-    blur_level: str = Field(..., description="Mức độ mờ: sharp, mild_blur, severe_blur")
-    color_cast: str = Field(default="none", description="Ám màu: warm, cool, greenish, none")
-    histogram_stats: Dict[str, Any] = Field(default_factory=dict)
+from .schemas import TechnicalMetrics
 
 
 def analyze_image(image: np.ndarray) -> TechnicalMetrics:
