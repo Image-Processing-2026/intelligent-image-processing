@@ -371,15 +371,149 @@ def test_analyze_image_float32_input():
 # =============================================================================
 
 
-def test_reference_evaluation():
-    """Kiểm tra tính toán PSNR/SSIM trên 2 ảnh giống hệt nhau."""
-    img1 = np.ones((100, 100, 3), dtype=np.uint8) * 100
-    img2 = np.ones((100, 100, 3), dtype=np.uint8) * 100
+# =============================================================================
+# STAGE 2: Full-Reference Evaluation (PSNR / SSIM / MSE)
+# =============================================================================
 
-    eval_res = evaluate_reference(img1, img2)
-    assert eval_res["psnr"] >= 99.0
-    assert eval_res["ssim"] == 1.0
-    assert eval_res["mse"] == 0.0
+
+def test_reference_eval_identical_images():
+    """Hai ảnh hoàn toàn giống nhau phải có MSE=0, PSNR>=99, SSIM=1."""
+    img = np.ones((100, 100, 3), dtype=np.uint8) * 100
+    result = evaluate_reference(img, img.copy())
+
+    assert isinstance(result, EvaluationResult)
+    assert result.is_reference_eval is True
+    assert result.mse == 0.0
+    assert result.psnr >= 99.0
+    assert result.ssim == pytest.approx(1.0, abs=1e-4)
+    assert result.technical_metrics is not None
+
+
+def test_reference_eval_inverted_images():
+    """Hai ảnh cực đối nhau (0 vs 200) phải có PSNR thấp."""
+    # pixel=0 vs pixel=200: MSE = 200^2 = 40000, PSNR ≈ 5.1 dB
+    img1 = np.zeros((100, 100, 3), dtype=np.uint8)
+    img2 = np.full((100, 100, 3), 200, dtype=np.uint8)
+    result = evaluate_reference(img1, img2)
+
+    assert result.psnr < 10.0
+    assert result.mse > 10000.0
+
+
+def test_reference_eval_different_images_have_nonzero_mse():
+    """Hai ảnh khác nhau phải có MSE > 0."""
+    img1 = np.zeros((100, 100, 3), dtype=np.uint8)
+    img2 = np.full((100, 100, 3), 128, dtype=np.uint8)
+    result = evaluate_reference(img1, img2)
+
+    assert result.mse > 0.0
+    assert result.psnr < 99.0
+
+
+def test_reference_eval_uint8_underflow_protection():
+    """
+    Đảm bảo không bị underflow uint8 khi trừ hai ảnh.
+    50 - 100 trong uint8 sẽ wrap thành 206 nếu không ép float64.
+    """
+    # img1 pixel=50, img2 pixel=100: diff thực tế là 50, MSE = 50^2 = 2500
+    img1 = np.full((10, 10, 3), 50, dtype=np.uint8)
+    img2 = np.full((10, 10, 3), 100, dtype=np.uint8)
+    result = evaluate_reference(img1, img2)
+
+    # Nếu có underflow: (50-100) uint8 = 206, MSE sẽ là 206^2 = 42436 → sai
+    # Kết quả đúng: MSE = (50-100)^2 = 2500
+    assert result.mse == pytest.approx(2500.0, abs=1.0)
+
+
+def test_reference_eval_shape_mismatch_auto_resize():
+    """evaluate_reference phải tự động resize ground_truth khi kích thước lệch."""
+    current = np.full((100, 100, 3), 128, dtype=np.uint8)
+    ground_truth = np.full((110, 110, 3), 128, dtype=np.uint8)
+    # Không được raise, phải resize và trả về kết quả hợp lệ
+    result = evaluate_reference(current, ground_truth)
+    assert isinstance(result, EvaluationResult)
+    assert result.mse is not None
+
+
+def test_reference_eval_returns_evaluation_result_schema():
+    """evaluate_reference phải trả về EvaluationResult Pydantic model."""
+    img = np.ones((50, 50, 3), dtype=np.uint8) * 200
+    result = evaluate_reference(img, img.copy(), iteration=2)
+
+    assert isinstance(result, EvaluationResult)
+    assert result.iteration == 2
+    assert result.is_reference_eval is True
+    assert isinstance(result.technical_metrics, TechnicalMetrics)
+
+
+def test_reference_eval_with_previous_image_delta_metrics():
+    """Khi có previous_image, delta_metrics phải được tính đúng."""
+    rng = np.random.default_rng(0)
+    ground_truth = np.full((80, 80, 3), 128, dtype=np.uint8)
+    previous = np.clip(
+        ground_truth.astype(np.int16) + rng.integers(-30, 30, ground_truth.shape),
+        0,
+        255,
+    ).astype(np.uint8)
+    current = np.clip(
+        ground_truth.astype(np.int16) + rng.integers(-5, 5, ground_truth.shape),
+        0,
+        255,
+    ).astype(np.uint8)
+
+    result = evaluate_reference(current, ground_truth, previous_image=previous)
+
+    assert "delta_psnr" in result.delta_metrics
+    assert "delta_ssim" in result.delta_metrics
+    assert "delta_mse" in result.delta_metrics
+    # Current gần ground_truth hơn previous → PSNR tăng → delta_psnr > 0
+    assert result.delta_metrics["delta_psnr"] > 0.0
+    assert result.quality_improved is True
+
+
+def test_reference_eval_quality_not_improved_when_worse():
+    """Khi ảnh hiện tại tệ hơn vòng trước, quality_improved phải là False."""
+    ground_truth = np.full((80, 80, 3), 128, dtype=np.uint8)
+    previous = np.clip(
+        ground_truth.astype(np.int16)
+        + np.random.default_rng(1).integers(-3, 3, ground_truth.shape),
+        0,
+        255,
+    ).astype(np.uint8)
+    current = np.clip(
+        ground_truth.astype(np.int16)
+        + np.random.default_rng(2).integers(-60, 60, ground_truth.shape),
+        0,
+        255,
+    ).astype(np.uint8)
+
+    result = evaluate_reference(current, ground_truth, previous_image=previous)
+    assert result.quality_improved is False
+
+
+def test_reference_eval_raises_on_empty_input():
+    """evaluate_reference phải raise ValueError khi ảnh đầu vào rỗng."""
+    valid = np.ones((50, 50, 3), dtype=np.uint8)
+    with pytest.raises(ValueError):
+        evaluate_reference(np.array([]), valid)
+    with pytest.raises(ValueError):
+        evaluate_reference(valid, np.array([]))
+
+
+def test_reference_eval_multichannel_ssim_rgb():
+    """Multichannel SSIM phải hoạt động đúng trên ảnh RGB 3 kênh."""
+    img_clean = np.zeros((100, 100, 3), dtype=np.uint8)
+    img_clean[:, :, 0] = 200  # Thiên đỏ
+    img_noisy = img_clean.copy()
+    img_noisy[:, :, 1] = 100  # Thêm kênh xanh → khác biệt cấu trúc
+    result = evaluate_reference(img_clean, img_noisy)
+    # SSIM phải < 1 vì hai ảnh khác nhau trên kênh G
+    assert result.ssim < 1.0
+
+
+# =============================================================================
+# Kiểm tra tích hợp nhanh với no_reference_eval
+# =============================================================================
 
 
 def test_no_reference_evaluation(flat_gray_image):
