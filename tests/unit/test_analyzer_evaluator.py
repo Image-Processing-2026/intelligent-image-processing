@@ -1,7 +1,9 @@
 """
-Unit tests cho Module 1: Analyzer & Evaluator — Stage 1.
+Unit tests cho Module 1: Analyzer & Evaluator — Stage 0, 1, 2, 3, 3.5.
 Kiểm tra toàn diện các thuật toán đã triển khai: chuẩn hóa đầu vào, phân tích
-độ sáng/tương phản/nhiễu/sắc nét, histogram RGB/HSV và phát hiện ám màu.
+độ sáng/tương phản/nhiễu/sắc nét, histogram RGB/HSV, phát hiện ám màu,
+Full-Reference (PSNR/SSIM/MSE), No-Reference NR-IQA, Delta Metrics Engine,
+evaluate_quality() unified API và Synthetic Dataset Loader.
 """
 
 import numpy as np
@@ -12,6 +14,7 @@ from src.analyzer_evaluator import (
     TechnicalMetrics,
     analyze_image,
     evaluate_no_reference,
+    evaluate_quality,
     evaluate_reference,
 )
 from src.analyzer_evaluator.analyzer import (
@@ -512,13 +515,274 @@ def test_reference_eval_multichannel_ssim_rgb():
 
 
 # =============================================================================
-# Kiểm tra tích hợp nhanh với no_reference_eval
+# STAGE 3: No-Reference Evaluation (NR-IQA + Delta Metrics)
 # =============================================================================
 
 
-def test_no_reference_evaluation(flat_gray_image):
-    """Kiểm tra tính toán đánh giá không cần ảnh gốc."""
-    res = evaluate_no_reference(flat_gray_image)
-    assert "current_brightness" in res
-    assert "current_contrast" in res
-    assert res["current_brightness"] == 128.0
+def test_no_reference_eval_returns_evaluation_result(flat_gray_image):
+    """evaluate_no_reference phải trả về EvaluationResult Pydantic model."""
+    result = evaluate_no_reference(flat_gray_image)
+    assert isinstance(result, EvaluationResult)
+    assert result.is_reference_eval is False
+    assert isinstance(result.technical_metrics, TechnicalMetrics)
+    assert result.iteration == 1
+
+
+def test_no_reference_eval_iteration_param(flat_gray_image):
+    """Tham số iteration phải được truyền đúng vào EvaluationResult."""
+    result = evaluate_no_reference(flat_gray_image, iteration=3)
+    assert result.iteration == 3
+
+
+def test_no_reference_eval_no_psnr_ssim(flat_gray_image):
+    """evaluate_no_reference không được trả về PSNR/SSIM (tuân ADR-002)."""
+    result = evaluate_no_reference(flat_gray_image)
+    assert result.psnr is None
+    assert result.ssim is None
+    assert result.mse is None
+
+
+def test_no_reference_eval_heuristic_score_in_valid_range(flat_gray_image):
+    """Heuristic score phải nằm trong khoảng [0, 100]."""
+    result = evaluate_no_reference(flat_gray_image)
+    # Điểm heuristic được lưu trong vlm_feedback
+    assert "Heuristic perceptual score" in result.vlm_feedback
+    score_str = result.vlm_feedback.split(":")[1].strip().split("/")[0]
+    score = float(score_str)
+    assert 0.0 <= score <= 100.0
+
+
+def test_no_reference_eval_perfect_image_has_high_score():
+    """Ảnh cân bằng (brightness=128, contrast tốt) phải có score cao hơn ảnh cực đoan."""
+    # Ảnh cân bằng: brightness~128, contrast tốt
+    balanced = (
+        np.random.default_rng(0).integers(80, 180, (100, 100, 3), dtype=np.uint8).astype(np.uint8)
+    )
+    # Ảnh toàn đen: brightness=0, contrast=0
+    black = np.zeros((100, 100, 3), dtype=np.uint8)
+
+    result_balanced = evaluate_no_reference(balanced)
+    result_black = evaluate_no_reference(black)
+
+    def extract_score(r: EvaluationResult) -> float:
+        return float(r.vlm_feedback.split(":")[1].strip().split("/")[0])
+
+    assert extract_score(result_balanced) > extract_score(result_black)
+
+
+def test_no_reference_eval_noise_penalty_is_monotonic():
+    """Score phải giảm khi noise_variance tăng (với cùng một ảnh nền)."""
+    # Kiểm tra đơn điệu: score(low_noise) > score(high_noise) trên cùng base
+    # Dùng ảnh có nội dung thực để tránh zero-sharpness confound
+
+    # Base image: checkerboard 50/200 để có sharpness và contrast thực sự
+    base = np.zeros((100, 100, 3), dtype=np.uint8)
+    for i in range(100):
+        for j in range(100):
+            base[i, j] = 200 if (i // 10 + j // 10) % 2 == 0 else 50
+
+    rng = np.random.default_rng(55)
+    # Ảnh nhiễu nhẹ: sigma=1
+    low_noise = np.clip(base.astype(np.int16) + rng.integers(-1, 1, base.shape), 0, 255).astype(
+        np.uint8
+    )
+    # Ảnh nhiễu cực nặng: sigma=100 (nhiều gấp 100 lần)
+    high_noise = np.clip(
+        base.astype(np.int16) + rng.integers(-100, 100, base.shape), 0, 255
+    ).astype(np.uint8)
+
+    result_low = evaluate_no_reference(low_noise)
+    result_high = evaluate_no_reference(high_noise)
+
+    def extract_score(r: EvaluationResult) -> float:
+        return float(r.vlm_feedback.split(":")[1].strip().split("/")[0])
+
+    # noise_variance của high_noise phải lớn hơn hẳn
+    assert (
+        result_high.technical_metrics.noise_variance > result_low.technical_metrics.noise_variance
+    )
+    # Score phải giảm khi nhiễu tăng
+    assert extract_score(result_high) < extract_score(result_low)
+
+
+def test_no_reference_eval_delta_metrics_computed_with_previous(flat_gray_image, noisy_image):
+    """Khi có previous_image, delta_metrics phải chứa 4 key chuẩn."""
+    result = evaluate_no_reference(flat_gray_image, previous_image=noisy_image)
+    assert "delta_contrast" in result.delta_metrics
+    assert "delta_sharpness" in result.delta_metrics
+    assert "delta_noise" in result.delta_metrics
+    assert "delta_brightness" in result.delta_metrics
+
+
+def test_no_reference_eval_delta_metrics_empty_without_previous(flat_gray_image):
+    """Không có previous_image, delta_metrics phải là dict rỗng."""
+    result = evaluate_no_reference(flat_gray_image)
+    assert result.delta_metrics == {}
+
+
+def test_no_reference_eval_denoise_quality_improved():
+    """Ảnh sau khử nhiễu (ít nhiễu hơn) phải được đánh giá quality_improved=True."""
+    rng = np.random.default_rng(42)
+    base = np.full((100, 100, 3), 128, dtype=np.uint8)
+    # Ảnh cũ: nhiều nhiễu (sigma=30)
+    prev_noisy = np.clip(base.astype(np.int16) + rng.integers(-30, 30, base.shape), 0, 255).astype(
+        np.uint8
+    )
+    # Ảnh hiện tại: ít nhiễu hơn nhiều (sigma=3)
+    curr_clean = np.clip(base.astype(np.int16) + rng.integers(-3, 3, base.shape), 0, 255).astype(
+        np.uint8
+    )
+
+    result = evaluate_no_reference(curr_clean, previous_image=prev_noisy)
+    # Delta noise âm → noise giảm → cải thiện
+    assert result.delta_metrics["delta_noise"] < -1.5
+    assert result.quality_improved is True
+
+
+def test_no_reference_eval_severe_noise_increase_degrades():
+    """Nhiễu tăng đột biến > 10.0 phải dẫn tới quality_improved=False."""
+    base = np.full((100, 100, 3), 128, dtype=np.uint8)
+    # Ảnh cũ: sạch
+    prev_clean = base.copy()
+    # Ảnh hiện tại: nhiễu rất nặng (sigma >> 15)
+    rng = np.random.default_rng(99)
+    curr_very_noisy = np.clip(
+        base.astype(np.int16) + rng.integers(-80, 80, base.shape), 0, 255
+    ).astype(np.uint8)
+
+    result = evaluate_no_reference(curr_very_noisy, previous_image=prev_clean)
+    assert result.quality_improved is False
+
+
+def test_no_reference_eval_raises_on_empty():
+    """evaluate_no_reference phải raise ValueError khi ảnh rỗng."""
+    with pytest.raises(ValueError, match="empty"):
+        evaluate_no_reference(np.array([]))
+
+
+def test_no_reference_eval_grayscale_input():
+    """evaluate_no_reference không crash với ảnh grayscale."""
+    gray = np.full((80, 80), 128, dtype=np.uint8)
+    result = evaluate_no_reference(gray)
+    assert isinstance(result, EvaluationResult)
+
+
+def test_no_reference_eval_float32_input():
+    """evaluate_no_reference không crash với ảnh float32 [0, 1]."""
+    float_img = np.full((60, 60, 3), 0.5, dtype=np.float32)
+    result = evaluate_no_reference(float_img)
+    assert isinstance(result, EvaluationResult)
+
+
+# =============================================================================
+# STAGE 3.5.2: evaluate_quality() — Unified Entry Point (ADR-002)
+# =============================================================================
+
+
+def test_evaluate_quality_routes_to_reference_when_synthetic():
+    """is_synthetic=True + original_image → phải gọi evaluate_reference."""
+    img = np.ones((60, 60, 3), dtype=np.uint8) * 150
+    result = evaluate_quality(img, original_image=img.copy(), is_synthetic=True)
+    assert result.is_reference_eval is True
+    assert result.psnr is not None
+    assert result.ssim is not None
+
+
+def test_evaluate_quality_routes_to_no_reference_for_real_image():
+    """is_synthetic=False → phải gọi evaluate_no_reference dù có original_image."""
+    img = np.ones((60, 60, 3), dtype=np.uint8) * 128
+    result = evaluate_quality(img, original_image=img.copy(), is_synthetic=False)
+    assert result.is_reference_eval is False
+    assert result.psnr is None
+    assert result.ssim is None
+
+
+def test_evaluate_quality_no_reference_without_original():
+    """is_synthetic=False, không có original_image → No-Reference cơ bản."""
+    img = np.ones((60, 60, 3), dtype=np.uint8) * 100
+    result = evaluate_quality(img)
+    assert result.is_reference_eval is False
+    assert result.delta_metrics == {}
+
+
+def test_evaluate_quality_synthetic_no_original_falls_back_to_nr():
+    """is_synthetic=True nhưng không có original_image → fallback No-Reference."""
+    img = np.ones((60, 60, 3), dtype=np.uint8) * 100
+    result = evaluate_quality(img, original_image=None, is_synthetic=True)
+    assert result.is_reference_eval is False
+
+
+def test_evaluate_quality_iteration_param_passed_through():
+    """Tham số iteration phải được truyền qua đúng."""
+    img = np.ones((60, 60, 3), dtype=np.uint8) * 100
+    result = evaluate_quality(img, iteration=2)
+    assert result.iteration == 2
+
+
+# =============================================================================
+# STAGE 3.5.1: synthetic_loader — load_synthetic_pairs & run_benchmark_suite
+# =============================================================================
+
+
+def test_load_synthetic_pairs_nonexistent_dirs(tmp_path):
+    """Thư mục không tồn tại → trả về list rỗng, không crash."""
+    from src.analyzer_evaluator.synthetic_loader import load_synthetic_pairs
+
+    pairs = load_synthetic_pairs(
+        clean_dir=str(tmp_path / "clean"),
+        degraded_dir=str(tmp_path / "degraded"),
+    )
+    assert pairs == []
+
+
+def test_load_synthetic_pairs_finds_pairs(tmp_path):
+    """Đặt đúng tên file → load_synthetic_pairs tìm đúng cặp."""
+    import cv2
+
+    from src.analyzer_evaluator.synthetic_loader import load_synthetic_pairs
+
+    clean_dir = tmp_path / "clean"
+    degraded_dir = tmp_path / "degraded"
+    clean_dir.mkdir()
+    degraded_dir.mkdir()
+
+    # Tạo ảnh PNG giả để kiểm tra
+    dummy = np.full((20, 20, 3), 128, dtype=np.uint8)
+    cv2.imwrite(str(clean_dir / "photo.png"), dummy)
+    cv2.imwrite(str(degraded_dir / "photo_gaussian_noise.png"), dummy)
+    cv2.imwrite(str(degraded_dir / "photo_motion_blur.png"), dummy)
+    # File không khớp prefix → không được ghép vào
+    cv2.imwrite(str(degraded_dir / "other_noise.png"), dummy)
+
+    pairs = load_synthetic_pairs(clean_dir=str(clean_dir), degraded_dir=str(degraded_dir))
+
+    assert len(pairs) == 2  # photo_gaussian_noise và photo_motion_blur
+    degraded_names = {p[1].name for p in pairs}
+    assert "photo_gaussian_noise.png" in degraded_names
+    assert "photo_motion_blur.png" in degraded_names
+    assert "other_noise.png" not in degraded_names
+
+
+def test_run_benchmark_suite_returns_dict(tmp_path):
+    """run_benchmark_suite phải trả về dict với keys là tên file."""
+    import cv2
+
+    from src.analyzer_evaluator.synthetic_loader import run_benchmark_suite
+
+    clean_dir = tmp_path / "clean"
+    degraded_dir = tmp_path / "degraded"
+    clean_dir.mkdir()
+    degraded_dir.mkdir()
+
+    dummy_clean = np.full((30, 30, 3), 128, dtype=np.uint8)
+    dummy_degraded = np.full((30, 30, 3), 100, dtype=np.uint8)
+    cv2.imwrite(str(clean_dir / "img.png"), dummy_clean)
+    cv2.imwrite(str(degraded_dir / "img_noisy.png"), dummy_degraded)
+
+    results = run_benchmark_suite(clean_dir=str(clean_dir), degraded_dir=str(degraded_dir))
+
+    assert "img_noisy.png" in results
+    assert "psnr" in results["img_noisy.png"]
+    assert "ssim" in results["img_noisy.png"]
+    assert "mse" in results["img_noisy.png"]
+    assert results["img_noisy.png"]["psnr"] > 0.0
