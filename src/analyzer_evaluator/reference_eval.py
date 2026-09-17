@@ -249,6 +249,11 @@ def evaluate_reference(
     quality_improved = True
 
     if previous_image is not None:
+        if previous_image.size == 0:
+            raise ValueError("previous_image is None or empty.")
+        # Đồng bộ kích thước previous về khớp current (cùng triết lý Shape Guard:
+        # ưu tiên pipeline sống sót thay vì crash vì lệch vài pixel padding).
+        previous_image, _ = _ensure_shape_match(previous_image, current_image)
         prev_mse = _compute_mse(ground_truth_image, previous_image)
         prev_psnr = _compute_psnr(ground_truth_image, previous_image, prev_mse)
         prev_ssim = _compute_ssim(ground_truth_image, previous_image)

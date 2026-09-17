@@ -77,12 +77,15 @@ class EvaluationResult(BaseModel):
     is_reference_eval: bool = False
     psnr: Optional[float] = None
     ssim: Optional[float] = None
+    mse: Optional[float] = None
     brisque_score: Optional[float] = None
     niqe_score: Optional[float] = None
     technical_metrics: TechnicalMetrics
+    delta_metrics: Dict[str, float] = Field(default_factory=dict)
     visual_plausibility_passed: bool = True
+    quality_improved: bool = True
     vlm_feedback: str = ""
-    decision: Literal["SHIP", "RE_PROCESS", "STOP_BEST_EFFORT"]
+    decision: Literal["SHIP", "RE_PROCESS", "STOP_BEST_EFFORT"] = "SHIP"
 ```
 
 ---
@@ -98,14 +101,14 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
 def evaluate_reference(
     current_image: np.ndarray, 
     ground_truth: np.ndarray
-) -> Dict[str, float]:
+) -> EvaluationResult:
     """Đánh giá chất lượng với ảnh gốc mẫu (PSNR, SSIM, MSE)."""
     ...
 
 def evaluate_no_reference(
     current_image: np.ndarray, 
     previous_image: Optional[np.ndarray] = None
-) -> Dict[str, float]:
+) -> EvaluationResult:
     """Đánh giá chất lượng ảnh thực không có ground-truth (BRISQUE, NIQE, chênh lệch chỉ số)."""
     ...
 ```

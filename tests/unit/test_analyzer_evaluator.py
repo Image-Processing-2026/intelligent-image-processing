@@ -91,6 +91,25 @@ def test_ensure_rgb_and_gray_from_grayscale():
     assert np.all(rgb[:, :, 1] == rgb[:, :, 2])
 
 
+def test_ensure_rgb_and_gray_from_single_channel_hw1():
+    """Ảnh Grayscale kênh đơn (H, W, 1) phải được ép về (H, W) theo interfaces.md 1.1."""
+    gray_1ch = np.full((50, 60, 1), 100, dtype=np.uint8)
+    rgb, gray = _ensure_rgb_and_gray(gray_1ch)
+    assert rgb.shape == (50, 60, 3)
+    assert gray.shape == (50, 60)
+    assert np.all(rgb[:, :, 0] == 100)
+
+
+def test_analyze_image_single_channel_hw1_input():
+    """analyze_image không crash với ảnh (H, W, 1) và cho cùng kết quả như (H, W)."""
+    gray_2d = np.full((80, 80), 150, dtype=np.uint8)
+    gray_1ch = gray_2d[:, :, np.newaxis]
+    m_2d = analyze_image(gray_2d)
+    m_1ch = analyze_image(gray_1ch)
+    assert m_1ch.brightness_mean == m_2d.brightness_mean
+    assert m_1ch.contrast_level == m_2d.contrast_level
+
+
 def test_ensure_rgb_and_gray_from_rgba():
     """Ảnh RGBA (H, W, 4): kênh alpha bị tách bỏ đúng cách."""
     rgba = np.full((50, 50, 4), 150, dtype=np.uint8)
@@ -439,6 +458,24 @@ def test_reference_eval_shape_mismatch_auto_resize():
     result = evaluate_reference(current, ground_truth)
     assert isinstance(result, EvaluationResult)
     assert result.mse is not None
+
+
+def test_reference_eval_previous_shape_mismatch_auto_resize():
+    """previous_image lệch shape phải được resize khớp current, không crash."""
+    ground_truth = np.full((80, 80, 3), 128, dtype=np.uint8)
+    current = np.full((80, 80, 3), 130, dtype=np.uint8)
+    previous = np.full((90, 90, 3), 100, dtype=np.uint8)
+    result = evaluate_reference(current, ground_truth, previous_image=previous)
+    assert isinstance(result, EvaluationResult)
+    assert "delta_psnr" in result.delta_metrics
+
+
+def test_reference_eval_previous_empty_raises():
+    """previous_image rỗng phải raise ValueError rõ ràng thay vì lỗi broadcast."""
+    current = np.full((50, 50, 3), 128, dtype=np.uint8)
+    ground_truth = np.full((50, 50, 3), 128, dtype=np.uint8)
+    with pytest.raises(ValueError, match="previous_image"):
+        evaluate_reference(current, ground_truth, previous_image=np.array([]))
 
 
 def test_reference_eval_returns_evaluation_result_schema():
