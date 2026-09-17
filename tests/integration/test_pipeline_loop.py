@@ -22,3 +22,8 @@ def test_full_pipeline_synthetic():
     assert result_state["iteration"] >= 2
     assert result_state["decision"] in ["SHIP", "STOP_BEST_EFFORT"]
     assert len(result_state["history"]) > 0
+    # Khế ước serialization: evaluation_result trong state phải là dict thuần
+    # (HistoryItem.eval_score, ProcessResponse.final_evaluation và json.dumps
+    # ở frontend đều yêu cầu dict, không chấp nhận Pydantic model thô).
+    assert isinstance(result_state["evaluation_result"], dict)
+    assert result_state["evaluation_result"]["is_reference_eval"] is True
