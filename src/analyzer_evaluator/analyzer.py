@@ -9,7 +9,7 @@ Thiết kế theo ADR-001: Không dùng generative AI, chỉ dùng OpenCV/NumPy 
 """
 
 import logging
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -139,7 +139,7 @@ def _classify_noise(sigma: float) -> str:
     return "severe"
 
 
-def _detect_color_cast(rgb: np.ndarray) -> str:
+def _detect_color_cast(rgb: np.ndarray, bgr: Optional[np.ndarray] = None) -> str:
     """
     Phát hiện ám màu chủ đạo của ảnh qua không gian màu CIE L*a*b*.
 
@@ -151,14 +151,15 @@ def _detect_color_cast(rgb: np.ndarray) -> str:
 
     Args:
         rgb: Ảnh RGB uint8 (H, W, 3).
+        bgr: Ảnh BGR uint8 đã tính trước (tùy chọn). Nếu None, sẽ tính lại từ rgb.
 
     Returns:
         str: Loại ám màu ('warm', 'cool', 'greenish', 'none').
     """
-    # Chuyển RGB -> LAB để phân tích
-    # OpenCV nhận BGR nên cần đổi kênh
-    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB).astype(np.float64)
+    # Tái sử dụng BGR nếu đã được tính trước để tránh chuyển đổi trùng lặp
+    if bgr is None:
+        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
 
     mu_a = float(np.mean(lab[:, :, 1]))  # Kênh a*: Trục Lục-Đỏ
     mu_b = float(np.mean(lab[:, :, 2]))  # Kênh b*: Trục Lam-Vàng
@@ -188,7 +189,9 @@ def _detect_color_cast(rgb: np.ndarray) -> str:
     return "none"
 
 
-def _compute_histogram_stats(rgb: np.ndarray, gray: np.ndarray) -> Dict[str, Any]:
+def _compute_histogram_stats(
+    rgb: np.ndarray, gray: np.ndarray, bgr: Optional[np.ndarray] = None
+) -> Dict[str, Any]:
     """
     Tính toán bộ thống kê histogram toàn diện theo kế hoạch Stage 1.6.
 
@@ -200,12 +203,14 @@ def _compute_histogram_stats(rgb: np.ndarray, gray: np.ndarray) -> Dict[str, Any
     Args:
         rgb:  Ảnh RGB uint8 (H, W, 3).
         gray: Ảnh xám uint8 (H, W).
+        bgr:  Ảnh BGR uint8 đã tính trước (tùy chọn). Nếu None, sẽ tính lại từ rgb.
 
     Returns:
         Dict[str, Any]: Từ điển với các trường thống kê đã xác định.
     """
     total_pixels = float(gray.size)
-    gray_f = gray.astype(np.float64)
+    # Dùng float32 thay float64 để giảm băng thông bộ nhớ trên ảnh lớn
+    gray_f = gray.astype(np.float32)
 
     # --- Thống kê ảnh xám ---
     gray_min = int(np.min(gray))
@@ -228,13 +233,14 @@ def _compute_histogram_stats(rgb: np.ndarray, gray: np.ndarray) -> Dict[str, Any
     p99 = float(np.percentile(gray_f, 99))
     dynamic_range = int(round(p99 - p1))
 
-    # --- Thống kê per-channel RGB ---
-    r_ch = rgb[:, :, 0].astype(np.float64)
-    g_ch = rgb[:, :, 1].astype(np.float64)
-    b_ch = rgb[:, :, 2].astype(np.float64)
+    # --- Thống kê per-channel RGB (vectorized: tính tất cả kênh cùng lúc) ---
+    rgb_f = rgb.astype(np.float32)
+    ch_mean = rgb_f.mean(axis=(0, 1))  # shape (3,)
+    ch_std = rgb_f.std(axis=(0, 1))  # shape (3,)
 
-    # --- Dominant Hue từ HSV ---
-    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    # --- Dominant Hue từ HSV (tái sử dụng BGR nếu có) ---
+    if bgr is None:
+        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
     hue_channel = hsv[:, :, 0]  # Kênh H: 0..180 trong OpenCV
     hist_hue = cv2.calcHist([hue_channel], [0], None, [180], [0, 180]).flatten()
@@ -249,12 +255,12 @@ def _compute_histogram_stats(rgb: np.ndarray, gray: np.ndarray) -> Dict[str, Any
         "shadow_clip_ratio": round(shadow_clip_ratio, 4),
         "dynamic_range": dynamic_range,
         # Per-channel RGB
-        "r_mean": round(float(np.mean(r_ch)), 2),
-        "g_mean": round(float(np.mean(g_ch)), 2),
-        "b_mean": round(float(np.mean(b_ch)), 2),
-        "r_std": round(float(np.std(r_ch)), 2),
-        "g_std": round(float(np.std(g_ch)), 2),
-        "b_std": round(float(np.std(b_ch)), 2),
+        "r_mean": round(float(ch_mean[0]), 2),
+        "g_mean": round(float(ch_mean[1]), 2),
+        "b_mean": round(float(ch_mean[2]), 2),
+        "r_std": round(float(ch_std[0]), 2),
+        "g_std": round(float(ch_std[1]), 2),
+        "b_std": round(float(ch_std[2]), 2),
         # HSV dominant hue (góc màu 0..180)
         "dominant_hue": dominant_hue,
     }
@@ -276,6 +282,11 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
     4. Ước lượng mức độ nhiễu bằng Immerkær estimator
     5. Đo độ sắc nét/mờ bằng Laplacian và Tenengrad
     6. Phân tích histogram RGB/HSV và phát hiện ám màu CIE LAB
+
+    Tối ưu hóa hiệu năng:
+    - Tính BGR một lần, chia sẻ cho cả _detect_color_cast và _compute_histogram_stats
+      để loại bỏ chuyển đổi không gian màu trùng lặp.
+    - Dùng float32 thay float64 cho các thống kê per-channel RGB.
 
     Args:
         image: Ảnh đầu vào. Hỗ trợ: uint8 hoặc float32, RGB/Grayscale/RGBA.
@@ -322,7 +333,7 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
     # -----------------------------------------------------------------------
     # Bước 3: Độ tương phản và Dải động (Contrast Dynamics)
     # -----------------------------------------------------------------------
-    contrast_std = float(np.std(gray.astype(np.float64)))
+    contrast_std = float(np.std(gray.astype(np.float32)))
 
     if contrast_std < _CONTRAST_LOW:
         contrast_level = "low"
@@ -369,9 +380,11 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
 
     # -----------------------------------------------------------------------
     # Bước 6: Histogram RGB/HSV và Ám Màu CIE LAB (Color Cast Detection)
+    # Tối ưu: tính BGR một lần, chia sẻ cho cả hai hàm con
     # -----------------------------------------------------------------------
-    color_cast = _detect_color_cast(rgb)
-    histogram_stats = _compute_histogram_stats(rgb, gray)
+    bgr_shared = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    color_cast = _detect_color_cast(rgb, bgr=bgr_shared)
+    histogram_stats = _compute_histogram_stats(rgb, gray, bgr=bgr_shared)
 
     logger.info(
         "Image diagnosed: brightness=%s contrast=%s noise=%s blur=%s color_cast=%s",
