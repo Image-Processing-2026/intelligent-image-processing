@@ -48,8 +48,12 @@ _LAB_COOL_B_THRESH = 118.0  # b* < 118 → thiên xanh lam/lạnh
 _RGB_CHANNEL_DIFF = 20.0
 _RGB_GREEN_DIFF = 15.0
 
-# Kernel Immerkær Fast Noise Variance Estimator
-_IMMERKAER_KERNEL = np.array([[1, -2, 1], [-2, 4, -2], [1, -2, 1]], dtype=np.float64)
+# Kernel Immerkær Fast Noise Variance Estimator (float32 để giảm băng thông bộ nhớ;
+# các giá trị nguyên -2..4 biểu diễn chính xác tuyệt đối trong float32)
+_IMMERKAER_KERNEL = np.array([[1, -2, 1], [-2, 4, -2], [1, -2, 1]], dtype=np.float32)
+
+# Trục bins dùng chung cho mọi thống kê moments từ histogram (tránh cấp phát lặp lại)
+_GRAY_BINS = np.arange(256, dtype=np.float64)
 
 
 # ---------------------------------------------------------------------------
@@ -121,11 +125,75 @@ def _estimate_noise_immerkaer(gray: np.ndarray) -> float:
         logger.debug("Image too small for Immerkaer, using median-diff fallback: %.4f", noise_val)
         return noise_val
 
-    gray_f = gray.astype(np.float64)
-    conv = cv2.filter2D(gray_f, cv2.CV_64F, _IMMERKAER_KERNEL, borderType=cv2.BORDER_REPLICATE)
+    gray_f = gray.astype(np.float32)
+    conv = cv2.filter2D(gray_f, cv2.CV_32F, _IMMERKAER_KERNEL, borderType=cv2.BORDER_REPLICATE)
     sigma = (np.pi / 2.0) * (1.0 / (6.0 * (w - 2) * (h - 2))) * np.sum(np.abs(conv))
     logger.debug("Immerkaer noise estimate: %.4f", sigma)
     return float(sigma)
+
+
+def _compute_gray_hist_stats(gray: np.ndarray) -> Dict[str, Any]:
+    """
+    Tính mọi thống kê ảnh xám chỉ trong MỘT lần duyệt pixel (single-pass histogram).
+
+    Dựng histogram 256 bins bằng np.bincount (vòng lặp C duy nhất trên toàn ảnh),
+    rồi suy ra toàn bộ đặc trưng từ histogram thay vì duyệt ảnh nhiều lần:
+    min/max (bin khác 0 đầu/cuối), mean/std/skewness (moments), clipping
+    (cộng bins đuôi), P1/P99 (tìm trên hàm phân bố tích lũy cumsum).
+
+    Độ chính xác: tổng histogram là số nguyên chính xác tuyệt đối (< 2^53),
+    moments tính trên 256 bins bằng float64 nên sai số ~1e-12, không đổi sau
+    khi làm tròn 2-4 chữ số thập phân ở đầu ra.
+
+    Args:
+        gray: Ảnh xám uint8 (H, W), không rỗng.
+
+    Returns:
+        Dict với các khóa thô (chưa làm tròn): mean, std, skewness, gray_min,
+        gray_max, highlight_clip_ratio, shadow_clip_ratio, p1, p99, dynamic_range.
+
+    Raises:
+        ValueError: Khi ảnh rỗng (không có bin nào khác 0).
+    """
+    total_f = float(gray.size)
+    hist = np.bincount(gray.ravel(), minlength=256)
+    nonzero = np.flatnonzero(hist)
+    if nonzero.size == 0:
+        raise ValueError("Cannot compute histogram stats of an empty image.")
+
+    # --- Moments từ histogram (định nghĩa trực tiếp, không triệt tiêu số học) ---
+    hist_f = hist.astype(np.float64)
+    mean = float(((_GRAY_BINS * hist_f).sum()) / total_f)
+    deviations = _GRAY_BINS - mean
+    std = float(np.sqrt(((deviations**2) * hist_f).sum() / total_f))
+
+    # Skewness: E[(X-mu)^3] / sigma^3, ảnh phẳng (std=0) trả về 0 chống NaN
+    if std < 1e-8:
+        skewness = 0.0
+    else:
+        skewness = float((((deviations**3) * hist_f).sum() / total_f) / (std**3))
+
+    # --- Clipping từ bins đuôi (tương đương so sánh toàn ảnh, không cấp phát mask) ---
+    highlight_clip_ratio = float(hist[250:].sum() / total_f)  # bins 250..255
+    shadow_clip_ratio = float(hist[:6].sum() / total_f)  # bins 0..5
+
+    # --- P1/P99 từ phân bố tích lũy (tránh sắp xếp O(N log N) của percentile) ---
+    cumsum = np.cumsum(hist)
+    p1 = int(np.searchsorted(cumsum, 0.01 * total_f, side="left"))
+    p99 = int(np.searchsorted(cumsum, 0.99 * total_f, side="left"))
+
+    return {
+        "mean": mean,
+        "std": std,
+        "skewness": skewness,
+        "gray_min": int(nonzero[0]),
+        "gray_max": int(nonzero[-1]),
+        "highlight_clip_ratio": highlight_clip_ratio,
+        "shadow_clip_ratio": shadow_clip_ratio,
+        "p1": p1,
+        "p99": p99,
+        "dynamic_range": p99 - p1,
+    }
 
 
 def _classify_noise(sigma: float) -> str:
@@ -159,7 +227,8 @@ def _detect_color_cast(rgb: np.ndarray, bgr: Optional[np.ndarray] = None) -> str
     # Tái sử dụng BGR nếu đã được tính trước để tránh chuyển đổi trùng lặp
     if bgr is None:
         bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
+    # Lấy mean trực tiếp trên uint8 (tích lũy float64 pairwise, không cần sao chép float)
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
 
     mu_a = float(np.mean(lab[:, :, 1]))  # Kênh a*: Trục Lục-Đỏ
     mu_b = float(np.mean(lab[:, :, 2]))  # Kênh b*: Trục Lam-Vàng
@@ -190,7 +259,10 @@ def _detect_color_cast(rgb: np.ndarray, bgr: Optional[np.ndarray] = None) -> str
 
 
 def _compute_histogram_stats(
-    rgb: np.ndarray, gray: np.ndarray, bgr: Optional[np.ndarray] = None
+    rgb: np.ndarray,
+    gray: np.ndarray,
+    bgr: Optional[np.ndarray] = None,
+    gray_stats: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Tính toán bộ thống kê histogram toàn diện theo kế hoạch Stage 1.6.
@@ -200,43 +272,34 @@ def _compute_histogram_stats(
     - Thống kê per-channel RGB: mean, std của kênh R, G, B
     - Dominant Hue từ không gian HSV
 
+    Tối ưu: toàn bộ thống kê xám lấy từ single-pass histogram
+    (`_compute_gray_hist_stats`); mean/std RGB lấy từ `cv2.meanStdDev`
+    (một lần duyệt C, không sao chép ảnh sang float).
+
     Args:
         rgb:  Ảnh RGB uint8 (H, W, 3).
         gray: Ảnh xám uint8 (H, W).
         bgr:  Ảnh BGR uint8 đã tính trước (tùy chọn). Nếu None, sẽ tính lại từ rgb.
+        gray_stats: Kết quả `_compute_gray_hist_stats(gray)` đã tính trước
+            (tùy chọn). Nếu None, sẽ tự tính từ gray.
 
     Returns:
         Dict[str, Any]: Từ điển với các trường thống kê đã xác định.
     """
-    total_pixels = float(gray.size)
-    # Dùng float32 thay float64 để giảm băng thông bộ nhớ trên ảnh lớn
-    gray_f = gray.astype(np.float32)
+    if gray_stats is None:
+        gray_stats = _compute_gray_hist_stats(gray)
 
-    # --- Thống kê ảnh xám ---
-    gray_min = int(np.min(gray))
-    gray_max = int(np.max(gray))
-    gray_mean = float(np.mean(gray_f))
-    gray_std = float(np.std(gray_f))
+    gray_min = gray_stats["gray_min"]
+    gray_max = gray_stats["gray_max"]
+    gray_skewness = gray_stats["skewness"]
+    highlight_clip_ratio = gray_stats["highlight_clip_ratio"]
+    shadow_clip_ratio = gray_stats["shadow_clip_ratio"]
+    dynamic_range = gray_stats["dynamic_range"]
 
-    # Skewness: E[(X-mu)^3] / sigma^3, phòng trường hợp ảnh phẳng sigma=0
-    if gray_std < 1e-8:
-        gray_skewness = 0.0
-    else:
-        gray_skewness = float(np.mean((gray_f - gray_mean) ** 3) / (gray_std**3))
-
-    # Tỷ lệ clipping
-    highlight_clip_ratio = float(np.sum(gray >= _HIGHLIGHT_CLIP_THRESH) / total_pixels)
-    shadow_clip_ratio = float(np.sum(gray <= _SHADOW_CLIP_THRESH) / total_pixels)
-
-    # Dynamic range thực tế: P99 - P1
-    p1 = float(np.percentile(gray_f, 1))
-    p99 = float(np.percentile(gray_f, 99))
-    dynamic_range = int(round(p99 - p1))
-
-    # --- Thống kê per-channel RGB (vectorized: tính tất cả kênh cùng lúc) ---
-    rgb_f = rgb.astype(np.float32)
-    ch_mean = rgb_f.mean(axis=(0, 1))  # shape (3,)
-    ch_std = rgb_f.std(axis=(0, 1))  # shape (3,)
+    # --- Thống kê per-channel RGB (một lần duyệt C, không sao chép float) ---
+    ch_mean_mat, ch_std_mat = cv2.meanStdDev(rgb)
+    ch_mean = ch_mean_mat.ravel()  # shape (3,)
+    ch_std = ch_std_mat.ravel()  # shape (3,)
 
     # --- Dominant Hue từ HSV (tái sử dụng BGR nếu có) ---
     if bgr is None:
@@ -284,9 +347,13 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
     6. Phân tích histogram RGB/HSV và phát hiện ám màu CIE LAB
 
     Tối ưu hóa hiệu năng:
+    - Mọi thống kê ảnh xám (mean, std, skewness, clipping, P1/P99) suy ra từ
+      MỘT histogram duy nhất (`_compute_gray_hist_stats`), loại bỏ sắp xếp
+      O(N log N) của percentile và mọi bản sao float của ảnh xám.
+    - Mean/std RGB lấy từ `cv2.meanStdDev` (một lần duyệt C, không sao chép).
     - Tính BGR một lần, chia sẻ cho cả _detect_color_cast và _compute_histogram_stats
       để loại bỏ chuyển đổi không gian màu trùng lặp.
-    - Dùng float32 thay float64 cho các thống kê per-channel RGB.
+    - Immerkær/Sobel/LAB dùng float32 (đủ chính xác so với biên ngưỡng phân loại).
 
     Args:
         image: Ảnh đầu vào. Hỗ trợ: uint8 hoặc float32, RGB/Grayscale/RGBA.
@@ -306,14 +373,18 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
     # Bước 1: Chuẩn hóa đầu vào
     # -----------------------------------------------------------------------
     rgb, gray = _ensure_rgb_and_gray(image)
-    total_pixels = float(gray.size)
+
+    # -----------------------------------------------------------------------
+    # Single-pass histogram: mọi thống kê xám bên dưới tái sử dụng kết quả này
+    # -----------------------------------------------------------------------
+    gray_stats = _compute_gray_hist_stats(gray)
 
     # -----------------------------------------------------------------------
     # Bước 2: Độ sáng và Phơi sáng (Brightness & Exposure Analysis)
     # -----------------------------------------------------------------------
-    brightness_mean = float(np.mean(gray))
-    highlight_ratio = float(np.sum(gray >= _HIGHLIGHT_CLIP_THRESH) / total_pixels)
-    shadow_ratio = float(np.sum(gray <= _SHADOW_CLIP_THRESH) / total_pixels)
+    brightness_mean = gray_stats["mean"]
+    highlight_ratio = gray_stats["highlight_clip_ratio"]
+    shadow_ratio = gray_stats["shadow_clip_ratio"]
 
     if brightness_mean < _BRIGHTNESS_LOW or shadow_ratio > _SHADOW_CLIP_RATIO_THRESH:
         brightness_level = "underexposed"
@@ -333,7 +404,7 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
     # -----------------------------------------------------------------------
     # Bước 3: Độ tương phản và Dải động (Contrast Dynamics)
     # -----------------------------------------------------------------------
-    contrast_std = float(np.std(gray.astype(np.float32)))
+    contrast_std = gray_stats["std"]
 
     if contrast_std < _CONTRAST_LOW:
         contrast_level = "low"
@@ -355,13 +426,21 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
     # -----------------------------------------------------------------------
     # Bước 5: Độ Sắc Nét / Mờ (Sharpness & Blur via Laplacian + Tenengrad)
     # -----------------------------------------------------------------------
-    # Laplacian variance — phép đo chính
-    laplacian = cv2.Laplacian(gray, cv2.CV_64F)
+    # Laplacian variance — phép đo chính (float32: ảnh phẳng cho đúng 0 tuyệt đối;
+    # ngưỡng phân loại 100/300 cách xa sai số tương đối ~1% của float32)
+    laplacian = cv2.Laplacian(gray, cv2.CV_32F)
     sharpness_laplacian_var = float(laplacian.var())
 
-    # Tenengrad — bổ trợ phát hiện nhiễu giả sắc nét
-    sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
-    sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+    # Tenengrad — bổ trợ phát hiện nhiễu giả sắc nét (chỉ dùng cho log debug,
+    # nên tính trên ảnh thu nhỏ 1/2 để tiết kiệm 3/4 chi phí tích chập Sobel;
+    # ảnh tí hon (< 4px) giữ nguyên để tránh kích thước 0 sau khi chia)
+    gh, gw = gray.shape
+    if gh >= 4 and gw >= 4:
+        small_gray = cv2.resize(gray, (gw // 2, gh // 2), interpolation=cv2.INTER_AREA)
+    else:
+        small_gray = gray
+    sobelx = cv2.Sobel(small_gray, cv2.CV_32F, 1, 0, ksize=3)
+    sobely = cv2.Sobel(small_gray, cv2.CV_32F, 0, 1, ksize=3)
     tenengrad = float(np.mean(sobelx**2 + sobely**2))
 
     if sharpness_laplacian_var < _BLUR_SEVERE:
@@ -380,11 +459,12 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
 
     # -----------------------------------------------------------------------
     # Bước 6: Histogram RGB/HSV và Ám Màu CIE LAB (Color Cast Detection)
-    # Tối ưu: tính BGR một lần, chia sẻ cho cả hai hàm con
+    # Tối ưu: tính BGR một lần, chia sẻ cho cả hai hàm con;
+    # thống kê xám tái sử dụng gray_stats (không duyệt ảnh lại)
     # -----------------------------------------------------------------------
     bgr_shared = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     color_cast = _detect_color_cast(rgb, bgr=bgr_shared)
-    histogram_stats = _compute_histogram_stats(rgb, gray, bgr=bgr_shared)
+    histogram_stats = _compute_histogram_stats(rgb, gray, bgr=bgr_shared, gray_stats=gray_stats)
 
     logger.info(
         "Image diagnosed: brightness=%s contrast=%s noise=%s blur=%s color_cast=%s",

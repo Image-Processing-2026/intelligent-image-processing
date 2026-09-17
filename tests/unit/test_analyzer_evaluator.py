@@ -1167,3 +1167,31 @@ def test_compute_pyiqa_scores_handles_runtime_exception(monkeypatch):
     monkeypatch.setattr(nr_mod, "PYIQA_AVAILABLE", True)
     img = np.full((30, 30, 3), 128, dtype=np.uint8)
     assert nr_mod._compute_pyiqa_scores(img) == (None, None)
+
+
+def test_gray_hist_stats_raises_on_empty():
+    """_compute_gray_hist_stats phải raise ValueError khi ảnh rỗng."""
+    from src.analyzer_evaluator.analyzer import _compute_gray_hist_stats
+
+    with pytest.raises(ValueError, match="empty"):
+        _compute_gray_hist_stats(np.zeros((0, 0), dtype=np.uint8))
+
+
+def test_gray_hist_stats_single_pass_matches_direct_computation():
+    """Thống kê single-pass histogram phải khớp cách tính trực tiếp (làm tròn 2-4 số)."""
+    from src.analyzer_evaluator.analyzer import _compute_gray_hist_stats
+
+    rng = np.random.default_rng(7)
+    gray = rng.integers(0, 256, (60, 80), dtype=np.uint8)
+    stats = _compute_gray_hist_stats(gray)
+
+    assert stats["mean"] == pytest.approx(float(np.mean(gray)), abs=1e-9)
+    assert stats["std"] == pytest.approx(float(np.std(gray)), abs=1e-9)
+    assert stats["gray_min"] == int(np.min(gray))
+    assert stats["gray_max"] == int(np.max(gray))
+    assert stats["highlight_clip_ratio"] == pytest.approx(float(np.sum(gray >= 250) / gray.size))
+    assert stats["shadow_clip_ratio"] == pytest.approx(float(np.sum(gray <= 5) / gray.size))
+    # P1/P99 histogram nằm trong 1 bin so với percentile nội suy
+    assert abs(stats["p1"] - float(np.percentile(gray, 1))) <= 1.0
+    assert abs(stats["p99"] - float(np.percentile(gray, 99))) <= 1.0
+    assert stats["dynamic_range"] == stats["p99"] - stats["p1"]
