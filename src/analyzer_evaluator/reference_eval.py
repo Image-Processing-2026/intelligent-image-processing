@@ -20,7 +20,7 @@ try:
     from skimage.metrics import structural_similarity as _skimage_ssim
 
     SKIMAGE_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover - chỉ xảy ra khi gỡ scikit-image
     SKIMAGE_AVAILABLE = False
     logger.warning(
         "scikit-image not available. PSNR/SSIM will use built-in fallback implementations."

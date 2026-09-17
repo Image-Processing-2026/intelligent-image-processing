@@ -26,10 +26,10 @@ logger = logging.getLogger("img_doctor.analyzer_evaluator")
 try:
     import pyiqa  # type: ignore[import-untyped]
 
-    _brisque_metric = pyiqa.create_metric("brisque", device="cpu")
-    _niqe_metric = pyiqa.create_metric("niqe", device="cpu")
-    PYIQA_AVAILABLE = True
-    logger.debug("pyiqa loaded successfully: BRISQUE + NIQE metrics ready.")
+    _brisque_metric = pyiqa.create_metric("brisque", device="cpu")  # pragma: no cover
+    _niqe_metric = pyiqa.create_metric("niqe", device="cpu")  # pragma: no cover
+    PYIQA_AVAILABLE = True  # pragma: no cover
+    logger.debug("pyiqa loaded successfully: BRISQUE + NIQE metrics ready.")  # pragma: no cover
 except Exception:  # ImportError hoặc RuntimeError khi không tìm thấy model
     PYIQA_AVAILABLE = False
     _brisque_metric = None
@@ -154,16 +154,16 @@ def _compute_pyiqa_scores(rgb_image: np.ndarray) -> tuple[Optional[float], Optio
         import torch  # type: ignore[import-untyped]
 
         # Chuyển numpy uint8 RGB → tensor float32 [0, 1] shape [1, 3, H, W]
-        tensor = (
+        tensor = (  # pragma: no cover - cần torch + pyiqa models
             torch.from_numpy(rgb_image.astype(np.float32) / 255.0).permute(2, 0, 1).unsqueeze(0)
         )
 
-        with torch.no_grad():
-            brisque = float(_brisque_metric(tensor).item())
-            niqe = float(_niqe_metric(tensor).item())
+        with torch.no_grad():  # pragma: no cover - cần torch + pyiqa models
+            brisque = float(_brisque_metric(tensor).item())  # pragma: no cover
+            niqe = float(_niqe_metric(tensor).item())  # pragma: no cover
 
-        logger.debug("pyiqa scores: BRISQUE=%.4f NIQE=%.4f", brisque, niqe)
-        return round(brisque, 4), round(niqe, 4)
+        logger.debug("pyiqa scores: BRISQUE=%.4f NIQE=%.4f", brisque, niqe)  # pragma: no cover
+        return round(brisque, 4), round(niqe, 4)  # pragma: no cover
 
     except Exception as exc:
         logger.warning("pyiqa scoring failed (%s). Returning None scores.", exc)
