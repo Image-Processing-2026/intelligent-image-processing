@@ -6,7 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-from src.agent.graph import diagnose_and_plan_node
+from src.agent.graph import (
+    PSNR_THRESHOLD,
+    SSIM_THRESHOLD,
+    _decide_real,
+    _decide_synthetic,
+    decide_node,
+    diagnose_and_plan_node,
+)
 from src.agent.planner import clamp_parameters, validate_and_sort_plan
 from src.agent.state import DoctorState, HistoryItem, RegionOperation, TreatmentPlan
 from src.agent.vlm_diagnostician import _build_history_feedback, diagnose_and_plan
@@ -341,3 +348,172 @@ def test_validate_plan_with_extreme_params():
     assert validated.actions[0].parameters["method"] == "bilateral"
     assert validated.actions[1].operation == "gamma_correct"
     assert validated.actions[1].parameters["gamma"] == 2.5
+
+
+def test_decide_synthetic_ship_on_good_quality():
+    """Synthetic: PSNR và SSIM đạt ngưỡng → SHIP."""
+    eval_result = {"psnr": 30.0, "ssim": 0.92}
+    assert _decide_synthetic(eval_result, []) == "SHIP"
+
+
+def test_decide_synthetic_reprocess_on_low_quality():
+    """Synthetic: PSNR chưa đạt → RE_PROCESS."""
+    eval_result = {"psnr": 22.0, "ssim": 0.75}
+    assert _decide_synthetic(eval_result, []) == "RE_PROCESS"
+
+
+def test_decide_synthetic_stop_on_degradation():
+    """Synthetic: PSNR giảm > 1.5 dB → STOP_BEST_EFFORT."""
+    prev_entry = HistoryItem(
+        iteration=1,
+        plan=TreatmentPlan(iteration=1, reasoning="test", actions=[]),
+        metrics_before={},
+        metrics_after={},
+        eval_score={"psnr": 27.0, "ssim": 0.85},
+        decision="RE_PROCESS",
+    )
+    eval_result = {"psnr": 24.0, "ssim": 0.80}  # giảm 3 dB
+    assert _decide_synthetic(eval_result, [prev_entry]) == "STOP_BEST_EFFORT"
+
+
+def test_decide_synthetic_continue_on_minor_dip():
+    """Synthetic: PSNR giảm nhẹ <= 1.5 dB → RE_PROCESS (chưa phải suy thoái)."""
+    prev_entry = HistoryItem(
+        iteration=1,
+        plan=TreatmentPlan(iteration=1, reasoning="test", actions=[]),
+        metrics_before={},
+        metrics_after={},
+        eval_score={"psnr": 26.0, "ssim": 0.83},
+        decision="RE_PROCESS",
+    )
+    eval_result = {"psnr": 25.0, "ssim": 0.82}  # giảm 1 dB <= 1.5 dB threshold
+    assert _decide_synthetic(eval_result, [prev_entry]) == "RE_PROCESS"
+
+
+def test_decide_real_stop_on_quality_drop():
+    """Real: Quality score giảm → STOP_BEST_EFFORT."""
+    prev_entry = HistoryItem(
+        iteration=1,
+        plan=TreatmentPlan(iteration=1, reasoning="test", actions=[]),
+        metrics_before={},
+        metrics_after={},
+        eval_score={"estimated_quality_score": 75.0},
+        decision="RE_PROCESS",
+    )
+    eval_result = {"estimated_quality_score": 60.0}
+    assert _decide_real(eval_result, [prev_entry]) == "STOP_BEST_EFFORT"
+
+
+def test_decide_real_continue_on_improvement():
+    """Real: Quality score cải thiện hoặc giữ nguyên → RE_PROCESS."""
+    prev_entry = HistoryItem(
+        iteration=1,
+        plan=TreatmentPlan(iteration=1, reasoning="test", actions=[]),
+        metrics_before={},
+        metrics_after={},
+        eval_score={"estimated_quality_score": 60.0},
+        decision="RE_PROCESS",
+    )
+    eval_result = {"estimated_quality_score": 75.0}
+    assert _decide_real(eval_result, [prev_entry]) == "RE_PROCESS"
+
+
+def test_decide_node_max_iterations_reached():
+    """Đạt max iterations → dừng STOP_BEST_EFFORT (cả synthetic và real)."""
+    img = np.zeros((16, 16, 3), dtype=np.uint8)
+    state_synthetic: DoctorState = {
+        "original_image": img,
+        "current_image": img,
+        "ground_truth_image": img,
+        "is_synthetic": True,
+        "iteration": 3,
+        "max_iterations": 3,
+        "technical_metrics": {},
+        "treatment_plan": TreatmentPlan(
+            iteration=3,
+            reasoning="still work",
+            actions=[
+                RegionOperation(
+                    region_id="1", target_prompt="full", detected_issue="blur", operation="sharpen"
+                )
+            ],
+        ),
+        "evaluation_result": {"psnr": 20.0, "ssim": 0.70},
+        "history": [],
+        "decision": "PENDING",
+        "error_message": None,
+    }
+    res_syn = decide_node(state_synthetic)
+    assert res_syn["decision"] == "STOP_BEST_EFFORT"
+    assert res_syn["iteration"] == 4
+    assert res_syn["history"][-1].decision == "STOP_BEST_EFFORT"
+
+    state_real: DoctorState = {
+        **state_synthetic,
+        "is_synthetic": False,
+        "evaluation_result": {"estimated_quality_score": 40.0},
+    }
+    res_real = decide_node(state_real)
+    assert res_real["decision"] == "STOP_BEST_EFFORT"
+    assert res_real["iteration"] == 4
+
+
+def test_decide_node_empty_plan_ships():
+    """Kế hoạch điều trị rỗng hoặc None → VLM thấy ảnh đã tốt → SHIP."""
+    img = np.zeros((16, 16, 3), dtype=np.uint8)
+    state_empty_plan: DoctorState = {
+        "original_image": img,
+        "current_image": img,
+        "ground_truth_image": None,
+        "is_synthetic": False,
+        "iteration": 1,
+        "max_iterations": 3,
+        "technical_metrics": {},
+        "treatment_plan": TreatmentPlan(iteration=1, reasoning="already good", actions=[]),
+        "evaluation_result": {"estimated_quality_score": 80.0},
+        "history": [],
+        "decision": "PENDING",
+        "error_message": None,
+    }
+    res = decide_node(state_empty_plan)
+    assert res["decision"] == "SHIP"
+    assert res["iteration"] == 2
+
+    state_none_plan: DoctorState = {
+        **state_empty_plan,
+        "treatment_plan": None,
+    }
+    res_none = decide_node(state_none_plan)
+    assert res_none["decision"] == "SHIP"
+
+
+def test_decide_node_synthetic_ship_on_target_quality():
+    """Synthetic: Chưa hết vòng nhưng đạt ngưỡng PSNR & SSIM → SHIP."""
+    img = np.zeros((16, 16, 3), dtype=np.uint8)
+    state: DoctorState = {
+        "original_image": img,
+        "current_image": img,
+        "ground_truth_image": img,
+        "is_synthetic": True,
+        "iteration": 1,
+        "max_iterations": 3,
+        "technical_metrics": {},
+        "treatment_plan": TreatmentPlan(
+            iteration=1,
+            reasoning="some action",
+            actions=[
+                RegionOperation(
+                    region_id="1", target_prompt="full", detected_issue="blur", operation="sharpen"
+                )
+            ],
+        ),
+        "evaluation_result": {"psnr": PSNR_THRESHOLD + 2.0, "ssim": SSIM_THRESHOLD + 0.05},
+        "history": [],
+        "decision": "PENDING",
+        "error_message": None,
+    }
+    res = decide_node(state)
+    assert res["decision"] == "SHIP"
+    assert res["iteration"] == 2
+    assert len(res["history"]) == 1
+    assert res["history"][0].decision == "SHIP"

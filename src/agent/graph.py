@@ -3,7 +3,7 @@ Xây dựng đồ thị trạng thái LangGraph (LangGraph Orchestration Graph).
 Quản lý chu trình khép kín: Analyze -> Diagnose -> Plan -> Process -> Evaluate -> Decide.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -24,8 +24,13 @@ from src.analyzer_evaluator.reference_eval import evaluate_reference
 
 from .executor import execute_plan
 from .planner import validate_and_sort_plan
-from .state import DoctorState, HistoryItem
+from .state import DoctorState, HistoryItem, TreatmentPlan
 from .vlm_diagnostician import diagnose_and_plan
+
+# Ngưỡng chất lượng cho quyết định dừng (Synthetic Benchmark)
+PSNR_THRESHOLD = 28.0  # dB — Chất lượng phục hồi chấp nhận được
+SSIM_THRESHOLD = 0.88  # Tương đồng cấu trúc chấp nhận được
+PSNR_DEGRADATION = 1.5  # dB — Ngưỡng suy thoái cho phép giữa 2 vòng
 
 
 # ---------------------------------------------------------
@@ -73,34 +78,81 @@ def evaluate_node(state: DoctorState) -> Dict[str, Any]:
     return {"evaluation_result": eval_metrics}
 
 
+def _decide_synthetic(eval_result: Dict[str, Any], history: List[HistoryItem]) -> str:
+    """Logic quyết định dành cho ảnh nhân tạo có Ground-Truth."""
+    psnr = float(eval_result.get("psnr", 0.0))
+    ssim = float(eval_result.get("ssim", 0.0))
+
+    # Đã đạt chất lượng mục tiêu
+    if psnr >= PSNR_THRESHOLD and ssim >= SSIM_THRESHOLD:
+        return "SHIP"
+
+    # Kiểm tra suy thoái: PSNR vòng này thấp hơn vòng trước quá ngưỡng
+    if history:
+        prev_eval = history[-1].eval_score or {}
+        prev_psnr = float(prev_eval.get("psnr", 0.0))
+        if prev_psnr - psnr > PSNR_DEGRADATION:
+            return "STOP_BEST_EFFORT"
+
+    # Chưa đạt, còn dư vòng → tiếp tục
+    return "RE_PROCESS"
+
+
+def _decide_real(eval_result: Dict[str, Any], history: List[HistoryItem]) -> str:
+    """Logic quyết định dành cho ảnh thực không có Ground-Truth."""
+    current_quality = float(eval_result.get("estimated_quality_score", 50.0))
+
+    # Kiểm tra suy thoái: quality score vòng này tệ hơn vòng trước
+    if history:
+        prev_eval = history[-1].eval_score or {}
+        prev_quality = float(prev_eval.get("estimated_quality_score", 50.0))
+        if current_quality < prev_quality:
+            return "STOP_BEST_EFFORT"
+
+    # Chưa đạt, còn dư vòng → tiếp tục
+    return "RE_PROCESS"
+
+
 def decide_node(state: DoctorState) -> Dict[str, Any]:
     """Node 6: Đưa ra quyết định dừng lại (SHIP) hay thử lại (RE_PROCESS)."""
     iteration = state["iteration"]
     max_iters = state.get("max_iterations", 3)
+    is_syn = state.get("is_synthetic", False)
+    eval_result = state.get("evaluation_result") or {}
+    history = list(state.get("history") or [])
+    plan = state.get("treatment_plan") or TreatmentPlan(
+        iteration=iteration, reasoning="No treatment plan provided", actions=[]
+    )
 
     # Cập nhật lịch sử
     history_entry = HistoryItem(
         iteration=iteration,
-        plan=state["treatment_plan"],
-        metrics_before=state["technical_metrics"],
+        plan=plan,
+        metrics_before=state.get("technical_metrics", {}),
         metrics_after=analyze_image(state["current_image"]).model_dump(),
-        eval_score=state["evaluation_result"],
-        decision="SHIP",
+        eval_score=eval_result,
+        decision="PENDING",  # sẽ cập nhật bên dưới
     )
-    new_history = list(state.get("history", [])) + [history_entry]
 
-    # Điều kiện dừng
+    # ====== LOGIC RA QUYẾT ĐỊNH ======
+
+    # 1. Giới hạn cứng: Hết vòng lặp → dừng nỗ lực tốt nhất
     if iteration >= max_iters:
         decision = "STOP_BEST_EFFORT"
+
+    # 2. Kế hoạch rỗng → VLM cho rằng ảnh đã tốt
+    elif not state.get("treatment_plan") or not state["treatment_plan"].actions:
+        decision = "SHIP"
+
+    # 3. Phân nhánh Synthetic vs Real
+    elif is_syn:
+        decision = _decide_synthetic(eval_result, history)
     else:
-        # Nếu đã đạt chỉ số tốt hoặc không còn thao tác cần làm
-        if not state.get("treatment_plan") or not state["treatment_plan"].actions:
-            decision = "SHIP"
-        else:
-            # Tiếp tục vòng lặp nếu còn dư số lần
-            decision = "SHIP" if iteration >= 2 else "RE_PROCESS"
+        decision = _decide_real(eval_result, history)
 
     history_entry.decision = decision
+    new_history = history + [history_entry]
+
     return {"iteration": iteration + 1, "decision": decision, "history": new_history}
 
 
