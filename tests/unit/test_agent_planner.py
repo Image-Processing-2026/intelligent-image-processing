@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 
 from src.agent.graph import diagnose_and_plan_node
-from src.agent.planner import validate_and_sort_plan
+from src.agent.planner import clamp_parameters, validate_and_sort_plan
 from src.agent.state import DoctorState, HistoryItem, RegionOperation, TreatmentPlan
 from src.agent.vlm_diagnostician import _build_history_feedback, diagnose_and_plan
 
@@ -235,3 +235,109 @@ def test_diagnose_and_plan_node_passes_history():
             history=state["history"],
         )
         assert res["treatment_plan"] is not None
+
+
+def test_clamp_parameters_over_max():
+    """Tham số vượt trần → kẹp về giá trị max."""
+    result = clamp_parameters("gamma_correct", {"gamma": 10.0})
+    assert result["gamma"] == 2.5
+
+
+def test_clamp_parameters_under_min():
+    """Tham số dưới sàn → kẹp về giá trị min."""
+    result = clamp_parameters("gamma_correct", {"gamma": 0.01})
+    assert result["gamma"] == 0.5
+
+
+def test_clamp_parameters_valid_value():
+    """Tham số hợp lệ → giữ nguyên."""
+    result = clamp_parameters("denoise", {"method": "bilateral", "strength": 1.5})
+    assert result["strength"] == 1.5
+    assert result["method"] == "bilateral"
+
+
+def test_clamp_parameters_invalid_enum():
+    """Enum không hợp lệ → fallback default."""
+    result = clamp_parameters("denoise", {"method": "magic_filter", "strength": 1.0})
+    assert result["method"] == "bilateral"
+
+
+def test_clamp_parameters_missing_param():
+    """Tham số bị thiếu → gán default."""
+    result = clamp_parameters("gamma_correct", {})
+    assert result["gamma"] == 1.2
+
+
+def test_clamp_parameters_all_operations_and_edge_cases():
+    """Kiểm tra đầy đủ các operation khác và các trường hợp biên/lỗi định dạng."""
+    # CLAHE
+    res_clahe_high = clamp_parameters("clahe", {"clip_limit": 50.0})
+    assert res_clahe_high["clip_limit"] == 4.0
+    res_clahe_low = clamp_parameters("clahe", {"clip_limit": 0.1})
+    assert res_clahe_low["clip_limit"] == 1.0
+
+    # Sharpen
+    res_sharp = clamp_parameters("sharpen", {"amount": 5.0, "method": "invalid_method"})
+    assert res_sharp["amount"] == 2.0
+    assert res_sharp["method"] == "unsharp_mask"
+
+    res_sharp_lap = clamp_parameters("sharpen", {"amount": 0.05, "method": "laplacian"})
+    assert res_sharp_lap["amount"] == 0.2
+    assert res_sharp_lap["method"] == "laplacian"
+
+    # Color correct
+    res_color = clamp_parameters(
+        "color_correct",
+        {"saturation_scale": 0.1, "temperature_shift": 5.0},
+    )
+    assert res_color["saturation_scale"] == 0.5
+    assert res_color["temperature_shift"] == 1.0
+
+    res_color_neg = clamp_parameters(
+        "color_correct",
+        {"saturation_scale": 2.0, "temperature_shift": -3.0},
+    )
+    assert res_color_neg["saturation_scale"] == 1.5
+    assert res_color_neg["temperature_shift"] == -1.0
+
+    # Non-numeric string input
+    res_invalid_type = clamp_parameters("gamma_correct", {"gamma": "not_a_number"})
+    assert res_invalid_type["gamma"] == 1.2
+
+    # None params
+    res_none = clamp_parameters("gamma_correct", None)
+    assert res_none["gamma"] == 1.2
+
+    # Unknown operation
+    res_unknown = clamp_parameters("custom_tool", {"param": 42})
+    assert res_unknown == {"param": 42}
+
+
+def test_validate_plan_with_extreme_params():
+    """Kế hoạch với tham số cực đoan phải được kẹp tự động."""
+    plan = TreatmentPlan(
+        iteration=1,
+        reasoning="Test extreme params",
+        actions=[
+            RegionOperation(
+                region_id="full",
+                target_prompt="full",
+                detected_issue="underexposed",
+                operation="gamma_correct",
+                parameters={"gamma": 50.0},
+            ),
+            RegionOperation(
+                region_id="full",
+                target_prompt="full",
+                detected_issue="noise",
+                operation="denoise",
+                parameters={"strength": -5.0, "method": "unknown"},
+            ),
+        ],
+    )
+    validated = validate_and_sort_plan(plan)
+    assert validated.actions[0].operation == "denoise"
+    assert validated.actions[0].parameters["strength"] == 0.1
+    assert validated.actions[0].parameters["method"] == "bilateral"
+    assert validated.actions[1].operation == "gamma_correct"
+    assert validated.actions[1].parameters["gamma"] == 2.5
