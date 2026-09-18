@@ -14,6 +14,10 @@ class RegionOperation(BaseModel):
 
     region_id: str = Field(..., description="Tên vùng, ví dụ: 'sky', 'face', 'full'")
     target_prompt: str = Field(..., description="Từ khóa nhận diện vùng hoặc mô tả không gian")
+    region_type: str = Field(
+        default="full",
+        description="Loại vùng: 'semantic' (GroundingDINO+SAM), 'face' (MediaPipe), 'spatial' (quadrant), 'full' (toàn ảnh)",
+    )
     detected_issue: str = Field(
         ..., description="Vấn đề kỹ thuật: underexposed, noise, low_contrast, etc."
     )

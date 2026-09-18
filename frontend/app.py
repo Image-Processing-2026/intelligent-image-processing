@@ -4,8 +4,9 @@ Giao diện người dùng trực quan để tải ảnh, chạy chẩn đoán, 
 """
 
 import json
+
 import gradio as gr
-import numpy as np
+
 from src.agent.graph import run_pipeline
 from src.analyzer_evaluator.analyzer import analyze_image
 
