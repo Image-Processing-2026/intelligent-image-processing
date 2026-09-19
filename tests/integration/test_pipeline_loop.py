@@ -22,3 +22,7 @@ def test_full_pipeline_synthetic():
     assert result_state["iteration"] >= 2
     assert result_state["decision"] in ["SHIP", "STOP_BEST_EFFORT"]
     assert len(result_state["history"]) > 0
+    assert "intermediate_images" in result_state
+    assert len(result_state["intermediate_images"]) > 0
+    assert all(isinstance(img, np.ndarray) for img in result_state["intermediate_images"])
+    assert all(max(img.shape[:2]) <= 512 for img in result_state["intermediate_images"])

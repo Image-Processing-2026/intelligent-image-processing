@@ -82,12 +82,19 @@ async def process_image_endpoint(
             for item in result_state.get("history", [])
         ]
 
+        # Encode ảnh trung gian
+        intermediate_b64 = [
+            _encode_image_to_base64(img)
+            for img in result_state.get("intermediate_images", [])
+        ]
+
         return ProcessResponse(
             processed_image_base64=_encode_image_to_base64(result_state["current_image"]),
             total_iterations=result_state["iteration"] - 1,
             final_decision=result_state["decision"],
             final_evaluation=result_state.get("evaluation_result", {}),
             history=history_serialized,
+            intermediate_images_base64=intermediate_b64,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -10,6 +10,11 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 from PIL import Image
 
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
 from .state import HistoryItem, TreatmentPlan
 
 SYSTEM_PROMPT = """
@@ -171,9 +176,14 @@ def diagnose_and_plan(
             actions=actions,
         )
 
-    try:
-        import google.generativeai as genai
+    if genai is None:
+        return TreatmentPlan(
+            iteration=iteration,
+            reasoning="Thư viện google-generativeai chưa được cài đặt, chuyển sang chế độ tự phục hồi.",
+            actions=[],
+        )
 
+    try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel("gemini-1.5-flash")
 
@@ -191,6 +201,8 @@ def diagnose_and_plan(
         text = response.text.strip()
         if text.startswith("```json"):
             text = text[7:]
+        elif text.startswith("```"):
+            text = text[3:]
         if text.endswith("```"):
             text = text[:-3]
         data = json.loads(text.strip())

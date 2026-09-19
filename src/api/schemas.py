@@ -30,3 +30,7 @@ class ProcessResponse(BaseModel):
     final_decision: str
     final_evaluation: Dict[str, Any]
     history: List[Dict[str, Any]]
+    intermediate_images_base64: List[str] = Field(
+        default_factory=list,
+        description="Danh sách ảnh trung gian sau mỗi vòng lặp (Base64 PNG thumbnails)",
+    )

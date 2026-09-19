@@ -63,5 +63,6 @@ class DoctorState(TypedDict):
     treatment_plan: Optional[TreatmentPlan]
     evaluation_result: Dict[str, Any]
     history: List[HistoryItem]
+    intermediate_images: List[np.ndarray]  # Ảnh thumbnail sau mỗi vòng lặp
     decision: str  # "SHIP", "RE_PROCESS", "STOP_BEST_EFFORT"
     error_message: Optional[str]

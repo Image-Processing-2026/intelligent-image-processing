@@ -5,6 +5,7 @@ Quản lý chu trình khép kín: Analyze -> Diagnose -> Plan -> Process -> Eval
 
 from typing import Any, Dict, List, Optional
 
+import cv2
 import numpy as np
 
 # Đảm bảo tương thích ngược nếu langchain phiên bản cũ/mới bị xung đột module attribute
@@ -113,6 +114,17 @@ def _decide_real(eval_result: Dict[str, Any], history: List[HistoryItem]) -> str
     return "RE_PROCESS"
 
 
+def _create_thumbnail(image: np.ndarray, max_size: int = 512) -> np.ndarray:
+    """Resize ảnh xuống thumbnail để tiết kiệm bộ nhớ."""
+    h, w = image.shape[:2]
+    if max(h, w) <= max_size or max(h, w) == 0:
+        return image.copy()
+    scale = max_size / max(h, w)
+    new_w = max(1, int(w * scale))
+    new_h = max(1, int(h * scale))
+    return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+
 def decide_node(state: DoctorState) -> Dict[str, Any]:
     """Node 6: Đưa ra quyết định dừng lại (SHIP) hay thử lại (RE_PROCESS)."""
     iteration = state["iteration"]
@@ -153,7 +165,16 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
     history_entry.decision = decision
     new_history = history + [history_entry]
 
-    return {"iteration": iteration + 1, "decision": decision, "history": new_history}
+    # Lưu ảnh trung gian dạng thumbnail sau mỗi vòng
+    thumbnail = _create_thumbnail(state["current_image"])
+    new_intermediates = list(state.get("intermediate_images") or []) + [thumbnail]
+
+    return {
+        "iteration": iteration + 1,
+        "decision": decision,
+        "history": new_history,
+        "intermediate_images": new_intermediates,
+    }
 
 
 def should_continue(state: DoctorState) -> str:
@@ -209,6 +230,7 @@ def run_pipeline(
         "treatment_plan": None,
         "evaluation_result": {},
         "history": [],
+        "intermediate_images": [],
         "decision": "INITIALIZING",
         "error_message": None,
     }
