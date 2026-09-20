@@ -3,7 +3,6 @@ Module Region Engine & Mask Synthesis.
 Cung cấp các công cụ phân đoạn ngữ nghĩa, nhận diện khuôn mặt và tạo mặt nạ mềm.
 """
 
-from .detector import segment_by_prompt
 from .controller import (
     InvalidRegionRequestError,
     RegionBackendUnavailableError,
@@ -14,6 +13,7 @@ from .controller import (
     capabilities,
     resolve_region,
 )
+from .detector import segment_by_prompt
 from .face_detector import (
     FaceDetectionError,
     FaceDetectionRecord,
