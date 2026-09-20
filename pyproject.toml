@@ -54,3 +54,7 @@ ignore = ["E501"]
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+addopts = "-m 'not real_model'"
+markers = [
+    "real_model: requires an explicitly prepared MediaPipe checkpoint and upstream image fixtures",
+]

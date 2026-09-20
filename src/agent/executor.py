@@ -35,8 +35,12 @@ def execute_plan(image: np.ndarray, plan: TreatmentPlan) -> np.ndarray:
 
         if target in ["face", "khuôn mặt"]:
             face_masks = detect_faces(current_img)
-            if face_masks:
-                mask = face_masks[0]
+            if not face_masks:
+                # Không có mặt là kết quả hợp lệ của detector; bỏ qua action
+                # này thay vì truyền None để Module 3 xử lý toàn ảnh.
+                continue
+            # Hợp nhất một lần để vùng chồng nhau không làm tăng hiệu ứng.
+            mask = np.maximum.reduce(face_masks)
         elif target not in ["full", "all", "toàn bộ", "full_image"]:
             mask = segment_by_prompt(current_img, action.target_prompt)
 

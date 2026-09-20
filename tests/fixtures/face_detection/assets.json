@@ -1,0 +1,36 @@
+{
+  "model": {
+    "path": "models/mediapipe/face_detection_full_range.tflite",
+    "url": null,
+    "sha256": null,
+    "source": "MediaPipe Tasks FaceDetector full-range CPU model",
+    "note": "Set url and sha256, or pass --model-url and --sha256 to the explicit preparation script."
+  },
+  "fixtures": [
+    {
+      "id": "portrait_full_range",
+      "path": "tests/fixtures/face_detection/upstream/portrait.jpg",
+      "url": null,
+      "sha256": null,
+      "note": "Provide the exact upstream fixture URL and hash before real-model evaluation."
+    },
+    {
+      "id": "no_face",
+      "path": "tests/fixtures/face_detection/upstream/cat.jpg",
+      "url": null,
+      "sha256": null,
+      "note": "Provide the exact upstream fixture URL and hash before real-model evaluation."
+    }
+  ],
+  "real_model_cases": {
+    "portrait_full_range": {
+      "image": "tests/fixtures/face_detection/upstream/portrait.jpg",
+      "expected_count": 1,
+      "expected_bbox": [293, 112, 229, 229]
+    },
+    "no_face": {
+      "image": "tests/fixtures/face_detection/upstream/cat.jpg",
+      "expected_count": 0
+    }
+  }
+}

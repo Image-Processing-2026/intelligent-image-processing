@@ -36,11 +36,41 @@ def blend_regions(
 
 ### 2.2 Face Detection (`face_detector.py`)
 ```python
-def detect_faces(image: np.ndarray, expand_ratio: float = 0.2) -> list[np.ndarray]:
+def detect_faces(
+    image: np.ndarray,
+    feather_radius: int = 20,
+    *,
+    expand_ratio: float = 0.15,
+) -> list[np.ndarray]:
     """
-    Phát hiện các khuôn mặt trong ảnh bằng MediaPipe và trả về danh sách soft-masks.
+    Phát hiện khuôn mặt bằng MediaPipe Tasks và trả về danh sách soft-masks.
     """
 ```
+
+`image` phải là ảnh RGB `uint8` shape `(H, W, 3)` không rỗng; không tự đoán
+hoặc đổi BGR/RGBA. View không contiguous và buffer read-only được chấp nhận,
+nhưng adapter tạo bản sao contiguous trước khi đưa vào backend. `feather_radius`
+dùng cùng quy ước Gaussian với các API mask khác. `expand_ratio` là số thực hữu
+hạn trong `[0, 1]`, mở rộng trên từng phía của bbox thô; mặc định `0.15` làm
+tăng mỗi kích thước khoảng 30% trước khi clip. Bbox dùng `floor` cho góc trên-
+trái và `ceil` cho góc dưới-phải. Detections được sắp theo bbox thô
+`(ymin, xmin, ymax, xmax)` rồi confidence giảm dần, chuyển sang
+`create_bbox_mask`, trả một mask độc lập cho mỗi mặt và không merge trong hàm.
+Bbox giao ảnh một phần được clip; bbox hoàn toàn ngoài ảnh bị bỏ qua kèm warning.
+
+Backend dùng MediaPipe Tasks IMAGE mode, confidence `0.5`, suppression `0.3`
+và được lazy-init/cached theo process dưới lock. Model không được tải ngầm;
+đường dẫn lấy từ `REGION_FACE_MODEL_PATH`, mặc định là
+`models/mediapipe/face_detection_full_range.tflite`. Cần chuẩn bị checkpoint
+trước khi gọi inference thật.
+
+Inference thành công nhưng không có detection trả `[]`. Thiếu MediaPipe/model
+hoặc lỗi khởi tạo ném `FaceDetectorUnavailableError`; lỗi inference/output
+backend ném `FaceDetectionError`. Các lỗi này giữ nguyên cause và không bị nuốt
+thành mask rỗng hoặc mask toàn ảnh. Dùng `close_face_detector()` hoặc
+`reset_face_detector()` trong lifecycle/test hook. Script
+`scripts/prepare_face_detection_assets.py` là đường duy nhất để tải model và
+phải kiểm tra SHA-256; `detect_faces` không tải mạng ngầm.
 
 ### 2.3 Bounding-Box Mask (`spatial.py`)
 
