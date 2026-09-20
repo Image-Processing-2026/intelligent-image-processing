@@ -76,7 +76,10 @@ def evaluate_node(state: DoctorState) -> Dict[str, Any]:
             current_image=state["current_image"], previous_image=state["original_image"]
         )
 
-    return {"evaluation_result": eval_metrics}
+    # Chuẩn hóa về dict thuần trước khi đưa vào state: DoctorState khai báo
+    # evaluation_result là Dict, HistoryItem.eval_score và ProcessResponse
+    # cũng yêu cầu dict (model thô gây ValidationError và không JSON-serializable).
+    return {"evaluation_result": eval_metrics.model_dump()}
 
 
 def _decide_synthetic(eval_result: Dict[str, Any], history: List[HistoryItem]) -> str:
