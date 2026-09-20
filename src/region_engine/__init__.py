@@ -13,10 +13,20 @@ from .face_detector import (
     reset_face_detector,
 )
 from .mask_utils import blend_regions, create_soft_mask
+from .segmentation_backend import (
+    SegmentationInferenceError,
+    SegmentationUnavailableError,
+    close_segmentation_backend,
+    reset_segmentation_backend,
+)
 from .spatial import create_bbox_mask, create_quadrant_mask
 
 __all__ = [
     "segment_by_prompt",
+    "SegmentationInferenceError",
+    "SegmentationUnavailableError",
+    "close_segmentation_backend",
+    "reset_segmentation_backend",
     "detect_faces",
     "FaceDetectionError",
     "FaceDetectionRecord",

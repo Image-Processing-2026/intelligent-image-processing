@@ -134,11 +134,39 @@ sigma `= kernel / 3`, biên `BORDER_REFLECT_101`. Kết quả là mảng mới
 
 ### 2.5 Semantic Text Segmentation (`detector.py`)
 ```python
-def segment_by_prompt(image: np.ndarray, text_prompt: str) -> np.ndarray:
+def segment_by_prompt(
+    image: np.ndarray,
+    text_prompt: str,
+    feather_radius: int = 15,
+) -> np.ndarray:
     """
     Chuyển đổi câu lệnh mô tả đối tượng (ví dụ 'sky', 'background') thành soft-mask.
     """
 ```
+
+Ảnh phải là RGB `uint8` shape `(H, W, 3)` không rỗng; prompt phải là chuỗi
+không rỗng sau NFC, gộp whitespace, strip và lowercase. Prompt dài hơn giới
+hạn 256 token ước lượng của model báo `ValueError`; không cắt ngầm. Alias exact
+`người`, `bầu trời`/`trời`, `mèo`, `chó` lần lượt gửi `person`, `sky`, `cat`,
+`dog`; không dịch tự do các câu tiếng Việt khác.
+
+Exact command `full`, `all`, `toàn`, `toàn bộ`, `full_image` trả mask toàn 1.
+`top`, `bottom`, `left`, `right`, `center`, `giữa` dùng quadrant geometry mà
+không load model. Các prompt còn lại đi qua GroundingDINO Tiny + MobileSAM
+local trên CPU. DINO dùng box threshold `0.35`, text threshold `0.25`, NMS
+class-agnostic IoU `>0.8`; các bbox được clip, mask MobileSAM được OR thành
+một union rồi mới gọi `create_soft_mask` đúng một lần. Không có detection hợp lệ
+trả mask toàn 0. Thiếu model/dependency/init ném `SegmentationUnavailableError`;
+lỗi inference hoặc output ném `SegmentationInferenceError`, không fallback thành
+mask toàn ảnh hay quadrant.
+
+Backend lazy-load/cache/lock nằm ở `segmentation_backend.py`. Mặc định model
+là thư mục local `models/segmentation/grounding-dino-tiny` và checkpoint
+`models/segmentation/mobile_sam.pt`; có thể đổi bằng
+`REGION_DINO_MODEL_PATH` và `REGION_MOBILE_SAM_CHECKPOINT`. Runtime không tải
+model từ mạng. Dùng `close_segmentation_backend()` hoặc
+`reset_segmentation_backend()` khi shutdown/test. Cần cài optional extra
+segmentation và chuẩn bị asset bằng script riêng trước real-model inference.
 
 ---
 

@@ -35,6 +35,12 @@ dev = [
     "scipy>=1.14.1",
     "matplotlib>=3.8.0",
 ]
+segmentation = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "transformers>=4.51.0",
+    "safetensors>=0.4.0",
+]
 
 [tool.ruff]
 line-length = 100
@@ -56,5 +62,5 @@ pythonpath = ["."]
 asyncio_mode = "auto"
 addopts = "-m 'not real_model'"
 markers = [
-    "real_model: requires an explicitly prepared MediaPipe checkpoint and upstream image fixtures",
+    "real_model: requires explicitly prepared model checkpoints and dataset fixtures",
 ]

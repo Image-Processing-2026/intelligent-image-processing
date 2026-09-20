@@ -3,7 +3,6 @@
 import numpy as np
 import pytest
 
-from src.region_engine.detector import segment_by_prompt
 from src.region_engine.spatial import create_quadrant_mask
 
 QUADRANTS = ("top", "bottom", "left", "right", "center")
@@ -201,14 +200,3 @@ def test_read_only_shape_is_accepted_and_outputs_do_not_share_memory() -> None:
     np.testing.assert_array_equal(shape, before)
     np.testing.assert_array_equal(first, second)
     assert not np.shares_memory(first, second)
-
-
-@pytest.mark.parametrize("prompt", ["sky", "ground", "center"])
-def test_detector_callers_still_use_validated_quadrant_api(prompt: str) -> None:
-    image = np.zeros((8, 10, 3), dtype=np.uint8)
-
-    mask = segment_by_prompt(image, prompt, feather_radius=0)
-
-    assert mask.shape == image.shape[:2]
-    assert mask.dtype == np.float32
-    assert np.isfinite(mask).all()

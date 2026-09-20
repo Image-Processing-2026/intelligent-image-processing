@@ -1,0 +1,28 @@
+{
+  "assets": [
+    {
+      "id": "grounding_dino_tiny_snapshot",
+      "path": "models/segmentation/grounding-dino-tiny",
+      "url": null,
+      "sha256": null,
+      "note": "Populate with a pinned local Hugging Face snapshot and manifest hash."
+    },
+    {
+      "id": "mobile_sam_vit_t",
+      "path": "models/segmentation/mobile_sam.pt",
+      "url": null,
+      "sha256": null,
+      "note": "Populate with a pinned MobileSAM vit_t checkpoint and hash."
+    }
+  ],
+  "datasets": {
+    "penn_fudan": {
+      "image_root": "tests/fixtures/prompt_segmentation/penn_fudan/PNGImages",
+      "mask_root": "tests/fixtures/prompt_segmentation/penn_fudan/PedMasks",
+      "note": "Download exact image/mask bytes and add per-file hashes before real evaluation."
+    },
+    "ade20k_sky": {
+      "note": "Sky fixture is intentionally not claimed until class metadata and hashes are pinned."
+    }
+  }
+}

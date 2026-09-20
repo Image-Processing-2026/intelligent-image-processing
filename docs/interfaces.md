@@ -112,7 +112,9 @@ def evaluate_no_reference(
 
 ### 3.2 Module 2: Region Engine (`src/region_engine/`)
 ```python
-def segment_by_prompt(image: np.ndarray, text_prompt: str) -> np.ndarray:
+def segment_by_prompt(
+    image: np.ndarray, text_prompt: str, feather_radius: int = 15
+) -> np.ndarray:
     """Phân đoạn vùng đối tượng dựa trên mô tả văn bản (GroundingDINO + MobileSAM).
     Trả về soft mask dtype=float32 trong khoảng [0.0, 1.0]."""
     ...
