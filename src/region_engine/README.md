@@ -42,7 +42,36 @@ def detect_faces(image: np.ndarray, expand_ratio: float = 0.2) -> list[np.ndarra
     """
 ```
 
-### 2.3 Semantic Text Segmentation (`detector.py`)
+### 2.3 Bounding-Box Mask (`spatial.py`)
+
+```python
+def create_bbox_mask(
+    image_shape: tuple[int, int] | list[int] | np.ndarray,
+    bbox: tuple[int, int, int, int] | list[int] | np.ndarray,
+    feather_radius: int = 15,
+) -> np.ndarray:
+    """
+    Tạo soft mask float32 toàn ảnh từ bbox (xmin, ymin, xmax, ymax).
+    """
+```
+
+`image_shape` phải là tuple/list hoặc NumPy array 1D đúng hai số nguyên dương
+`(H, W)`. `bbox` phải có đúng bốn số nguyên theo quy ước OpenCV/NumPy: biên
+trái và trên được tính, biên phải và dưới không được tính. Số âm hoặc tọa độ
+vượt ảnh được phép và được clip vào canvas; bbox đảo (`xmin > xmax` hoặc
+`ymin > ymax`) là lỗi `ValueError`, không tự động đổi đầu mút.
+
+`feather_radius` là số nguyên không âm và không nhận bool/float. Tên tham số
+được giữ tương thích với API hiện có nhưng giá trị này là kích thước Gaussian
+kernel: số chẵn được làm tròn lên số lẻ kế tiếp, sigma bằng `kernel / 3`, và
+biên dùng `BORDER_REFLECT_101`. Giá trị `0` và `1` không blur. Bbox rỗng hoặc
+nằm hoàn toàn ngoài ảnh trả mask toàn 0; bbox phủ toàn ảnh trả mask toàn 1.
+
+Hàm trả về một mảng mới `float32` shape `(H, W)`, hữu hạn và nằm trong
+`[0.0, 1.0]`; không sửa `image_shape`, `bbox` hoặc input array. Caller phải
+truyền `image.shape[:2]`, không truyền trực tiếp shape ba chiều.
+
+### 2.4 Semantic Text Segmentation (`detector.py`)
 ```python
 def segment_by_prompt(image: np.ndarray, text_prompt: str) -> np.ndarray:
     """

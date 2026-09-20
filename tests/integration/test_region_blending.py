@@ -6,6 +6,7 @@ import numpy as np
 from src.processing_engine.base import apply_region_op
 from src.processing_engine.exposure_contrast import apply_gamma
 from src.region_engine.mask_utils import blend_regions, create_soft_mask
+from src.region_engine.spatial import create_bbox_mask
 
 
 def test_create_soft_mask_then_apply_region_op_matches_direct_blend() -> None:
@@ -42,4 +43,17 @@ def test_processing_engine_gamma_wrapper_blends_full_frame_result() -> None:
     actual = apply_gamma(original, mask=mask, gamma=1.5)
     expected = blend_regions(original, processed, mask)
 
+    np.testing.assert_array_equal(actual, expected)
+
+
+def test_bbox_mask_flows_into_region_blending() -> None:
+    original = np.zeros((4, 6, 3), dtype=np.uint8)
+    processed = np.empty_like(original)
+    processed[...] = [200, 100, 50]
+    mask = create_bbox_mask((4, 6), (1, 1, 5, 3), feather_radius=0)
+
+    actual = blend_regions(original, processed, mask)
+
+    expected = np.zeros_like(original)
+    expected[1:3, 1:5] = [200, 100, 50]
     np.testing.assert_array_equal(actual, expected)
