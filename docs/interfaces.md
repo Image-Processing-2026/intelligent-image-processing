@@ -98,14 +98,14 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
 def evaluate_reference(
     current_image: np.ndarray, 
     ground_truth: np.ndarray
-) -> Dict[str, float]:
+) -> EvaluationResult:
     """Đánh giá chất lượng với ảnh gốc mẫu (PSNR, SSIM, MSE)."""
     ...
 
 def evaluate_no_reference(
     current_image: np.ndarray, 
     previous_image: Optional[np.ndarray] = None
-) -> Dict[str, float]:
+) -> EvaluationResult:
     """Đánh giá chất lượng ảnh thực không có ground-truth (BRISQUE, NIQE, chênh lệch chỉ số)."""
     ...
 ```

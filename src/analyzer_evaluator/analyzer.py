@@ -67,6 +67,7 @@ def _ensure_rgb_and_gray(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
 
     Xử lý tất cả các trường hợp đầu vào:
     - Grayscale (H, W) -> Chuyển sang RGB 3 kênh
+    - Grayscale có kênh giữ (H, W, 1) -> Ép về (H, W) rồi chuyển sang RGB
     - RGBA (H, W, 4)   -> Tách bỏ kênh Alpha
     - float32 [0,1]    -> Ép về uint8 [0, 255]
     - RGB (H, W, 3)    -> Giữ nguyên
@@ -88,6 +89,11 @@ def _ensure_rgb_and_gray(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         gray = image
         logger.debug("Grayscale input detected, converted to RGB.")
+    elif image.ndim == 3 and image.shape[2] == 1:
+        # Grayscale giữ kênh (H, W, 1) -> ép về (H, W) rồi chuyển sang RGB
+        gray = np.ascontiguousarray(image[:, :, 0])
+        rgb = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
+        logger.debug("Single-channel (H, W, 1) input detected, squeezed to grayscale.")
     elif image.ndim == 3 and image.shape[2] == 4:
         # RGBA (H, W, 4) -> RGB (H, W, 3)
         rgb = image[:, :, :3]
@@ -98,7 +104,7 @@ def _ensure_rgb_and_gray(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
     else:
         raise ValueError(
-            f"Unsupported image shape: {image.shape}. Expected (H,W), (H,W,3), or (H,W,4)."
+            f"Unsupported image shape: {image.shape}. Expected (H,W), (H,W,1), (H,W,3), or (H,W,4)."
         )
 
     return rgb, gray

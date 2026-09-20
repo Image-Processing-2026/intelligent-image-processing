@@ -101,6 +101,18 @@ def test_ensure_rgb_and_gray_from_rgba():
     assert np.all(rgb[:, :, 0] == 150)
 
 
+def test_ensure_rgb_and_gray_from_single_channel():
+    """Ảnh grayscale giữ kênh (H, W, 1) được ép về RGB (H, W, 3) đúng cách."""
+    single = np.full((50, 50, 1), 100, dtype=np.uint8)
+    rgb, gray = _ensure_rgb_and_gray(single)
+    assert rgb.shape == (50, 50, 3)
+    assert gray.shape == (50, 50)
+    # Tất cả 3 kênh phải bằng nhau và giữ đúng giá trị gốc
+    assert np.all(rgb[:, :, 0] == 100)
+    assert np.all(rgb[:, :, 0] == rgb[:, :, 1])
+    assert np.all(rgb[:, :, 1] == rgb[:, :, 2])
+
+
 def test_ensure_rgb_and_gray_from_float():
     """Ảnh float32 [0.0, 1.0] được chuyển đổi đúng về uint8 [0, 255]."""
     float_img = np.full((50, 50, 3), 0.5, dtype=np.float32)
@@ -848,6 +860,17 @@ def test_shape_invariance_rgba_4channel():
     rgba = np.full((200, 300, 4), 128, dtype=np.uint8)
     result = analyze_image(rgba)
     assert isinstance(result, TechnicalMetrics)
+
+
+def test_shape_invariance_single_channel_hw1():
+    """Ảnh grayscale giữ kênh (H, W, 1) không crash và cho cùng kết quả như (H, W)."""
+    gray_2d = np.full((200, 300), 128, dtype=np.uint8)
+    gray_hw1 = np.full((200, 300, 1), 128, dtype=np.uint8)
+    result_hw1 = analyze_image(gray_hw1)
+    result_2d = analyze_image(gray_2d)
+    assert isinstance(result_hw1, TechnicalMetrics)
+    assert result_hw1.brightness_mean == result_2d.brightness_mean
+    assert result_hw1.contrast_std == result_2d.contrast_std
 
 
 def test_shape_invariance_tiny_3x3():
