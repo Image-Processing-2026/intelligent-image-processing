@@ -25,11 +25,12 @@ def create_soft_mask(binary_mask: np.ndarray, feather_radius: int = 15) -> np.nd
 
 
 def blend_regions(
-    original_image: np.ndarray, processed_image: np.ndarray, soft_mask: np.ndarray
+    original_image: np.ndarray, processed_image: np.ndarray, soft_mask: np.ndarray | None
 ) -> np.ndarray:
     """
     Hòa trộn ảnh gốc và ảnh đã xử lý thông qua mặt nạ mềm:
     I_out = soft_mask * I_processed + (1.0 - soft_mask) * I_original
+    soft_mask=None chọn toàn bộ processed_image và trả về một bản sao.
     """
 ```
 

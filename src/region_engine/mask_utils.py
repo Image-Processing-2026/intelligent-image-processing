@@ -76,36 +76,82 @@ def create_soft_mask(binary_mask: np.ndarray, feather_radius: int = 15) -> np.nd
     return np.clip(soft_mask, 0.0, 1.0).astype(np.float32, copy=False)
 
 
+def _validate_image(image: object, name: str) -> np.ndarray:
+    """Validate one inter-module RGB image and return it unchanged."""
+    if not isinstance(image, np.ndarray):
+        raise TypeError(f"{name} must be a NumPy array")
+    if image.dtype != np.dtype(np.uint8):
+        raise TypeError(f"{name} dtype must be uint8")
+    if image.ndim != 3 or image.shape[2] != 3:
+        raise ValueError(f"{name} must have shape (H, W, 3)")
+    if image.shape[0] == 0 or image.shape[1] == 0:
+        raise ValueError(f"{name} must be non-empty")
+    return image
+
+
 def blend_regions(
-    original_image: np.ndarray, processed_image: np.ndarray, soft_mask: np.ndarray
+    original_image: np.ndarray,
+    processed_image: np.ndarray,
+    soft_mask: np.ndarray | None,
 ) -> np.ndarray:
+    """Composite a processed RGB image over its original using a spatial mask.
+
+    The operation is source-over compositing with an opaque original background:
+
+    ``output = mask * processed + (1 - mask) * original``
+
+    Images must be non-empty RGB ``uint8`` arrays with identical shapes.  The
+    mask must be a ``float32`` array of shape ``(H, W)`` or ``(H, W, 1)`` and
+    every value must be finite and in ``[0, 1]``.  A mask of ``None`` means
+    that the complete processed image is selected, but a copy is returned so
+    callers never receive an input alias.
+
+    Values are calculated in ``float32``, clipped to the byte range, and
+    truncated when converted to ``uint8``.  No resizing, clipping, implicit
+    dtype conversion, channel reordering, or mask blurring is performed.
+
+    Raises:
+        TypeError: If an image/mask is not an ndarray or has an unsupported
+            dtype.
+        ValueError: If an image/mask has an invalid shape, mismatched spatial
+            dimensions, or the mask contains a non-finite/out-of-range value.
     """
-    Hòa trộn ảnh gốc và ảnh đã xử lý thông qua mặt nạ mềm (Alpha Compositing).
+    original = _validate_image(original_image, "original_image")
+    processed = _validate_image(processed_image, "processed_image")
+    if original.shape != processed.shape:
+        raise ValueError("original_image and processed_image must have the same shape")
 
-    Công thức: I_out = soft_mask * I_processed + (1.0 - soft_mask) * I_original
-
-    Args:
-        original_image: Ảnh gốc ban đầu (RGB, uint8).
-        processed_image: Ảnh sau khi áp dụng thuật toán xử lý ảnh (RGB, uint8).
-        soft_mask: Mặt nạ mềm float32 shape (H, W) hoặc (H, W, 1) trong khoảng [0.0, 1.0].
-
-    Returns:
-        np.ndarray: Ảnh đã hòa trộn hoàn chỉnh (RGB, uint8).
-    """
     if soft_mask is None:
-        return processed_image
+        return processed.copy()
 
-    # Đảm bảo mặt nạ có 3 kênh màu nếu ảnh là RGB
-    if len(original_image.shape) == 3 and (len(soft_mask.shape) == 2 or soft_mask.shape[2] == 1):
-        if len(soft_mask.shape) == 2:
-            soft_mask = np.expand_dims(soft_mask, axis=-1)
-        soft_mask_3ch = np.repeat(soft_mask, original_image.shape[2], axis=-1)
+    if not isinstance(soft_mask, np.ndarray):
+        raise TypeError("soft_mask must be a NumPy array or None")
+    if soft_mask.dtype != np.dtype(np.float32):
+        raise TypeError("soft_mask dtype must be float32")
+    if soft_mask.ndim == 2:
+        if soft_mask.shape != original.shape[:2]:
+            raise ValueError("soft_mask spatial shape must match the input images")
+        mask = soft_mask[..., None]
+    elif soft_mask.ndim == 3:
+        if soft_mask.shape != (*original.shape[:2], 1):
+            raise ValueError("soft_mask must have shape (H, W) or (H, W, 1)")
+        mask = soft_mask
     else:
-        soft_mask_3ch = soft_mask
+        raise ValueError("soft_mask must have shape (H, W) or (H, W, 1)")
 
-    orig_f = original_image.astype(np.float32)
-    proc_f = processed_image.astype(np.float32)
+    if not np.isfinite(soft_mask).all():
+        raise ValueError("soft_mask must contain only finite values")
+    if np.any(soft_mask < 0.0) or np.any(soft_mask > 1.0):
+        raise ValueError("soft_mask values must be in the range [0, 1]")
 
-    # Tính toán hòa trộn điểm ảnh
-    blended = soft_mask_3ch * proc_f + (1.0 - soft_mask_3ch) * orig_f
+    original_f = original.astype(np.float32)
+    processed_f = processed.astype(np.float32)
+    blended = mask * processed_f + (1.0 - mask) * original_f
+
+    # These are semantic identity points, not approximate numerical results.
+    # Restoring them also protects byte-preservation from float32 cancellation.
+    np.copyto(blended, original_f, where=mask == 0.0)
+    np.copyto(blended, processed_f, where=mask == 1.0)
+    np.copyto(blended, original_f, where=original == processed)
+
     return np.clip(blended, 0.0, 255.0).astype(np.uint8)
