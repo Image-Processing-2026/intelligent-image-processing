@@ -71,7 +71,38 @@ Hàm trả về một mảng mới `float32` shape `(H, W)`, hữu hạn và n�
 `[0.0, 1.0]`; không sửa `image_shape`, `bbox` hoặc input array. Caller phải
 truyền `image.shape[:2]`, không truyền trực tiếp shape ba chiều.
 
-### 2.4 Semantic Text Segmentation (`detector.py`)
+### 2.4 Quadrant Mask (`spatial.py`)
+
+```python
+def create_quadrant_mask(
+    image_shape: tuple[int, int] | list[int] | np.ndarray,
+    quadrant: str,
+    feather_radius: int = 25,
+) -> np.ndarray:
+    """
+    Tạo soft mask float32 cho top/bottom/left/right/center.
+    """
+```
+
+`image_shape` dùng cùng contract với `create_bbox_mask`: tuple/list hoặc
+NumPy array 1D đúng hai số nguyên dương `(H, W)`. `quadrant` phải là chuỗi
+khớp chính xác một trong `top`, `bottom`, `left`, `right`, `center`;
+chuỗi sai, rỗng, viết hoa hoặc có khoảng trắng báo `ValueError`, không
+fallback sang mask toàn ảnh. Quadrant không phải chuỗi báo `TypeError`.
+
+Quy ước vùng dùng cận cuối không bao gồm: `top` chọn
+`y in [0, H//2)`, `bottom` chọn `y in [H//2, H)`, `left` chọn
+`x in [0, W//2)`, `right` chọn `x in [W//2, W)`. `center` chọn
+`y in [H//4, (3*H)//4)` và `x in [W//4, (3*W)//4)`. Kích thước lẻ dành
+hàng/cột dư cho `bottom`/`right`; vùng center có thể rỗng trên ảnh rất
+nhỏ.
+
+`feather_radius` giữ nguyên quy ước Gaussian của `create_soft_mask`:
+`0`/`1` không blur, số chẵn dương được làm tròn lên số lẻ kế tiếp,
+sigma `= kernel / 3`, biên `BORDER_REFLECT_101`. Kết quả là mảng mới
+`float32` shape `(H, W)`, finite, `[0, 1]`; không sửa input.
+
+### 2.5 Semantic Text Segmentation (`detector.py`)
 ```python
 def segment_by_prompt(image: np.ndarray, text_prompt: str) -> np.ndarray:
     """

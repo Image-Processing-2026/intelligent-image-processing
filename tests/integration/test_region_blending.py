@@ -6,7 +6,7 @@ import numpy as np
 from src.processing_engine.base import apply_region_op
 from src.processing_engine.exposure_contrast import apply_gamma
 from src.region_engine.mask_utils import blend_regions, create_soft_mask
-from src.region_engine.spatial import create_bbox_mask
+from src.region_engine.spatial import create_bbox_mask, create_quadrant_mask
 
 
 def test_create_soft_mask_then_apply_region_op_matches_direct_blend() -> None:
@@ -57,3 +57,24 @@ def test_bbox_mask_flows_into_region_blending() -> None:
     expected = np.zeros_like(original)
     expected[1:3, 1:5] = [200, 100, 50]
     np.testing.assert_array_equal(actual, expected)
+
+
+def test_quadrant_masks_flow_into_region_blending() -> None:
+    original = np.zeros((4, 6, 3), dtype=np.uint8)
+    processed = np.empty_like(original)
+    processed[...] = [200, 100, 50]
+    slices = {
+        "top": (slice(0, 2), slice(None)),
+        "bottom": (slice(2, 4), slice(None)),
+        "left": (slice(None), slice(0, 3)),
+        "right": (slice(None), slice(3, 6)),
+        "center": (slice(1, 3), slice(1, 4)),
+    }
+
+    for quadrant, (row_slice, column_slice) in slices.items():
+        mask = create_quadrant_mask((4, 6), quadrant, feather_radius=0)
+        actual = blend_regions(original, processed, mask)
+        expected = np.zeros_like(original)
+        expected[row_slice, column_slice] = [200, 100, 50]
+
+        np.testing.assert_array_equal(actual, expected)

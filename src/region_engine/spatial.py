@@ -93,25 +93,57 @@ def create_bbox_mask(
 
 
 def create_quadrant_mask(
-    image_shape: Tuple[int, int], quadrant: str, feather_radius: int = 25
+    image_shape: Tuple[int, int] | list[int] | np.ndarray,
+    quadrant: str,
+    feather_radius: int = 25,
 ) -> np.ndarray:
-    """
-    Tạo mặt nạ không gian theo góc phân tư (top, bottom, left, right, center).
-    """
-    h, w = image_shape[:2]
-    binary_mask = np.zeros((h, w), dtype=np.uint8)
+    """Tạo soft mask cho một vùng hình học của toàn ảnh.
 
-    if quadrant == "top":
-        binary_mask[0 : h // 2, :] = 255
-    elif quadrant == "bottom":
-        binary_mask[h // 2 : h, :] = 255
-    elif quadrant == "left":
-        binary_mask[:, 0 : w // 2] = 255
-    elif quadrant == "right":
-        binary_mask[:, w // 2 : w] = 255
-    elif quadrant == "center":
-        binary_mask[h // 4 : 3 * h // 4, w // 4 : 3 * w // 4] = 255
-    else:
-        binary_mask[:, :] = 255
+    ``quadrant`` phải khớp chính xác một trong ``top``, ``bottom``, ``left``,
+    ``right`` hoặc ``center``. Tên hàm và các tên vùng được giữ tương thích
+    với API hiện tại; ``top``/``bottom`` là nửa ảnh theo trục y, còn
+    ``left``/``right`` là nửa ảnh theo trục x.
 
-    return create_soft_mask(binary_mask, feather_radius=feather_radius)
+    Args:
+        image_shape: Tuple/list/ndarray 1D đúng hai số nguyên dương ``(H, W)``.
+            Không truyền trực tiếp ``image.shape`` ba chiều.
+        quadrant: Tên vùng phân biệt chữ hoa/chữ thường, không tự trim.
+        feather_radius: Số nguyên không âm theo quy ước kernel của
+            :func:`create_soft_mask`; mặc định là 25.
+
+    Returns:
+        Mảng mới ``float32`` shape ``(H, W)`` với giá trị trong ``[0, 1]``.
+
+    Raises:
+        TypeError: Nếu container/scalar của shape, tên vùng hoặc feather có
+            kiểu không hợp lệ.
+        ValueError: Nếu shape không hợp lệ, tên vùng không được hỗ trợ hoặc
+            feather âm.
+
+    Các khoảng tọa độ dùng cận cuối không bao gồm. Với kích thước lẻ, vùng
+    ``bottom``/``right`` nhận hàng/cột dư. ``center`` dùng
+    ``[H//4, (3*H)//4)`` và ``[W//4, (3*W)//4)``; vùng có thể rỗng trên ảnh
+    rất nhỏ và khi đó trả mask toàn 0.
+    """
+    h, w = _validate_integer_vector(image_shape, name="image_shape", size=2)
+    if h <= 0 or w <= 0:
+        raise ValueError("image_shape dimensions must be positive")
+
+    if not isinstance(quadrant, str):
+        raise TypeError("quadrant must be a string")
+    valid_quadrants = ("top", "bottom", "left", "right", "center")
+    if quadrant not in valid_quadrants:
+        options = ", ".join(valid_quadrants)
+        raise ValueError(f"unsupported quadrant {quadrant!r}; expected one of: {options}")
+
+    radius = _validate_feather_radius(feather_radius)
+    boxes = {
+        "top": (0, 0, w, h // 2),
+        "bottom": (0, h // 2, w, h),
+        "left": (0, 0, w // 2, h),
+        "right": (w // 2, 0, w, h),
+        "center": (w // 4, h // 4, (3 * w) // 4, (3 * h) // 4),
+    }
+
+    # Dùng chung bbox rasterization để hai API giữ cùng quy ước nửa kín.
+    return create_bbox_mask((h, w), boxes[quadrant], feather_radius=radius)
