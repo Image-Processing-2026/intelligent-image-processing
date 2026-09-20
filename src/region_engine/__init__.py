@@ -4,6 +4,16 @@ Cung cấp các công cụ phân đoạn ngữ nghĩa, nhận diện khuôn mặ
 """
 
 from .detector import segment_by_prompt
+from .controller import (
+    InvalidRegionRequestError,
+    RegionBackendUnavailableError,
+    RegionEngineError,
+    RegionInferenceError,
+    RegionRequest,
+    RegionResult,
+    capabilities,
+    resolve_region,
+)
 from .face_detector import (
     FaceDetectionError,
     FaceDetectionRecord,
@@ -23,6 +33,14 @@ from .spatial import create_bbox_mask, create_quadrant_mask
 
 __all__ = [
     "segment_by_prompt",
+    "InvalidRegionRequestError",
+    "RegionBackendUnavailableError",
+    "RegionEngineError",
+    "RegionInferenceError",
+    "RegionRequest",
+    "RegionResult",
+    "capabilities",
+    "resolve_region",
     "SegmentationInferenceError",
     "SegmentationUnavailableError",
     "close_segmentation_backend",

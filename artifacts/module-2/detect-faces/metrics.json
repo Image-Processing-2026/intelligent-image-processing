@@ -1,11 +1,17 @@
 {
+  "mode": "mock",
   "mock_only": true,
   "mock_cases": 7,
   "mock_pass": 7,
   "mock_fail": 0,
+  "assets_ready": false,
+  "inference_executed": false,
+  "quality_passed": null,
   "real_model": {
-    "ready": true,
-    "mode": "mock-only"
+    "mode": "real",
+    "assets_ready": false,
+    "inference_executed": false,
+    "quality_passed": null
   },
   "latency_ms": {
     "p50": 0.7815000062691979,

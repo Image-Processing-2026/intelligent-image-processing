@@ -300,6 +300,31 @@ def test_backend_is_cached_and_close_hook_releases_it(monkeypatch: pytest.Monkey
     assert fake.close_calls == 1
 
 
+def test_backend_cache_key_includes_model_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    first = FakeBackend([])
+    second = FakeBackend([])
+    backends = iter((first, second))
+    calls = 0
+
+    def factory() -> FakeBackend:
+        nonlocal calls
+        calls += 1
+        return next(backends)
+
+    monkeypatch.setattr(backend_module, "_SEGMENTATION_FACTORY", factory)
+    monkeypatch.setenv(backend_module.DINO_MODEL_ENV, "dino-a")
+    monkeypatch.setenv(backend_module.MOBILE_SAM_CHECKPOINT_ENV, "sam-a")
+    backend_module.reset_segmentation_backend()
+
+    segment_by_prompt(IMAGE, "person", feather_radius=0)
+    monkeypatch.setenv(backend_module.DINO_MODEL_ENV, "dino-b")
+    segment_by_prompt(IMAGE, "person", feather_radius=0)
+
+    assert calls == 2
+    assert first.close_calls == 1
+    backend_module.reset_segmentation_backend()
+
+
 def test_unknown_prompt_does_not_fallback_to_full_image(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

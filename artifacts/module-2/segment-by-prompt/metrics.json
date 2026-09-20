@@ -1,9 +1,18 @@
 {
+  "mode": "mock",
   "mock_only": true,
   "cases": 3,
   "pass": 3,
   "fail": 0,
-  "real_model_ready": true,
+  "assets_ready": false,
+  "inference_executed": false,
+  "quality_passed": null,
+  "real_model": {
+    "mode": "real",
+    "assets_ready": false,
+    "inference_executed": false,
+    "quality_passed": null
+  },
   "latency_ms": {
     "p50": 0.0046000059228390455,
     "p95": 0.030665000667795497

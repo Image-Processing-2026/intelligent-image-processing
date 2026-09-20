@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import platform
 import sys
 import time
@@ -29,7 +30,12 @@ import matplotlib.pyplot as plt  # noqa: E402
 from PIL import Image  # noqa: E402
 
 import src.region_engine.face_detector as face_detector  # noqa: E402
-from src.region_engine.face_detector import FaceDetectionRecord, detect_faces  # noqa: E402
+from src.region_engine.face_detector import (  # noqa: E402
+    MODEL_PATH_ENV,
+    FaceDetectionRecord,
+    detect_faces,
+    reset_face_detector,
+)
 from src.region_engine.mask_utils import blend_regions  # noqa: E402
 
 MAXAE_THRESHOLD = 1e-6
@@ -211,14 +217,127 @@ def _real_readiness(manifest_path: Path) -> dict[str, Any]:
         image_path = REPO_ROOT / case["image"]
         if not image_path.is_file():
             missing.append(str(image_path))
+    dependency_error = None
     try:
         import mediapipe  # noqa: F401
     except Exception as exc:
-        return {"ready": False, "missing": missing, "dependency_error": str(exc)}
-    return {"ready": not missing, "missing": missing, "dependency_error": None}
+        dependency_error = str(exc)
+    return {
+        "mode": "real",
+        "assets_ready": not missing and dependency_error is None,
+        "inference_executed": False,
+        "quality_passed": None,
+        "missing": missing,
+        "dependency_error": dependency_error,
+    }
 
 
-def evaluate(fixtures: Path, manifest_path: Path, output: Path, mock_only: bool) -> dict[str, Any]:
+def _bbox_from_mask(mask: np.ndarray) -> list[int] | None:
+    ys, xs = np.where(mask > 0.0)
+    if len(xs) == 0:
+        return None
+    xmin, xmax = int(xs.min()), int(xs.max()) + 1
+    ymin, ymax = int(ys.min()), int(ys.max()) + 1
+    return [xmin, ymin, xmax - xmin, ymax - ymin]
+
+
+def _bbox_iou(first: list[int], second: list[int]) -> float:
+    ax0, ay0, aw, ah = first
+    bx0, by0, bw, bh = second
+    ax1, ay1 = ax0 + aw, ay0 + ah
+    bx1, by1 = bx0 + bw, by0 + bh
+    intersection = max(0, min(ax1, bx1) - max(ax0, bx0)) * max(
+        0, min(ay1, by1) - max(ay0, by0)
+    )
+    union = aw * ah + bw * bh - intersection
+    return 0.0 if union <= 0 else intersection / union
+
+
+def _evaluate_real(manifest_path: Path, output: Path) -> dict[str, Any]:
+    readiness = _real_readiness(manifest_path)
+    if not readiness["assets_ready"]:
+        return readiness
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    model_path = REPO_ROOT / manifest["model"]["path"]
+    original_env = os.environ.get(MODEL_PATH_ENV)
+    original_factory = face_detector._DETECTOR_FACTORY
+    rows: list[dict[str, Any]] = []
+    try:
+        os.environ[MODEL_PATH_ENV] = str(model_path)
+        reset_face_detector()
+        for case_id, case in manifest.get("real_model_cases", {}).items():
+            image_path = REPO_ROOT / case["image"]
+            with Image.open(image_path) as image:
+                rgb = np.asarray(image.convert("RGB"), dtype=np.uint8).copy()
+            masks = detect_faces(rgb, feather_radius=0, expand_ratio=0.0)
+            actual_boxes = [_bbox_from_mask(mask) for mask in masks]
+            expected_count = int(case["expected_count"])
+            expected_bbox = case.get("expected_bbox")
+            bbox_iou = None
+            if expected_bbox is not None and actual_boxes and actual_boxes[0] is not None:
+                bbox_iou = _bbox_iou(actual_boxes[0], [int(value) for value in expected_bbox])
+            row_passed = len(masks) == expected_count and (
+                expected_bbox is None or (bbox_iou is not None and bbox_iou >= 0.5)
+            )
+            rows.append(
+                {
+                    "case_id": case_id,
+                    "expected_count": expected_count,
+                    "actual_count": len(masks),
+                    "expected_bbox": expected_bbox,
+                    "actual_bboxes": actual_boxes,
+                    "bbox_iou": bbox_iou,
+                    "passed": row_passed,
+                }
+            )
+        readiness["inference_executed"] = True
+        readiness["quality_passed"] = bool(rows) and all(row["passed"] for row in rows)
+        readiness["cases"] = rows
+        readiness["thresholds"] = {"bbox_iou": 0.5}
+        return readiness
+    except Exception as exc:
+        readiness["error"] = f"{type(exc).__name__}: {exc}"
+        readiness["cases"] = rows
+        return readiness
+    finally:
+        reset_face_detector()
+        face_detector._DETECTOR_FACTORY = original_factory
+        reset_face_detector()
+        if original_env is None:
+            os.environ.pop(MODEL_PATH_ENV, None)
+        else:
+            os.environ[MODEL_PATH_ENV] = original_env
+
+
+def _write_real_summary(output: Path, summary: dict[str, Any]) -> None:
+    output.mkdir(parents=True, exist_ok=True)
+    logs = output / "logs"
+    logs.mkdir(exist_ok=True)
+    (output / "metrics.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    (output / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "mode": "real",
+                "python": sys.version,
+                "platform": platform.platform(),
+                "numpy": np.__version__,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (logs / "evaluation.log").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    (output / "README.md").write_text(
+        "# Face-detection evaluation\n\n"
+        "This report is from the real MediaPipe path. A missing asset/dependency "
+        "or failed inference is recorded as a failed run.\n",
+        encoding="utf-8",
+    )
+
+
+def _evaluate_mock(fixtures: Path, manifest_path: Path, output: Path) -> dict[str, Any]:
     global _CURRENT_MANIFEST
     _CURRENT_MANIFEST = json.loads((fixtures / "manifest.json").read_text(encoding="utf-8"))
     output.mkdir(parents=True, exist_ok=True)
@@ -237,16 +356,24 @@ def evaluate(fixtures: Path, manifest_path: Path, output: Path, mock_only: bool)
     _plot_edge_and_empty(output)
     _plot_bbox_and_error(output, fixtures, _CURRENT_MANIFEST["cases"]["CENTER"])
     latency = _plot_latency(output, _image((10, 12)), [FaceDetectionRecord(1, 1, 3, 3, 0.9)])
-    real = {"ready": True, "mode": "mock-only"} if mock_only else _real_readiness(manifest_path)
     summary: dict[str, Any] = {
-        "mock_only": mock_only,
+        "mode": "mock",
+        "mock_only": True,
         "mock_cases": len(rows),
         "mock_pass": sum(bool(row["passed"]) for row in rows),
         "mock_fail": sum(not row["passed"] for row in rows),
-        "real_model": real,
+        "assets_ready": False,
+        "inference_executed": False,
+        "quality_passed": None,
+        "real_model": {
+            "mode": "real",
+            "assets_ready": False,
+            "inference_executed": False,
+            "quality_passed": None,
+        },
         "latency_ms": {"p50": float(np.percentile(latency, 50)), "p95": float(np.percentile(latency, 95))},
     }
-    summary["passed"] = summary["mock_fail"] == 0 and (mock_only or real["ready"])
+    summary["passed"] = summary["mock_fail"] == 0
     with (output / "metrics.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
@@ -273,6 +400,44 @@ def evaluate(fixtures: Path, manifest_path: Path, output: Path, mock_only: bool)
     return summary
 
 
+def evaluate(
+    fixtures: Path,
+    manifest_path: Path,
+    output: Path,
+    mock_only: bool,
+    device: str = "cpu",
+) -> dict[str, Any]:
+    """Run either the isolated mock evaluator or the real model evaluator."""
+    if mock_only:
+        original_factory = face_detector._DETECTOR_FACTORY
+        try:
+            return _evaluate_mock(fixtures, manifest_path, output)
+        finally:
+            reset_face_detector()
+            face_detector._DETECTOR_FACTORY = original_factory
+            reset_face_detector()
+    if device != "cpu":
+        summary = {
+            "mode": "real",
+            "assets_ready": False,
+            "inference_executed": False,
+            "quality_passed": None,
+            "error": "face detector currently supports only device=cpu",
+            "passed": False,
+        }
+        _write_real_summary(output, summary)
+        return summary
+    real = _evaluate_real(manifest_path, output)
+    real["mode"] = "real"
+    real["passed"] = bool(
+        real.get("assets_ready")
+        and real.get("inference_executed")
+        and real.get("quality_passed")
+    )
+    _write_real_summary(output, real)
+    return real
+
+
 _CURRENT_MANIFEST: dict[str, Any] = {}
 
 
@@ -282,8 +447,9 @@ def main() -> None:
     parser.add_argument("--manifest", type=Path, default=Path("tests/fixtures/face_detection/assets.json"))
     parser.add_argument("--output-dir", "--output", dest="output", type=Path, default=Path("artifacts/module-2/detect-faces"))
     parser.add_argument("--mock-only", action="store_true")
+    parser.add_argument("--device", default="cpu")
     args = parser.parse_args()
-    summary = evaluate(args.fixtures, args.manifest, args.output, args.mock_only)
+    summary = evaluate(args.fixtures, args.manifest, args.output, args.mock_only, args.device)
     print(json.dumps(summary, indent=2))
     raise SystemExit(0 if summary["passed"] else 1)
 

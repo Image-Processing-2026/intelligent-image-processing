@@ -30,6 +30,7 @@ MOBILE_SAM_CHECKPOINT_ENV = "REGION_MOBILE_SAM_CHECKPOINT"
 BOX_THRESHOLD = 0.35
 TEXT_THRESHOLD = 0.25
 NMS_IOU_THRESHOLD = 0.8
+MAX_MODEL_INPUT_TOKENS = 256
 
 
 class SegmentationUnavailableError(RuntimeError):
@@ -190,7 +191,24 @@ class _GroundingDinoMobileSAMBackend:
     def detect(self, image: np.ndarray, prompt: str) -> list[GroundingDetection]:
         try:
             pil_image = self._image_type.fromarray(image, mode="RGB")
-            inputs = self._processor(images=pil_image, text=[prompt], return_tensors="pt")
+            inputs = self._processor(
+                images=pil_image,
+                text=[prompt],
+                return_tensors="pt",
+                truncation=False,
+            )
+            input_ids = inputs.get("input_ids")
+            if input_ids is not None and getattr(input_ids, "ndim", 0) >= 2:
+                token_count = int(input_ids.shape[-1])
+                model_limit = getattr(self._dino.config, "max_position_embeddings", None)
+                if not isinstance(model_limit, int) or model_limit <= 0:
+                    model_limit = MAX_MODEL_INPUT_TOKENS
+                effective_limit = min(model_limit, MAX_MODEL_INPUT_TOKENS)
+                if token_count > effective_limit:
+                    raise SegmentationInferenceError(
+                        "GroundingDINO tokenizer produced "
+                        f"{token_count} tokens, exceeding the model limit {effective_limit}"
+                    )
             inputs = {
                 key: value.to(self._device) if callable(getattr(value, "to", None)) else value
                 for key, value in inputs.items()
@@ -274,14 +292,16 @@ def _create_default_backend() -> SegmentationBackend:
 
 _SEGMENTATION_FACTORY: Callable[[], SegmentationBackend] = _create_default_backend
 _SEGMENTATION_CACHE: SegmentationBackend | None = None
-_SEGMENTATION_CACHE_KEY: int | None = None
+_SEGMENTATION_CACHE_KEY: tuple[int, str, str] | None = None
 _SEGMENTATION_LOCK = threading.RLock()
 
 
 def _get_backend_locked() -> SegmentationBackend:
     """Return the cached backend; caller must hold ``_SEGMENTATION_LOCK``."""
     global _SEGMENTATION_CACHE, _SEGMENTATION_CACHE_KEY
-    cache_key = id(_SEGMENTATION_FACTORY)
+    dino_path = _resolve_path(DINO_MODEL_ENV, DEFAULT_DINO_MODEL_PATH)
+    sam_path = _resolve_path(MOBILE_SAM_CHECKPOINT_ENV, DEFAULT_MOBILE_SAM_CHECKPOINT)
+    cache_key = (id(_SEGMENTATION_FACTORY), str(dino_path), str(sam_path))
     if _SEGMENTATION_CACHE is not None and _SEGMENTATION_CACHE_KEY == cache_key:
         return _SEGMENTATION_CACHE
     if _SEGMENTATION_CACHE is not None:
@@ -337,6 +357,7 @@ __all__ = [
     "DINO_MODEL_ENV",
     "GroundingDetection",
     "MOBILE_SAM_CHECKPOINT_ENV",
+    "MAX_MODEL_INPUT_TOKENS",
     "NMS_IOU_THRESHOLD",
     "SegmentationInferenceError",
     "SegmentationUnavailableError",

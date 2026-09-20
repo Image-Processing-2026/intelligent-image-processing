@@ -168,6 +168,27 @@ model từ mạng. Dùng `close_segmentation_backend()` hoặc
 `reset_segmentation_backend()` khi shutdown/test. Cần cài optional extra
 segmentation và chuẩn bị asset bằng script riêng trước real-model inference.
 
+### 2.6 Module 2 controller (`controller.py`)
+
+`resolve_region(image, request)` là facade chuẩn hóa cho caller bên ngoài.
+Request có `kind` là `full`, `bbox`, `spatial`, `face`, `semantic` hoặc
+`binary_mask`, cùng các trường `bbox`, `quadrant`, `prompt`, `binary_mask`,
+`feather_radius`, `expand_ratio` và `merge_policy`. Mapping runtime cũng được
+chấp nhận; nếu bỏ `kind`, controller suy luận từ `target_prompt` theo các
+exact command đã khóa.
+
+Controller luôn trả `RegionResult` với mask `float32`, shape `(H,W)`, finite và
+`[0,1]`; không dùng `None` cho empty. `status` là `ok` hoặc `empty`, trong đó
+empty dùng mask toàn 0. Face masks được merge bằng `max` một lần và giữ
+`instance_masks`; semantic result giữ provenance prompt/backend trong metadata.
+Controller không gọi `blend_regions`; Module 3 vẫn là nơi blend duy nhất.
+
+`InvalidRegionRequestError` dành cho request sai, `RegionBackendUnavailableError`
+cho dependency/checkpoint chưa sẵn sàng và `RegionInferenceError` cho lỗi model
+đã khởi tạo. `capabilities()` chỉ đọc đường dẫn/dependency và trả riêng trạng
+thái hình học, asset, dependency và `inference_verified`; không tự warm-up hoặc
+tải model.
+
 ---
 
 ## 3. Important Rules for Person 2 & AI Sessions

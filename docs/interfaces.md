@@ -49,7 +49,13 @@ class TechnicalMetrics(BaseModel):
 class RegionOperationPlan(BaseModel):
     region_id: str = Field(..., description="Unique ID or target descriptor, e.g. 'sky', 'face', 'full_image'")
     target_prompt: str = Field(..., description="Text prompt for segmentation or bounding box")
-    region_type: Literal["semantic", "face", "spatial", "full"]
+    region_type: Literal["semantic", "face", "spatial", "full", "bbox", "binary_mask"] = "semantic"
+    bbox: Optional[tuple[int, int, int, int]] = None
+    quadrant: Optional[str] = None
+    feather_radius: int = Field(default=15, ge=0)
+    expand_ratio: float = Field(default=0.15, ge=0.0, le=1.0)
+    merge_policy: Literal["max"] = "max"
+    binary_mask: Optional[Any] = None
     detected_issue: str = Field(..., description="e.g. 'underexposed', 'high_noise', 'low_contrast'")
     operation: Literal[
         "denoise", 
@@ -112,6 +118,39 @@ def evaluate_no_reference(
 
 ### 3.2 Module 2: Region Engine (`src/region_engine/`)
 ```python
+@dataclass(frozen=True)
+class RegionRequest:
+    kind: Literal["full", "bbox", "spatial", "face", "semantic", "binary_mask"]
+    bbox: Optional[tuple[int, int, int, int]] = None
+    quadrant: Optional[str] = None
+    prompt: Optional[str] = None
+    binary_mask: Optional[np.ndarray] = None
+    feather_radius: int = 15
+    expand_ratio: float = 0.15
+    merge_policy: Literal["max"] = "max"
+
+
+@dataclass(frozen=True)
+class RegionResult:
+    status: Literal["ok", "empty"]
+    mask: np.ndarray  # float32, shape (H, W), [0, 1]; never None
+    instance_masks: tuple[np.ndarray, ...]
+    metadata: Dict[str, Any]
+
+
+def resolve_region(
+    image: np.ndarray,
+    request: RegionRequest | Mapping[str, Any],
+) -> RegionResult:
+    """Resolve one region request without blending the image."""
+    ...
+
+
+def capabilities() -> Dict[str, Any]:
+    """Report geometric readiness, AI assets/dependencies, and verification."""
+    ...
+
+
 def segment_by_prompt(
     image: np.ndarray, text_prompt: str, feather_radius: int = 15
 ) -> np.ndarray:

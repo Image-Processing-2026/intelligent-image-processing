@@ -31,10 +31,23 @@ PERSON_IMAGE = (
     / "PNGImages"
     / "FudanPed00046.png"
 )
+PERSON_MASK = (
+    REPO_ROOT
+    / "tests"
+    / "fixtures"
+    / "prompt_segmentation"
+    / "penn_fudan"
+    / "PedMasks"
+    / "FudanPed00046_mask.png"
+)
 
 
 def _require_assets() -> None:
-    missing = [str(path) for path in (DINO_PATH, SAM_PATH, PERSON_IMAGE) if not path.exists()]
+    missing = [
+        str(path)
+        for path in (DINO_PATH, SAM_PATH, PERSON_IMAGE, PERSON_MASK)
+        if not path.exists()
+    ]
     if missing:
         pytest.fail(
             "real prompt-segmentation assets are missing: "
@@ -58,5 +71,14 @@ def test_grounding_dino_mobile_sam_person_contract(monkeypatch: pytest.MonkeyPat
     assert mask.shape == rgb.shape[:2]
     assert np.isfinite(mask).all()
     assert 0.0 <= float(mask.min()) <= float(mask.max()) <= 1.0
-    assert np.count_nonzero(mask) > 0
+    with Image.open(PERSON_MASK) as image:
+        expected = np.asarray(image.convert("L"), dtype=np.uint8) > 0
+    predicted = mask > 0.0
+    intersection = np.count_nonzero(predicted & expected)
+    union = np.count_nonzero(predicted | expected)
+    denominator = np.count_nonzero(predicted) + np.count_nonzero(expected)
+    iou = 1.0 if union == 0 else intersection / union
+    dice = 1.0 if denominator == 0 else 2.0 * intersection / denominator
+    assert iou >= 0.3
+    assert dice >= 0.45
     reset_segmentation_backend()
