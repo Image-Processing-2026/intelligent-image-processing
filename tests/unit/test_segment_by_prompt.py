@@ -8,7 +8,11 @@ import numpy as np
 import pytest
 
 import src.region_engine.segmentation_backend as backend_module
-from src.region_engine.detector import segment_by_prompt
+from src.region_engine.detector import (
+    PromptSegmentationConfig,
+    resolve_prompt_instances,
+    segment_by_prompt,
+)
 from src.region_engine.segmentation_backend import (
     GroundingDetection,
     SegmentationInferenceError,
@@ -154,6 +158,46 @@ def test_duplicate_boxes_are_removed_by_class_agnostic_nms(fake_backend: FakeBac
     segment_by_prompt(IMAGE, "person", feather_radius=0)
 
     assert fake_backend.predict_boxes == [duplicate, other]
+
+
+def test_nms_keeps_overlapping_different_phrases_as_separate_instances(
+    fake_backend: FakeBackend,
+) -> None:
+    duplicate = (1.0, 1.0, 4.0, 4.0)
+    fake_backend.detections = [
+        detection(duplicate, score=0.9, phrase="person"),
+        detection(duplicate, score=0.8, phrase="bicycle"),
+    ]
+    first = np.zeros(IMAGE.shape[:2], dtype=bool)
+    first[1:4, 1:4] = True
+    second = np.zeros(IMAGE.shape[:2], dtype=bool)
+    second[0:2, 0:2] = True
+    fake_backend.masks = {duplicate: first}
+
+    # The fake maps by bbox, so use the instance API to assert the detector
+    # records rather than relying on two indistinguishable predictor calls.
+    result = resolve_prompt_instances(IMAGE, "person . bicycle", config=PromptSegmentationConfig())
+
+    assert [item.phrase for item in result.detections] == ["person", "bicycle"]
+    assert len(result.instance_masks) == 2
+    assert fake_backend.predict_boxes == [duplicate, duplicate]
+
+
+def test_instance_api_preserves_hard_masks_and_wrapper_feathers_once(fake_backend: FakeBackend) -> None:
+    first_box = (1.0, 0.0, 3.0, 2.0)
+    second_box = (3.0, 1.0, 5.0, 3.0)
+    fake_backend.detections = [detection(first_box), detection(second_box, score=0.8)]
+    first = np.zeros(IMAGE.shape[:2], dtype=bool)
+    first[0:2, 1:3] = True
+    second = np.zeros(IMAGE.shape[:2], dtype=bool)
+    second[1:3, 3:5] = True
+    fake_backend.masks = {first_box: first, second_box: second}
+
+    result = resolve_prompt_instances(IMAGE, "person")
+
+    assert len(result.instance_masks) == 2
+    assert result.instance_masks[0].dtype == np.bool_
+    np.testing.assert_array_equal(result.union_hard_mask, first | second)
 
 
 def test_boxes_are_clipped_before_mobile_sam(fake_backend: FakeBackend) -> None:

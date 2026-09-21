@@ -153,9 +153,12 @@ hạn 256 token ước lượng của model báo `ValueError`; không cắt ng�
 Exact command `full`, `all`, `toàn`, `toàn bộ`, `full_image` trả mask toàn 1.
 `top`, `bottom`, `left`, `right`, `center`, `giữa` dùng quadrant geometry mà
 không load model. Các prompt còn lại đi qua GroundingDINO Tiny + MobileSAM
-local trên CPU. DINO dùng box threshold `0.35`, text threshold `0.25`, NMS
-class-agnostic IoU `>0.8`; các bbox được clip, mask MobileSAM được OR thành
-một union rồi mới gọi `create_soft_mask` đúng một lần. Không có detection hợp lệ
+local trên CPU. `PromptSegmentationConfig` giữ explicit box/text threshold và
+NMS IoU (mặc định `0.35`/`0.25`/`0.8`) trong metadata kết quả. NMS chỉ suppress
+box cùng phrase, nên hai đối tượng hợp lệ có phrase khác nhau không triệt tiêu
+nhau. `resolve_prompt_instances()` trả bbox/score/phrase cùng hard mask từng
+instance; `segment_by_prompt()` giữ API cũ, OR instance rồi gọi
+`create_soft_mask` đúng một lần. Không có detection hợp lệ
 trả mask toàn 0. Thiếu model/dependency/init ném `SegmentationUnavailableError`;
 lỗi inference hoặc output ném `SegmentationInferenceError`, không fallback thành
 mask toàn ảnh hay quadrant.
@@ -175,19 +178,27 @@ Request có `kind` là `full`, `bbox`, `spatial`, `face`, `semantic` hoặc
 `binary_mask`, cùng các trường `bbox`, `quadrant`, `prompt`, `binary_mask`,
 `feather_radius`, `expand_ratio` và `merge_policy`. Mapping runtime cũng được
 chấp nhận; nếu bỏ `kind`, controller suy luận từ `target_prompt` theo các
-exact command đã khóa.
+exact command đã khóa. `instance_selection=all|largest|index` chọn instance
+trước khi hợp mask; `instance_index` chỉ dùng với `index`.
 
 Controller luôn trả `RegionResult` với mask `float32`, shape `(H,W)`, finite và
 `[0,1]`; không dùng `None` cho empty. `status` là `ok` hoặc `empty`, trong đó
-empty dùng mask toàn 0. Face masks được merge bằng `max` một lần và giữ
-`instance_masks`; semantic result giữ provenance prompt/backend trong metadata.
-Controller không gọi `blend_regions`; Module 3 vẫn là nơi blend duy nhất.
+empty dùng mask toàn 0. Face request không truyền `face_mode` vẫn là `bbox`
+để tương thích. `face_mode=oval` gọi Face Landmarker IMAGE mode, rasterize
+vòng landmark face-oval chính thức và trả hard per-face `instance_masks` cùng
+`contours` pixel-space; controller chỉ feather sau khi đã chọn/hợp. Đây là
+vùng oval hình học, không phải skin segmentation. `sam_refined` hiện báo
+backend unavailable rõ ràng, không fallback âm thầm sang bbox. Semantic result
+giữ prompt gốc/prompt gửi model, config, bbox/score/phrase và timing trong
+metadata. Controller không gọi `blend_regions`; Module 3 vẫn là nơi blend duy
+nhất.
 
 `InvalidRegionRequestError` dành cho request sai, `RegionBackendUnavailableError`
 cho dependency/checkpoint chưa sẵn sàng và `RegionInferenceError` cho lỗi model
 đã khởi tạo. `capabilities()` chỉ đọc đường dẫn/dependency và trả riêng trạng
-thái hình học, asset, dependency và `inference_verified`; không tự warm-up hoặc
-tải model.
+thái hình học, asset, dependency và `inference_verified`; fake resolver không
+thể đặt cờ verified. Report còn tách `model_load_verified` và `quality_passed`
+(luôn false cho tới khi có report GT khóa); không tự warm-up hoặc tải model.
 
 ---
 

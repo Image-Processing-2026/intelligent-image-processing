@@ -42,6 +42,13 @@ def _request_for_action(action) -> RegionRequest:
         feather_radius=action.feather_radius,
         expand_ratio=action.expand_ratio,
         merge_policy=action.merge_policy,
+        face_mode=action.face_mode,
+        num_faces=action.num_faces,
+        instance_selection=action.instance_selection,
+        instance_index=action.instance_index,
+        box_threshold=action.box_threshold,
+        text_threshold=action.text_threshold,
+        nms_iou_threshold=action.nms_iou_threshold,
     )
 
 

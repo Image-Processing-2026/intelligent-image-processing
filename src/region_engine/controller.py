@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import math
 import os
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,7 +19,10 @@ from typing import Any, Callable, Literal
 
 import numpy as np
 
-from .detector import segment_by_prompt
+from .detector import (
+    PromptSegmentationConfig,
+    resolve_prompt_instances,
+)
 from .face_detector import (
     DEFAULT_MODEL_PATH as DEFAULT_FACE_MODEL_PATH,
 )
@@ -30,12 +34,26 @@ from .face_detector import (
     FaceDetectorUnavailableError,
     detect_faces,
 )
+from .face_landmarker import (
+    DEFAULT_MODEL_PATH as DEFAULT_FACE_LANDMARKER_MODEL_PATH,
+)
+from .face_landmarker import (
+    MODEL_PATH_ENV as FACE_LANDMARKER_MODEL_ENV,
+)
+from .face_landmarker import (
+    FaceLandmarkerError,
+    FaceLandmarkerUnavailableError,
+    FaceOval,
+    detect_face_ovals,
+)
 from .mask_utils import create_soft_mask
 from .segmentation_backend import (
     DEFAULT_DINO_MODEL_PATH,
     DEFAULT_MOBILE_SAM_CHECKPOINT,
     DINO_MODEL_ENV,
     MOBILE_SAM_CHECKPOINT_ENV,
+    NMS_IOU_THRESHOLD,
+    TEXT_THRESHOLD,
     SegmentationInferenceError,
     SegmentationUnavailableError,
 )
@@ -44,12 +62,20 @@ from .spatial import create_bbox_mask, create_quadrant_mask
 RegionKind = Literal["full", "bbox", "spatial", "face", "semantic", "binary_mask"]
 RegionStatus = Literal["ok", "empty"]
 MergePolicy = Literal["max"]
+FaceMode = Literal["bbox", "oval", "sam_refined"]
+InstanceSelection = Literal["all", "largest", "index"]
 
 _VALID_KINDS = frozenset(("full", "bbox", "spatial", "face", "semantic", "binary_mask"))
 _SPATIAL_NAMES = frozenset(("top", "bottom", "left", "right", "center", "giữa"))
 _FACE_NAMES = frozenset(("face", "faces", "khuôn mặt", "khuôn mặt người"))
 _FULL_NAMES = frozenset(("full", "all", "toàn", "toàn bộ", "full_image"))
-_INFERENCE_VERIFIED = {"face": False, "semantic": False}
+# Values are path/config keys set only by the production resolver.  Injected
+# fake resolvers are useful test seams but cannot certify a real model.
+_INFERENCE_VERIFIED: dict[str, tuple[str, ...] | None] = {
+    "face_bbox": None,
+    "face_oval": None,
+    "semantic": None,
+}
 
 
 class RegionEngineError(RuntimeError):
@@ -86,6 +112,13 @@ class RegionRequest:
     feather_radius: int = 15
     expand_ratio: float = 0.15
     merge_policy: MergePolicy = "max"
+    face_mode: FaceMode = "bbox"
+    num_faces: int = 4
+    instance_selection: InstanceSelection = "all"
+    instance_index: int | None = None
+    box_threshold: float = 0.35
+    text_threshold: float = TEXT_THRESHOLD
+    nms_iou_threshold: float = NMS_IOU_THRESHOLD
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "RegionRequest":
@@ -113,6 +146,13 @@ class RegionRequest:
             feather_radius=payload.get("feather_radius", 15),
             expand_ratio=payload.get("expand_ratio", 0.15),
             merge_policy=payload.get("merge_policy", "max"),
+            face_mode=payload.get("face_mode", "bbox"),
+            num_faces=payload.get("num_faces", 4),
+            instance_selection=payload.get("instance_selection", payload.get("selection", "all")),
+            instance_index=payload.get("instance_index"),
+            box_threshold=payload.get("box_threshold", 0.35),
+            text_threshold=payload.get("text_threshold", TEXT_THRESHOLD),
+            nms_iou_threshold=payload.get("nms_iou_threshold", NMS_IOU_THRESHOLD),
         )
 
 
@@ -123,6 +163,7 @@ class RegionResult:
     status: RegionStatus
     mask: np.ndarray
     instance_masks: tuple[np.ndarray, ...] = ()
+    contours: tuple[np.ndarray, ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -195,6 +236,50 @@ def _validate_common(request: RegionRequest) -> tuple[int, float, str]:
     return radius, ratio, request.kind
 
 
+def _validate_face_options(request: RegionRequest) -> tuple[str, int, str, int | None]:
+    if request.face_mode not in ("bbox", "oval", "sam_refined"):
+        raise InvalidRegionRequestError("face_mode must be 'bbox', 'oval', or 'sam_refined'")
+    if isinstance(request.num_faces, (bool, np.bool_)) or not isinstance(
+        request.num_faces, (int, np.integer)
+    ):
+        raise InvalidRegionRequestError("num_faces must be a positive integer")
+    num_faces = int(request.num_faces)
+    if num_faces <= 0:
+        raise InvalidRegionRequestError("num_faces must be a positive integer")
+    selection, index = _validate_instance_selection(request)
+    return request.face_mode, num_faces, selection, index
+
+
+def _validate_instance_selection(request: RegionRequest) -> tuple[str, int | None]:
+    if request.instance_selection not in ("all", "largest", "index"):
+        raise InvalidRegionRequestError("instance_selection must be 'all', 'largest', or 'index'")
+    index = request.instance_index
+    if request.instance_selection == "index":
+        if isinstance(index, (bool, np.bool_)) or not isinstance(index, (int, np.integer)):
+            raise InvalidRegionRequestError("instance_index is required when instance_selection is 'index'")
+        if int(index) < 0:
+            raise InvalidRegionRequestError("instance_index must be non-negative")
+        index = int(index)
+    elif index is not None:
+        raise InvalidRegionRequestError("instance_index is allowed only when instance_selection is 'index'")
+    return request.instance_selection, index
+
+
+def _semantic_config(request: RegionRequest) -> PromptSegmentationConfig:
+    raw_values = {
+        "box_threshold": request.box_threshold,
+        "text_threshold": request.text_threshold,
+        "nms_iou_threshold": request.nms_iou_threshold,
+    }
+    for name, raw_value in raw_values.items():
+        if isinstance(raw_value, (bool, np.bool_)) or not isinstance(raw_value, (int, float, np.integer, np.floating)):
+            raise InvalidRegionRequestError(f"{name} must be a finite number in [0, 1]")
+        value = float(raw_value)
+        if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+            raise InvalidRegionRequestError(f"{name} must be a finite number in [0, 1]")
+    return PromptSegmentationConfig(**{name: float(value) for name, value in raw_values.items()})
+
+
 def _validate_mask(mask: object, shape: tuple[int, int], *, name: str) -> np.ndarray:
     if not isinstance(mask, np.ndarray):
         raise RegionInferenceError(f"{name} must be a NumPy array")
@@ -211,7 +296,7 @@ def _validate_mask(mask: object, shape: tuple[int, int], *, name: str) -> np.nda
 
 def _empty_result(shape: tuple[int, int], backend: str, metadata: dict[str, Any]) -> RegionResult:
     details = {"backend": backend, **metadata}
-    return RegionResult("empty", np.zeros(shape, dtype=np.float32), (), details)
+    return RegionResult("empty", np.zeros(shape, dtype=np.float32), (), (), details)
 
 
 def _ok_result(
@@ -219,11 +304,35 @@ def _ok_result(
     backend: str,
     metadata: dict[str, Any],
     instance_masks: tuple[np.ndarray, ...] = (),
+    contours: tuple[np.ndarray, ...] = (),
 ) -> RegionResult:
     validated = _validate_mask(mask, mask.shape, name="resolved mask")
     details = {"backend": backend, **metadata}
     status: RegionStatus = "empty" if not np.any(validated) else "ok"
-    return RegionResult(status, validated, instance_masks, details)
+    return RegionResult(status, validated, instance_masks, contours, details)
+
+
+def _select_instances(
+    masks: tuple[np.ndarray, ...], selection: str, index: int | None
+) -> tuple[tuple[np.ndarray, ...], tuple[int, ...]]:
+    if not masks:
+        return (), ()
+    if selection == "all":
+        positions = tuple(range(len(masks)))
+    elif selection == "largest":
+        positions = (max(range(len(masks)), key=lambda position: float(masks[position].sum())),)
+    else:
+        assert index is not None
+        if index >= len(masks):
+            raise InvalidRegionRequestError(
+                f"instance_index {index} is outside the {len(masks)} available instances"
+            )
+        positions = (index,)
+    return tuple(masks[position] for position in positions), positions
+
+
+def _mark_inference_verified(kind: str, *key: str) -> None:
+    _INFERENCE_VERIFIED[kind] = tuple(key)
 
 
 def _resolve_request(request: RegionRequest | Mapping[str, Any]) -> RegionRequest:
@@ -245,6 +354,7 @@ def resolve_region(
     *,
     _face_resolver: Callable[..., list[np.ndarray]] | None = None,
     _semantic_resolver: Callable[..., np.ndarray] | None = None,
+    _face_oval_resolver: Callable[..., list[FaceOval]] | None = None,
 ) -> RegionResult:
     """Resolve one normalized request into a concrete Module 2 mask.
 
@@ -311,59 +421,180 @@ def resolve_region(
             )
 
         if kind == "face":
-            resolver = _face_resolver or detect_faces
-            masks = resolver(validated_image, feather_radius=radius, expand_ratio=ratio)
-            normalized_masks = tuple(
-                _validate_mask(mask, shape, name=f"face mask {index}")
-                for index, mask in enumerate(masks)
-            )
-            _INFERENCE_VERIFIED["face"] = True
-            if not normalized_masks:
-                return _empty_result(
-                    shape,
-                    "mediapipe",
-                    {
-                        "kind": kind,
-                        "count": 0,
-                        "feather_radius": radius,
-                        "expand_ratio": ratio,
-                        "merge_policy": normalized.merge_policy,
-                    },
+            face_mode, num_faces, selection, index = _validate_face_options(normalized)
+            if face_mode == "sam_refined":
+                raise RegionBackendUnavailableError(
+                    "face_mode='sam_refined' is experimental and is not enabled in this build"
                 )
-            merged = np.maximum.reduce(normalized_masks)
-            return _ok_result(
-                merged,
-                "mediapipe",
-                {
+            started = time.perf_counter()
+            if face_mode == "bbox":
+                resolver = _face_resolver or detect_faces
+                masks = resolver(validated_image, feather_radius=radius, expand_ratio=ratio)
+                normalized_masks = tuple(
+                    _validate_mask(mask, shape, name=f"face mask {mask_index}")
+                    for mask_index, mask in enumerate(masks)
+                )
+                selected_masks, positions = _select_instances(normalized_masks, selection, index)
+                if _face_resolver is None:
+                    _mark_inference_verified("face_bbox", str(_resolved_path(FACE_MODEL_ENV, DEFAULT_FACE_MODEL_PATH)))
+                details = {
                     "kind": kind,
+                    "face_mode": "bbox",
                     "count": len(normalized_masks),
+                    "selected_indices": positions,
+                    "instance_selection": selection,
                     "feather_radius": radius,
                     "expand_ratio": ratio,
                     "merge_policy": normalized.merge_policy,
-                },
-                normalized_masks,
+                    "mask_kind": "soft",
+                    "timing_ms": round((time.perf_counter() - started) * 1000, 3),
+                }
+                if not selected_masks:
+                    return _empty_result(shape, "mediapipe", details)
+                return _ok_result(
+                    np.maximum.reduce(selected_masks),
+                    "mediapipe",
+                    details,
+                    selected_masks,
+                )
+
+            resolver = _face_oval_resolver or detect_face_ovals
+            ovals = resolver(validated_image, num_faces=num_faces)
+            if ovals is None or isinstance(ovals, (str, bytes)):
+                raise RegionInferenceError("face oval resolver returned a non-sequence")
+            normalized_masks: list[np.ndarray] = []
+            contours: list[np.ndarray] = []
+            for oval_index, oval in enumerate(ovals):
+                if not isinstance(oval, FaceOval):
+                    raise RegionInferenceError(f"face oval {oval_index} has an invalid record type")
+                hard_mask = _validate_mask(oval.mask, shape, name=f"face oval mask {oval_index}")
+                if np.any((hard_mask != 0.0) & (hard_mask != 1.0)):
+                    raise RegionInferenceError(f"face oval mask {oval_index} must be binary")
+                contour = np.asarray(oval.contour, dtype=np.float32)
+                if contour.ndim != 2 or contour.shape[1] != 2 or len(contour) < 3:
+                    raise RegionInferenceError(f"face oval contour {oval_index} must have shape (N, 2), N >= 3")
+                if not np.isfinite(contour).all():
+                    raise RegionInferenceError(f"face oval contour {oval_index} must be finite")
+                normalized_masks.append(hard_mask)
+                contours.append(contour.copy())
+            selected_masks, positions = _select_instances(tuple(normalized_masks), selection, index)
+            selected_contours = tuple(contours[position] for position in positions)
+            if _face_oval_resolver is None:
+                _mark_inference_verified(
+                    "face_oval",
+                    str(_resolved_path(FACE_LANDMARKER_MODEL_ENV, DEFAULT_FACE_LANDMARKER_MODEL_PATH)),
+                    str(num_faces),
+                )
+            details = {
+                "kind": kind,
+                "face_mode": "oval",
+                "count": len(normalized_masks),
+                "selected_indices": positions,
+                "instance_selection": selection,
+                "feather_radius": radius,
+                "expand_ratio": ratio,
+                "merge_policy": normalized.merge_policy,
+                "mask_kind": "hard_instance_soft_union",
+                "timing_ms": round((time.perf_counter() - started) * 1000, 3),
+            }
+            if not selected_masks:
+                return _empty_result(shape, "mediapipe_face_landmarker", details)
+            union = np.logical_or.reduce(tuple(mask > 0.0 for mask in selected_masks))
+            soft_mask = create_soft_mask(union.astype(np.uint8), feather_radius=radius)
+            return _ok_result(
+                soft_mask,
+                "mediapipe_face_landmarker",
+                details,
+                selected_masks,
+                selected_contours,
             )
 
         if kind == "semantic":
             if not isinstance(normalized.prompt, str) or not normalized.prompt.strip():
                 raise InvalidRegionRequestError("prompt is required for region kind 'semantic'")
-            resolver = _semantic_resolver or segment_by_prompt
-            mask = _validate_mask(
-                resolver(validated_image, normalized.prompt, feather_radius=radius),
-                shape,
-                name="semantic mask",
+            selection, index = _validate_instance_selection(normalized)
+            config = _semantic_config(normalized)
+            started = time.perf_counter()
+            if _semantic_resolver is not None:
+                mask = _validate_mask(
+                    _semantic_resolver(validated_image, normalized.prompt, feather_radius=radius),
+                    shape,
+                    name="semantic mask",
+                )
+                return _ok_result(
+                    mask,
+                    "custom_semantic_resolver",
+                    {
+                        "kind": kind,
+                        "requested_prompt": normalized.prompt,
+                        "model_prompt": None,
+                        "feather_radius": radius,
+                        "config": {
+                            "box_threshold": config.box_threshold,
+                            "text_threshold": config.text_threshold,
+                            "nms_iou_threshold": config.nms_iou_threshold,
+                        },
+                        "timing_ms": round((time.perf_counter() - started) * 1000, 3),
+                    },
+                )
+            semantic = resolve_prompt_instances(
+                validated_image,
+                normalized.prompt,
+                config=config,
             )
-            _INFERENCE_VERIFIED["semantic"] = True
+            selected_masks, positions = _select_instances(
+                tuple(
+                    _validate_mask(mask, shape, name=f"semantic instance mask {mask_index}")
+                    for mask_index, mask in enumerate(semantic.instance_masks)
+                ),
+                selection,
+                index,
+            )
+            semantic_backend = "geometry" if not semantic.detections else "groundingdino+mobilesam"
+            if semantic_backend != "geometry":
+                _mark_inference_verified(
+                    "semantic",
+                    str(_resolved_path(DINO_MODEL_ENV, DEFAULT_DINO_MODEL_PATH)),
+                    str(_resolved_path(MOBILE_SAM_CHECKPOINT_ENV, DEFAULT_MOBILE_SAM_CHECKPOINT)),
+                )
+            details = {
+                "kind": kind,
+                "requested_prompt": semantic.original_prompt,
+                "model_prompt": semantic.model_prompt,
+                "count": len(semantic.instance_masks),
+                "selected_indices": positions,
+                "instance_selection": selection,
+                "feather_radius": radius,
+                "mask_kind": "hard_instance_soft_union",
+                "config": {
+                    "box_threshold": config.box_threshold,
+                    "text_threshold": config.text_threshold,
+                    "nms_iou_threshold": config.nms_iou_threshold,
+                },
+                "detections": [
+                    {"bbox": detection.box, "score": detection.score, "phrase": detection.phrase}
+                    for detection in semantic.detections
+                ],
+                "timing_ms": round((time.perf_counter() - started) * 1000, 3),
+            }
+            if not selected_masks:
+                return _empty_result(shape, semantic_backend, details)
+            union = np.logical_or.reduce(tuple(mask > 0.0 for mask in selected_masks))
             return _ok_result(
-                mask,
-                "groundingdino+mobilesam",
-                {"kind": kind, "prompt": normalized.prompt, "feather_radius": radius},
+                create_soft_mask(union.astype(np.uint8), feather_radius=radius),
+                semantic_backend,
+                details,
+                selected_masks,
             )
     except InvalidRegionRequestError:
         raise
-    except (FaceDetectorUnavailableError, SegmentationUnavailableError) as exc:
+    except (
+        FaceDetectorUnavailableError,
+        FaceLandmarkerUnavailableError,
+        SegmentationUnavailableError,
+    ) as exc:
         raise RegionBackendUnavailableError(str(exc)) from exc
-    except (FaceDetectionError, SegmentationInferenceError) as exc:
+    except (FaceDetectionError, FaceLandmarkerError, SegmentationInferenceError) as exc:
         raise RegionInferenceError(str(exc)) from exc
     except (TypeError, ValueError) as exc:
         raise InvalidRegionRequestError("region request could not be resolved") from exc
@@ -391,6 +622,9 @@ def _dependency_available(name: str) -> bool:
 def capabilities() -> dict[str, Any]:
     """Report static asset/dependency readiness without loading model weights."""
     face_path = _resolved_path(FACE_MODEL_ENV, DEFAULT_FACE_MODEL_PATH)
+    face_landmarker_path = _resolved_path(
+        FACE_LANDMARKER_MODEL_ENV, DEFAULT_FACE_LANDMARKER_MODEL_PATH
+    )
     dino_path = _resolved_path(DINO_MODEL_ENV, DEFAULT_DINO_MODEL_PATH)
     sam_path = _resolved_path(MOBILE_SAM_CHECKPOINT_ENV, DEFAULT_MOBILE_SAM_CHECKPOINT)
     face_dependencies = {"mediapipe": _dependency_available("mediapipe")}
@@ -400,7 +634,17 @@ def capabilities() -> dict[str, Any]:
         "mobile_sam": _dependency_available("mobile_sam"),
     }
     face_assets = {"model": face_path.is_file()}
+    face_oval_assets = {"model": face_landmarker_path.is_file()}
     semantic_assets = {"grounding_dino": dino_path.is_dir(), "mobile_sam": sam_path.is_file()}
+    face_key = (str(face_path),)
+    face_oval_key_prefix = (str(face_landmarker_path),)
+    semantic_key = (str(dino_path), str(sam_path))
+    face_verified = _INFERENCE_VERIFIED["face_bbox"] == face_key
+    face_oval_verified = (
+        _INFERENCE_VERIFIED["face_oval"] is not None
+        and _INFERENCE_VERIFIED["face_oval"][:1] == face_oval_key_prefix
+    )
+    semantic_verified = _INFERENCE_VERIFIED["semantic"] == semantic_key
     return {
         "geometric": {
             "ready": True,
@@ -409,15 +653,36 @@ def capabilities() -> dict[str, Any]:
         "face": {
             "ready": all(face_assets.values()) and all(face_dependencies.values()),
             "assets_present": face_assets,
+            "asset_validation": {"hash_verified": False},
+            "dependencies_importable": face_dependencies,
             "dependencies_available": face_dependencies,
-            "inference_verified": _INFERENCE_VERIFIED["face"],
+            "model_load_verified": face_verified,
+            "inference_verified": face_verified,
+            "quality_passed": False,
             "model_path": str(face_path),
+        },
+        "face_oval": {
+            "ready": all(face_oval_assets.values()) and all(face_dependencies.values()),
+            "assets_present": face_oval_assets,
+            "asset_validation": {"hash_verified": False},
+            "dependencies_importable": face_dependencies,
+            "dependencies_available": face_dependencies,
+            "model_load_verified": face_oval_verified,
+            "inference_verified": face_oval_verified,
+            "quality_passed": False,
+            "model_path": str(face_landmarker_path),
+            "implemented_modes": ["oval"],
+            "experimental_modes": ["sam_refined"],
         },
         "semantic": {
             "ready": all(semantic_assets.values()) and all(semantic_dependencies.values()),
             "assets_present": semantic_assets,
+            "asset_validation": {"hash_verified": False, "snapshot_complete": False},
+            "dependencies_importable": semantic_dependencies,
             "dependencies_available": semantic_dependencies,
-            "inference_verified": _INFERENCE_VERIFIED["semantic"],
+            "model_load_verified": semantic_verified,
+            "inference_verified": semantic_verified,
+            "quality_passed": False,
             "dino_model_path": str(dino_path),
             "mobile_sam_checkpoint": str(sam_path),
         },

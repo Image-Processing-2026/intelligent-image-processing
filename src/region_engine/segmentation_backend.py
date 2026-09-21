@@ -51,7 +51,14 @@ class GroundingDetection:
 
 
 class SegmentationBackend(Protocol):
-    def detect(self, image: np.ndarray, prompt: str) -> object:
+    def detect(
+        self,
+        image: np.ndarray,
+        prompt: str,
+        *,
+        box_threshold: float = BOX_THRESHOLD,
+        text_threshold: float = TEXT_THRESHOLD,
+    ) -> object:
         """Return raw or normalized bbox detections for one image."""
 
     def set_image(self, image: np.ndarray) -> None:
@@ -188,7 +195,14 @@ class _GroundingDinoMobileSAMBackend:
                 f"Could not initialize local GroundingDINO/MobileSAM assets: {dino_path}, {sam_path}"
             ) from exc
 
-    def detect(self, image: np.ndarray, prompt: str) -> list[GroundingDetection]:
+    def detect(
+        self,
+        image: np.ndarray,
+        prompt: str,
+        *,
+        box_threshold: float = BOX_THRESHOLD,
+        text_threshold: float = TEXT_THRESHOLD,
+    ) -> list[GroundingDetection]:
         try:
             pil_image = self._image_type.fromarray(image, mode="RGB")
             inputs = self._processor(
@@ -218,8 +232,8 @@ class _GroundingDinoMobileSAMBackend:
             results = self._processor.post_process_grounded_object_detection(
                 outputs,
                 input_ids=inputs.get("input_ids"),
-                threshold=BOX_THRESHOLD,
-                text_threshold=TEXT_THRESHOLD,
+                threshold=box_threshold,
+                text_threshold=text_threshold,
                 target_sizes=[image.shape[:2]],
                 text_labels=[[prompt]],
             )

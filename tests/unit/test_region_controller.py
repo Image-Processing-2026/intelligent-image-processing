@@ -13,6 +13,7 @@ from src.region_engine.controller import (
     resolve_region,
 )
 from src.region_engine.face_detector import FaceDetectorUnavailableError
+from src.region_engine.face_landmarker import FaceOval
 from src.region_engine.segmentation_backend import SegmentationUnavailableError
 
 IMAGE = np.zeros((5, 8, 3), dtype=np.uint8)
@@ -96,6 +97,45 @@ def test_empty_face_result_is_zero_mask() -> None:
     assert result.status == "empty"
     assert result.metadata["count"] == 0
     np.testing.assert_array_equal(result.mask, np.zeros((5, 8), dtype=np.float32))
+
+
+def test_face_oval_feathers_after_selection_and_returns_contour() -> None:
+    first = np.zeros((5, 8), dtype=bool)
+    first[0:2, 0:2] = True
+    second = np.zeros((5, 8), dtype=bool)
+    second[1:5, 3:7] = True
+    first_contour = np.array([[0, 0], [1, 0], [1, 1]], dtype=np.float32)
+    second_contour = np.array([[3, 1], [6, 1], [6, 4]], dtype=np.float32)
+
+    result = resolve_region(
+        IMAGE,
+        RegionRequest(
+            kind="face",
+            face_mode="oval",
+            instance_selection="largest",
+            feather_radius=0,
+        ),
+        _face_oval_resolver=lambda _image, *, num_faces: [
+            FaceOval(first, first_contour),
+            FaceOval(second, second_contour),
+        ],
+    )
+
+    assert result.metadata["face_mode"] == "oval"
+    assert result.metadata["selected_indices"] == (1,)
+    assert result.metadata["mask_kind"] == "hard_instance_soft_union"
+    assert len(result.instance_masks) == len(result.contours) == 1
+    np.testing.assert_array_equal(result.mask, second.astype(np.float32))
+    np.testing.assert_array_equal(result.contours[0], second_contour)
+
+
+def test_instance_index_is_validated_against_available_instances() -> None:
+    with pytest.raises(InvalidRegionRequestError, match="outside"):
+        resolve_region(
+            IMAGE,
+            RegionRequest(kind="face", instance_selection="index", instance_index=2),
+            _face_resolver=lambda *_args, **_kwargs: [np.ones((5, 8), dtype=np.float32)],
+        )
 
 
 def test_semantic_backend_errors_are_typed_and_preserve_cause() -> None:
