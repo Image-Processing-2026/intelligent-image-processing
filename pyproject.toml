@@ -32,6 +32,14 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "ruff>=0.3.0",
     "pyiqa>=0.1.9",
+    "scipy>=1.14.1",
+    "matplotlib>=3.8.0",
+]
+segmentation = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "transformers>=4.51.0",
+    "safetensors>=0.4.0",
 ]
 
 [tool.ruff]
@@ -52,3 +60,7 @@ ignore = ["E501"]
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+addopts = "-m 'not real_model'"
+markers = [
+    "real_model: requires explicitly prepared model checkpoints and dataset fixtures",
+]

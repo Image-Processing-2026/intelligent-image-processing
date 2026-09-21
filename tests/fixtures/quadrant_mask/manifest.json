@@ -1,0 +1,2895 @@
+{
+  "source": "independent literal/coordinate hard oracle and scipy.ndimage.gaussian_filter",
+  "numpy_version": "2.2.6",
+  "scipy_version": "1.17.1",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "feather_radii": [
+    0,
+    1,
+    2,
+    3,
+    24,
+    25
+  ],
+  "quadrants": [
+    "top",
+    "bottom",
+    "left",
+    "right",
+    "center"
+  ],
+  "reference": {
+    "hard_coordinate": "np.indices; direct axis inequalities from project contract",
+    "feather_identity_radii": [
+      0,
+      1
+    ],
+    "kernel_size": "r if r is odd else r + 1",
+    "sigma": "kernel_size / 3.0",
+    "radius": "kernel_size // 2",
+    "mode": "mirror",
+    "output": "float64"
+  },
+  "cases": {
+    "even_4x6_top": {
+      "shape": [
+        4,
+        6
+      ],
+      "quadrant": "top",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/even_4x6_top.npy",
+      "hard_sha256": "1f847f519efb9dc94b4861bb5ad1ca5bb87e8398985d409f08482702da6cc359",
+      "soft": {
+        "0": {
+          "expected": "soft/even_4x6_top_r0.npy",
+          "expected_sha256": "1f847f519efb9dc94b4861bb5ad1ca5bb87e8398985d409f08482702da6cc359",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/even_4x6_top_r1.npy",
+          "expected_sha256": "1f847f519efb9dc94b4861bb5ad1ca5bb87e8398985d409f08482702da6cc359",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/even_4x6_top_r2.npy",
+          "expected_sha256": "3735fe604cae1aeda7ddb137b76aa4ff886202ca3ba15fa3ea728c65129ebd04",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/even_4x6_top_r3.npy",
+          "expected_sha256": "3735fe604cae1aeda7ddb137b76aa4ff886202ca3ba15fa3ea728c65129ebd04",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/even_4x6_top_r24.npy",
+          "expected_sha256": "69246226e424c2b492668703028de2e4d07220b47090dd4c8b601bc9287751f4",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/even_4x6_top_r25.npy",
+          "expected_sha256": "69246226e424c2b492668703028de2e4d07220b47090dd4c8b601bc9287751f4",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "even_4x6_bottom": {
+      "shape": [
+        4,
+        6
+      ],
+      "quadrant": "bottom",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/even_4x6_bottom.npy",
+      "hard_sha256": "d4d9d5e1d2dfc52c5d36880a956c4acae550ce12e624c3c38f1e28376f1876b5",
+      "soft": {
+        "0": {
+          "expected": "soft/even_4x6_bottom_r0.npy",
+          "expected_sha256": "d4d9d5e1d2dfc52c5d36880a956c4acae550ce12e624c3c38f1e28376f1876b5",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/even_4x6_bottom_r1.npy",
+          "expected_sha256": "d4d9d5e1d2dfc52c5d36880a956c4acae550ce12e624c3c38f1e28376f1876b5",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/even_4x6_bottom_r2.npy",
+          "expected_sha256": "bf8bc86ca13c7d87e377fb400733b217b6c60559fd3695e98832494d2527bbdd",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/even_4x6_bottom_r3.npy",
+          "expected_sha256": "bf8bc86ca13c7d87e377fb400733b217b6c60559fd3695e98832494d2527bbdd",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/even_4x6_bottom_r24.npy",
+          "expected_sha256": "1a3dfe9a5f5e8862750b41508b7f04547d381c2ec643df462d9675e4268df215",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/even_4x6_bottom_r25.npy",
+          "expected_sha256": "1a3dfe9a5f5e8862750b41508b7f04547d381c2ec643df462d9675e4268df215",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "even_4x6_left": {
+      "shape": [
+        4,
+        6
+      ],
+      "quadrant": "left",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/even_4x6_left.npy",
+      "hard_sha256": "e00a74bcada5673895d634b536644436c02f572d56ec462757c5156305c5345a",
+      "soft": {
+        "0": {
+          "expected": "soft/even_4x6_left_r0.npy",
+          "expected_sha256": "e00a74bcada5673895d634b536644436c02f572d56ec462757c5156305c5345a",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/even_4x6_left_r1.npy",
+          "expected_sha256": "e00a74bcada5673895d634b536644436c02f572d56ec462757c5156305c5345a",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/even_4x6_left_r2.npy",
+          "expected_sha256": "95e21a1ae4a9fa36fde271f77cc0486aba9fbe6808a8b6b331513235fcec50a9",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/even_4x6_left_r3.npy",
+          "expected_sha256": "95e21a1ae4a9fa36fde271f77cc0486aba9fbe6808a8b6b331513235fcec50a9",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/even_4x6_left_r24.npy",
+          "expected_sha256": "3a59ebd13d081f1caf82974bd1b0c705061ec0bfdff3aaf39e1377a1313909a2",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/even_4x6_left_r25.npy",
+          "expected_sha256": "3a59ebd13d081f1caf82974bd1b0c705061ec0bfdff3aaf39e1377a1313909a2",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "even_4x6_right": {
+      "shape": [
+        4,
+        6
+      ],
+      "quadrant": "right",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/even_4x6_right.npy",
+      "hard_sha256": "797897dcf98c61858d2d941038fc2497a34829e83d4b00d161873b8932bc3e12",
+      "soft": {
+        "0": {
+          "expected": "soft/even_4x6_right_r0.npy",
+          "expected_sha256": "797897dcf98c61858d2d941038fc2497a34829e83d4b00d161873b8932bc3e12",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/even_4x6_right_r1.npy",
+          "expected_sha256": "797897dcf98c61858d2d941038fc2497a34829e83d4b00d161873b8932bc3e12",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/even_4x6_right_r2.npy",
+          "expected_sha256": "053b5e91e6f484e046dfd69fabc061adcd5058244f29cf351d3f106daf082b2b",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/even_4x6_right_r3.npy",
+          "expected_sha256": "053b5e91e6f484e046dfd69fabc061adcd5058244f29cf351d3f106daf082b2b",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/even_4x6_right_r24.npy",
+          "expected_sha256": "15244d5d271225e6e7fd40c48531c812247cdb73e85635d38eb5f0eda0aca929",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/even_4x6_right_r25.npy",
+          "expected_sha256": "15244d5d271225e6e7fd40c48531c812247cdb73e85635d38eb5f0eda0aca929",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "even_4x6_center": {
+      "shape": [
+        4,
+        6
+      ],
+      "quadrant": "center",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/even_4x6_center.npy",
+      "hard_sha256": "a3a8c981f8dfdaf8c57fa2f340d3d730859108c1463909ad80add4e46221e82b",
+      "soft": {
+        "0": {
+          "expected": "soft/even_4x6_center_r0.npy",
+          "expected_sha256": "a3a8c981f8dfdaf8c57fa2f340d3d730859108c1463909ad80add4e46221e82b",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/even_4x6_center_r1.npy",
+          "expected_sha256": "a3a8c981f8dfdaf8c57fa2f340d3d730859108c1463909ad80add4e46221e82b",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/even_4x6_center_r2.npy",
+          "expected_sha256": "f108d96141bcb6d4258754bd2353f4da7d0bd16e0a4e13fe7be9e3a0f3db388a",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/even_4x6_center_r3.npy",
+          "expected_sha256": "f108d96141bcb6d4258754bd2353f4da7d0bd16e0a4e13fe7be9e3a0f3db388a",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/even_4x6_center_r24.npy",
+          "expected_sha256": "e4bf7ccfbfe29f6743794bc0806fc42490e3e9872305131bada8742c6791b8ee",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/even_4x6_center_r25.npy",
+          "expected_sha256": "e4bf7ccfbfe29f6743794bc0806fc42490e3e9872305131bada8742c6791b8ee",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "odd_5x7_top": {
+      "shape": [
+        5,
+        7
+      ],
+      "quadrant": "top",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/odd_5x7_top.npy",
+      "hard_sha256": "b88bc041074557bfca5f8f95f4fd008efceb5b439495851eb029a5ffa856b2e0",
+      "soft": {
+        "0": {
+          "expected": "soft/odd_5x7_top_r0.npy",
+          "expected_sha256": "b88bc041074557bfca5f8f95f4fd008efceb5b439495851eb029a5ffa856b2e0",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/odd_5x7_top_r1.npy",
+          "expected_sha256": "b88bc041074557bfca5f8f95f4fd008efceb5b439495851eb029a5ffa856b2e0",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/odd_5x7_top_r2.npy",
+          "expected_sha256": "9c0200df51b3618756daccfaf88f6e3a4f9dee638b84f3f98126de1265d30903",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/odd_5x7_top_r3.npy",
+          "expected_sha256": "9c0200df51b3618756daccfaf88f6e3a4f9dee638b84f3f98126de1265d30903",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/odd_5x7_top_r24.npy",
+          "expected_sha256": "b1c5e188b461a07d773bff77a0d4d864d98f674325a91a9a976d86746f6f9a06",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/odd_5x7_top_r25.npy",
+          "expected_sha256": "b1c5e188b461a07d773bff77a0d4d864d98f674325a91a9a976d86746f6f9a06",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "odd_5x7_bottom": {
+      "shape": [
+        5,
+        7
+      ],
+      "quadrant": "bottom",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/odd_5x7_bottom.npy",
+      "hard_sha256": "769e18750ceabb04c68c528b2907f80737b70b1f178b2fd939df00f7e0c38e5b",
+      "soft": {
+        "0": {
+          "expected": "soft/odd_5x7_bottom_r0.npy",
+          "expected_sha256": "769e18750ceabb04c68c528b2907f80737b70b1f178b2fd939df00f7e0c38e5b",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/odd_5x7_bottom_r1.npy",
+          "expected_sha256": "769e18750ceabb04c68c528b2907f80737b70b1f178b2fd939df00f7e0c38e5b",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/odd_5x7_bottom_r2.npy",
+          "expected_sha256": "3cf1d809bdbdca3194de361174277a334bad4f36a7bcb7ce9ebd89eaf67dd1c0",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/odd_5x7_bottom_r3.npy",
+          "expected_sha256": "3cf1d809bdbdca3194de361174277a334bad4f36a7bcb7ce9ebd89eaf67dd1c0",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/odd_5x7_bottom_r24.npy",
+          "expected_sha256": "2731268d37c7bc9d00427874135ebd24f8981556dd411573274bc874a731ccd0",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/odd_5x7_bottom_r25.npy",
+          "expected_sha256": "2731268d37c7bc9d00427874135ebd24f8981556dd411573274bc874a731ccd0",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "odd_5x7_left": {
+      "shape": [
+        5,
+        7
+      ],
+      "quadrant": "left",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/odd_5x7_left.npy",
+      "hard_sha256": "e6c6c480e7162031670c4805609aa7bb871f97e738f1d0bf471620462b972dc4",
+      "soft": {
+        "0": {
+          "expected": "soft/odd_5x7_left_r0.npy",
+          "expected_sha256": "e6c6c480e7162031670c4805609aa7bb871f97e738f1d0bf471620462b972dc4",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/odd_5x7_left_r1.npy",
+          "expected_sha256": "e6c6c480e7162031670c4805609aa7bb871f97e738f1d0bf471620462b972dc4",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/odd_5x7_left_r2.npy",
+          "expected_sha256": "59342b6d4dbb0394a2949abcaa728d31e69075fe2aa7f546131656e58a0810ed",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/odd_5x7_left_r3.npy",
+          "expected_sha256": "59342b6d4dbb0394a2949abcaa728d31e69075fe2aa7f546131656e58a0810ed",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/odd_5x7_left_r24.npy",
+          "expected_sha256": "b3052cd905f2bc82b27d3d057257c500591b54b043a70a54f1c6e8208b448ec1",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/odd_5x7_left_r25.npy",
+          "expected_sha256": "b3052cd905f2bc82b27d3d057257c500591b54b043a70a54f1c6e8208b448ec1",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "odd_5x7_right": {
+      "shape": [
+        5,
+        7
+      ],
+      "quadrant": "right",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/odd_5x7_right.npy",
+      "hard_sha256": "07e8045008cd14ace89086b855a8bb24730ed8018978d73f2d90d50900de14ae",
+      "soft": {
+        "0": {
+          "expected": "soft/odd_5x7_right_r0.npy",
+          "expected_sha256": "07e8045008cd14ace89086b855a8bb24730ed8018978d73f2d90d50900de14ae",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/odd_5x7_right_r1.npy",
+          "expected_sha256": "07e8045008cd14ace89086b855a8bb24730ed8018978d73f2d90d50900de14ae",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/odd_5x7_right_r2.npy",
+          "expected_sha256": "27a723d545a44779aecfb6b5040c315d7159667854841fc9c003b4d5ec695f71",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/odd_5x7_right_r3.npy",
+          "expected_sha256": "27a723d545a44779aecfb6b5040c315d7159667854841fc9c003b4d5ec695f71",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/odd_5x7_right_r24.npy",
+          "expected_sha256": "f270258dc72f2d002db5065d3dbe11defe90d1e1e23e2b6fd10877e94cc22875",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/odd_5x7_right_r25.npy",
+          "expected_sha256": "f270258dc72f2d002db5065d3dbe11defe90d1e1e23e2b6fd10877e94cc22875",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "odd_5x7_center": {
+      "shape": [
+        5,
+        7
+      ],
+      "quadrant": "center",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/odd_5x7_center.npy",
+      "hard_sha256": "2fe35794b020006699b3199dc051bfc8b582c72c702dc6cf53bb64be14d5073a",
+      "soft": {
+        "0": {
+          "expected": "soft/odd_5x7_center_r0.npy",
+          "expected_sha256": "2fe35794b020006699b3199dc051bfc8b582c72c702dc6cf53bb64be14d5073a",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/odd_5x7_center_r1.npy",
+          "expected_sha256": "2fe35794b020006699b3199dc051bfc8b582c72c702dc6cf53bb64be14d5073a",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/odd_5x7_center_r2.npy",
+          "expected_sha256": "60f4cd172f5de0dff396967a9f8e62b44e98f6ffb1422f0c16adafbf6a2e18f5",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/odd_5x7_center_r3.npy",
+          "expected_sha256": "60f4cd172f5de0dff396967a9f8e62b44e98f6ffb1422f0c16adafbf6a2e18f5",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/odd_5x7_center_r24.npy",
+          "expected_sha256": "3a077d17cf9f4fc51a2fb42fddcb248da4ef1cb41135096de29d647491243d75",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/odd_5x7_center_r25.npy",
+          "expected_sha256": "3a077d17cf9f4fc51a2fb42fddcb248da4ef1cb41135096de29d647491243d75",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "tiny_1x1_top": {
+      "shape": [
+        1,
+        1
+      ],
+      "quadrant": "top",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/tiny_1x1_top.npy",
+      "hard_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+      "soft": {
+        "0": {
+          "expected": "soft/tiny_1x1_top_r0.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/tiny_1x1_top_r1.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/tiny_1x1_top_r2.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/tiny_1x1_top_r3.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/tiny_1x1_top_r24.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/tiny_1x1_top_r25.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "tiny_1x1_bottom": {
+      "shape": [
+        1,
+        1
+      ],
+      "quadrant": "bottom",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/tiny_1x1_bottom.npy",
+      "hard_sha256": "c309b9ddf5703f7aa0971dcfc1bd864ed7efc0a9c3701523568b1ccf36839bdd",
+      "soft": {
+        "0": {
+          "expected": "soft/tiny_1x1_bottom_r0.npy",
+          "expected_sha256": "c309b9ddf5703f7aa0971dcfc1bd864ed7efc0a9c3701523568b1ccf36839bdd",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/tiny_1x1_bottom_r1.npy",
+          "expected_sha256": "c309b9ddf5703f7aa0971dcfc1bd864ed7efc0a9c3701523568b1ccf36839bdd",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/tiny_1x1_bottom_r2.npy",
+          "expected_sha256": "c309b9ddf5703f7aa0971dcfc1bd864ed7efc0a9c3701523568b1ccf36839bdd",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/tiny_1x1_bottom_r3.npy",
+          "expected_sha256": "c309b9ddf5703f7aa0971dcfc1bd864ed7efc0a9c3701523568b1ccf36839bdd",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/tiny_1x1_bottom_r24.npy",
+          "expected_sha256": "c309b9ddf5703f7aa0971dcfc1bd864ed7efc0a9c3701523568b1ccf36839bdd",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/tiny_1x1_bottom_r25.npy",
+          "expected_sha256": "c309b9ddf5703f7aa0971dcfc1bd864ed7efc0a9c3701523568b1ccf36839bdd",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "tiny_1x1_left": {
+      "shape": [
+        1,
+        1
+      ],
+      "quadrant": "left",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/tiny_1x1_left.npy",
+      "hard_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+      "soft": {
+        "0": {
+          "expected": "soft/tiny_1x1_left_r0.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/tiny_1x1_left_r1.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/tiny_1x1_left_r2.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/tiny_1x1_left_r3.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/tiny_1x1_left_r24.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/tiny_1x1_left_r25.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "tiny_1x1_right": {
+      "shape": [
+        1,
+        1
+      ],
+      "quadrant": "right",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/tiny_1x1_right.npy",
+      "hard_sha256": "c309b9ddf5703f7aa0971dcfc1bd864ed7efc0a9c3701523568b1ccf36839bdd",
+      "soft": {
+        "0": {
+          "expected": "soft/tiny_1x1_right_r0.npy",
+          "expected_sha256": "c309b9ddf5703f7aa0971dcfc1bd864ed7efc0a9c3701523568b1ccf36839bdd",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/tiny_1x1_right_r1.npy",
+          "expected_sha256": "c309b9ddf5703f7aa0971dcfc1bd864ed7efc0a9c3701523568b1ccf36839bdd",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/tiny_1x1_right_r2.npy",
+          "expected_sha256": "c309b9ddf5703f7aa0971dcfc1bd864ed7efc0a9c3701523568b1ccf36839bdd",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/tiny_1x1_right_r3.npy",
+          "expected_sha256": "c309b9ddf5703f7aa0971dcfc1bd864ed7efc0a9c3701523568b1ccf36839bdd",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/tiny_1x1_right_r24.npy",
+          "expected_sha256": "c309b9ddf5703f7aa0971dcfc1bd864ed7efc0a9c3701523568b1ccf36839bdd",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/tiny_1x1_right_r25.npy",
+          "expected_sha256": "c309b9ddf5703f7aa0971dcfc1bd864ed7efc0a9c3701523568b1ccf36839bdd",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "tiny_1x1_center": {
+      "shape": [
+        1,
+        1
+      ],
+      "quadrant": "center",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/tiny_1x1_center.npy",
+      "hard_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+      "soft": {
+        "0": {
+          "expected": "soft/tiny_1x1_center_r0.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/tiny_1x1_center_r1.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/tiny_1x1_center_r2.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/tiny_1x1_center_r3.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/tiny_1x1_center_r24.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/tiny_1x1_center_r25.npy",
+          "expected_sha256": "2cabcb9773848419128d4465abee37919bc98536ae2a4bf90135f88a885cc8a1",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "tiny_1x5_top": {
+      "shape": [
+        1,
+        5
+      ],
+      "quadrant": "top",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/tiny_1x5_top.npy",
+      "hard_sha256": "18530bc8b58bb96dbf2fed3be549a8cf643aba9055645fa4c963df29ecce37d3",
+      "soft": {
+        "0": {
+          "expected": "soft/tiny_1x5_top_r0.npy",
+          "expected_sha256": "18530bc8b58bb96dbf2fed3be549a8cf643aba9055645fa4c963df29ecce37d3",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/tiny_1x5_top_r1.npy",
+          "expected_sha256": "18530bc8b58bb96dbf2fed3be549a8cf643aba9055645fa4c963df29ecce37d3",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/tiny_1x5_top_r2.npy",
+          "expected_sha256": "18530bc8b58bb96dbf2fed3be549a8cf643aba9055645fa4c963df29ecce37d3",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/tiny_1x5_top_r3.npy",
+          "expected_sha256": "18530bc8b58bb96dbf2fed3be549a8cf643aba9055645fa4c963df29ecce37d3",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/tiny_1x5_top_r24.npy",
+          "expected_sha256": "18530bc8b58bb96dbf2fed3be549a8cf643aba9055645fa4c963df29ecce37d3",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/tiny_1x5_top_r25.npy",
+          "expected_sha256": "18530bc8b58bb96dbf2fed3be549a8cf643aba9055645fa4c963df29ecce37d3",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "tiny_1x5_bottom": {
+      "shape": [
+        1,
+        5
+      ],
+      "quadrant": "bottom",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/tiny_1x5_bottom.npy",
+      "hard_sha256": "60128d6644fd80f2d07fb1fa4ea7785d69b0c094a6c854ab2f23bb312b18457e",
+      "soft": {
+        "0": {
+          "expected": "soft/tiny_1x5_bottom_r0.npy",
+          "expected_sha256": "60128d6644fd80f2d07fb1fa4ea7785d69b0c094a6c854ab2f23bb312b18457e",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/tiny_1x5_bottom_r1.npy",
+          "expected_sha256": "60128d6644fd80f2d07fb1fa4ea7785d69b0c094a6c854ab2f23bb312b18457e",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/tiny_1x5_bottom_r2.npy",
+          "expected_sha256": "60128d6644fd80f2d07fb1fa4ea7785d69b0c094a6c854ab2f23bb312b18457e",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/tiny_1x5_bottom_r3.npy",
+          "expected_sha256": "60128d6644fd80f2d07fb1fa4ea7785d69b0c094a6c854ab2f23bb312b18457e",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/tiny_1x5_bottom_r24.npy",
+          "expected_sha256": "60128d6644fd80f2d07fb1fa4ea7785d69b0c094a6c854ab2f23bb312b18457e",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/tiny_1x5_bottom_r25.npy",
+          "expected_sha256": "60128d6644fd80f2d07fb1fa4ea7785d69b0c094a6c854ab2f23bb312b18457e",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "tiny_1x5_left": {
+      "shape": [
+        1,
+        5
+      ],
+      "quadrant": "left",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/tiny_1x5_left.npy",
+      "hard_sha256": "6a3f0a5d9f8c1ba96b20960d0db2dc190cc187ffe745e47dd7e4d1982f5384d8",
+      "soft": {
+        "0": {
+          "expected": "soft/tiny_1x5_left_r0.npy",
+          "expected_sha256": "6a3f0a5d9f8c1ba96b20960d0db2dc190cc187ffe745e47dd7e4d1982f5384d8",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/tiny_1x5_left_r1.npy",
+          "expected_sha256": "6a3f0a5d9f8c1ba96b20960d0db2dc190cc187ffe745e47dd7e4d1982f5384d8",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/tiny_1x5_left_r2.npy",
+          "expected_sha256": "2eec4beb06832dac877977144a38f3198b3407f8eed467c8b63a582ef6616111",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/tiny_1x5_left_r3.npy",
+          "expected_sha256": "2eec4beb06832dac877977144a38f3198b3407f8eed467c8b63a582ef6616111",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/tiny_1x5_left_r24.npy",
+          "expected_sha256": "f932c6efc88f3f67e67bfcfcba7d647a6181e23ea9bb9f9061cde47d1650a21b",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/tiny_1x5_left_r25.npy",
+          "expected_sha256": "f932c6efc88f3f67e67bfcfcba7d647a6181e23ea9bb9f9061cde47d1650a21b",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "tiny_1x5_right": {
+      "shape": [
+        1,
+        5
+      ],
+      "quadrant": "right",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/tiny_1x5_right.npy",
+      "hard_sha256": "e47cdaa067db0c572def578bc29ae8df6a23ffe2f9aee3847ca8f21545b50bdd",
+      "soft": {
+        "0": {
+          "expected": "soft/tiny_1x5_right_r0.npy",
+          "expected_sha256": "e47cdaa067db0c572def578bc29ae8df6a23ffe2f9aee3847ca8f21545b50bdd",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/tiny_1x5_right_r1.npy",
+          "expected_sha256": "e47cdaa067db0c572def578bc29ae8df6a23ffe2f9aee3847ca8f21545b50bdd",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/tiny_1x5_right_r2.npy",
+          "expected_sha256": "7422dbbaf0396f4ebffecaa2390308787abaa06e14cf3df4c141b56d146b1484",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/tiny_1x5_right_r3.npy",
+          "expected_sha256": "7422dbbaf0396f4ebffecaa2390308787abaa06e14cf3df4c141b56d146b1484",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/tiny_1x5_right_r24.npy",
+          "expected_sha256": "6295ece2d29cec2ac35cc0d95514f2e92574a3bb20f7a8435e7b1d1215fa59d0",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/tiny_1x5_right_r25.npy",
+          "expected_sha256": "6295ece2d29cec2ac35cc0d95514f2e92574a3bb20f7a8435e7b1d1215fa59d0",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "tiny_1x5_center": {
+      "shape": [
+        1,
+        5
+      ],
+      "quadrant": "center",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/tiny_1x5_center.npy",
+      "hard_sha256": "18530bc8b58bb96dbf2fed3be549a8cf643aba9055645fa4c963df29ecce37d3",
+      "soft": {
+        "0": {
+          "expected": "soft/tiny_1x5_center_r0.npy",
+          "expected_sha256": "18530bc8b58bb96dbf2fed3be549a8cf643aba9055645fa4c963df29ecce37d3",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/tiny_1x5_center_r1.npy",
+          "expected_sha256": "18530bc8b58bb96dbf2fed3be549a8cf643aba9055645fa4c963df29ecce37d3",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/tiny_1x5_center_r2.npy",
+          "expected_sha256": "18530bc8b58bb96dbf2fed3be549a8cf643aba9055645fa4c963df29ecce37d3",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/tiny_1x5_center_r3.npy",
+          "expected_sha256": "18530bc8b58bb96dbf2fed3be549a8cf643aba9055645fa4c963df29ecce37d3",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/tiny_1x5_center_r24.npy",
+          "expected_sha256": "18530bc8b58bb96dbf2fed3be549a8cf643aba9055645fa4c963df29ecce37d3",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/tiny_1x5_center_r25.npy",
+          "expected_sha256": "18530bc8b58bb96dbf2fed3be549a8cf643aba9055645fa4c963df29ecce37d3",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "tiny_5x1_top": {
+      "shape": [
+        5,
+        1
+      ],
+      "quadrant": "top",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/tiny_5x1_top.npy",
+      "hard_sha256": "f529a8473b4e9348484039d4090120ff173414b89cee569e8e1bf42851a88f98",
+      "soft": {
+        "0": {
+          "expected": "soft/tiny_5x1_top_r0.npy",
+          "expected_sha256": "f529a8473b4e9348484039d4090120ff173414b89cee569e8e1bf42851a88f98",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/tiny_5x1_top_r1.npy",
+          "expected_sha256": "f529a8473b4e9348484039d4090120ff173414b89cee569e8e1bf42851a88f98",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/tiny_5x1_top_r2.npy",
+          "expected_sha256": "c9ce6d486cff4c528e74fd44bc6cdba6a6f1f7dacda2cc7b3f5584dcc808caef",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/tiny_5x1_top_r3.npy",
+          "expected_sha256": "c9ce6d486cff4c528e74fd44bc6cdba6a6f1f7dacda2cc7b3f5584dcc808caef",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/tiny_5x1_top_r24.npy",
+          "expected_sha256": "f1005457b1e40160cf57d8f065c0b7a0bb390b8609b6d30ee03ff95c612a78d8",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/tiny_5x1_top_r25.npy",
+          "expected_sha256": "f1005457b1e40160cf57d8f065c0b7a0bb390b8609b6d30ee03ff95c612a78d8",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "tiny_5x1_bottom": {
+      "shape": [
+        5,
+        1
+      ],
+      "quadrant": "bottom",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/tiny_5x1_bottom.npy",
+      "hard_sha256": "f31dcfad9c93d57911d01445dc241bdef7d93e1022efabe4c1c30f6a47bbf2ed",
+      "soft": {
+        "0": {
+          "expected": "soft/tiny_5x1_bottom_r0.npy",
+          "expected_sha256": "f31dcfad9c93d57911d01445dc241bdef7d93e1022efabe4c1c30f6a47bbf2ed",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/tiny_5x1_bottom_r1.npy",
+          "expected_sha256": "f31dcfad9c93d57911d01445dc241bdef7d93e1022efabe4c1c30f6a47bbf2ed",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/tiny_5x1_bottom_r2.npy",
+          "expected_sha256": "093bb302c885f381be796293c1ef4b0ab6c3d3b2d173c6838f0977218cd765b5",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/tiny_5x1_bottom_r3.npy",
+          "expected_sha256": "093bb302c885f381be796293c1ef4b0ab6c3d3b2d173c6838f0977218cd765b5",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/tiny_5x1_bottom_r24.npy",
+          "expected_sha256": "622d0677871863fdb07a4421547634ee4ec3e8bf4020b588ca0de7535d1bea9f",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/tiny_5x1_bottom_r25.npy",
+          "expected_sha256": "622d0677871863fdb07a4421547634ee4ec3e8bf4020b588ca0de7535d1bea9f",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "tiny_5x1_left": {
+      "shape": [
+        5,
+        1
+      ],
+      "quadrant": "left",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/tiny_5x1_left.npy",
+      "hard_sha256": "84789445acc694e424ad6bb3de41f0ce26b572a914aa90318491e204b55e555f",
+      "soft": {
+        "0": {
+          "expected": "soft/tiny_5x1_left_r0.npy",
+          "expected_sha256": "84789445acc694e424ad6bb3de41f0ce26b572a914aa90318491e204b55e555f",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/tiny_5x1_left_r1.npy",
+          "expected_sha256": "84789445acc694e424ad6bb3de41f0ce26b572a914aa90318491e204b55e555f",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/tiny_5x1_left_r2.npy",
+          "expected_sha256": "84789445acc694e424ad6bb3de41f0ce26b572a914aa90318491e204b55e555f",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/tiny_5x1_left_r3.npy",
+          "expected_sha256": "84789445acc694e424ad6bb3de41f0ce26b572a914aa90318491e204b55e555f",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/tiny_5x1_left_r24.npy",
+          "expected_sha256": "84789445acc694e424ad6bb3de41f0ce26b572a914aa90318491e204b55e555f",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/tiny_5x1_left_r25.npy",
+          "expected_sha256": "84789445acc694e424ad6bb3de41f0ce26b572a914aa90318491e204b55e555f",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "tiny_5x1_right": {
+      "shape": [
+        5,
+        1
+      ],
+      "quadrant": "right",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/tiny_5x1_right.npy",
+      "hard_sha256": "a7ec1e691acd3ec39321190d07780510591be750e65d17e17aa1ac9bf14c0ee0",
+      "soft": {
+        "0": {
+          "expected": "soft/tiny_5x1_right_r0.npy",
+          "expected_sha256": "a7ec1e691acd3ec39321190d07780510591be750e65d17e17aa1ac9bf14c0ee0",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/tiny_5x1_right_r1.npy",
+          "expected_sha256": "a7ec1e691acd3ec39321190d07780510591be750e65d17e17aa1ac9bf14c0ee0",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/tiny_5x1_right_r2.npy",
+          "expected_sha256": "a7ec1e691acd3ec39321190d07780510591be750e65d17e17aa1ac9bf14c0ee0",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/tiny_5x1_right_r3.npy",
+          "expected_sha256": "a7ec1e691acd3ec39321190d07780510591be750e65d17e17aa1ac9bf14c0ee0",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/tiny_5x1_right_r24.npy",
+          "expected_sha256": "a7ec1e691acd3ec39321190d07780510591be750e65d17e17aa1ac9bf14c0ee0",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/tiny_5x1_right_r25.npy",
+          "expected_sha256": "a7ec1e691acd3ec39321190d07780510591be750e65d17e17aa1ac9bf14c0ee0",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "tiny_5x1_center": {
+      "shape": [
+        5,
+        1
+      ],
+      "quadrant": "center",
+      "source": "literal geometry table from project contract",
+      "source_kind": "literal_contract",
+      "hard": "hard/tiny_5x1_center.npy",
+      "hard_sha256": "84789445acc694e424ad6bb3de41f0ce26b572a914aa90318491e204b55e555f",
+      "soft": {
+        "0": {
+          "expected": "soft/tiny_5x1_center_r0.npy",
+          "expected_sha256": "84789445acc694e424ad6bb3de41f0ce26b572a914aa90318491e204b55e555f",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/tiny_5x1_center_r1.npy",
+          "expected_sha256": "84789445acc694e424ad6bb3de41f0ce26b572a914aa90318491e204b55e555f",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/tiny_5x1_center_r2.npy",
+          "expected_sha256": "84789445acc694e424ad6bb3de41f0ce26b572a914aa90318491e204b55e555f",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/tiny_5x1_center_r3.npy",
+          "expected_sha256": "84789445acc694e424ad6bb3de41f0ce26b572a914aa90318491e204b55e555f",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/tiny_5x1_center_r24.npy",
+          "expected_sha256": "84789445acc694e424ad6bb3de41f0ce26b572a914aa90318491e204b55e555f",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/tiny_5x1_center_r25.npy",
+          "expected_sha256": "84789445acc694e424ad6bb3de41f0ce26b572a914aa90318491e204b55e555f",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_2x2_top": {
+      "shape": [
+        2,
+        2
+      ],
+      "quadrant": "top",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_2x2_top.npy",
+      "hard_sha256": "44731fbb052140114496caf75b4e5b26b6c5d0b49463c7c2fe61cbedfc3c6d11",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_2x2_top_r0.npy",
+          "expected_sha256": "44731fbb052140114496caf75b4e5b26b6c5d0b49463c7c2fe61cbedfc3c6d11",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_2x2_top_r1.npy",
+          "expected_sha256": "44731fbb052140114496caf75b4e5b26b6c5d0b49463c7c2fe61cbedfc3c6d11",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_2x2_top_r2.npy",
+          "expected_sha256": "f13ea2c2865d510f9c806eb3ac9ac5f74577969cfcd5c594ec5ac8339c28492a",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_2x2_top_r3.npy",
+          "expected_sha256": "f13ea2c2865d510f9c806eb3ac9ac5f74577969cfcd5c594ec5ac8339c28492a",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_2x2_top_r24.npy",
+          "expected_sha256": "6c8122d308a0c25045730702a5a17fb8da173652495eb9e6ac5b4dba26550c5f",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_2x2_top_r25.npy",
+          "expected_sha256": "6c8122d308a0c25045730702a5a17fb8da173652495eb9e6ac5b4dba26550c5f",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_2x2_bottom": {
+      "shape": [
+        2,
+        2
+      ],
+      "quadrant": "bottom",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_2x2_bottom.npy",
+      "hard_sha256": "2aae2303f59bf102af3c8e56b271d6c78c7130d5238c8a139f55f5e1a878c09c",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_2x2_bottom_r0.npy",
+          "expected_sha256": "2aae2303f59bf102af3c8e56b271d6c78c7130d5238c8a139f55f5e1a878c09c",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_2x2_bottom_r1.npy",
+          "expected_sha256": "2aae2303f59bf102af3c8e56b271d6c78c7130d5238c8a139f55f5e1a878c09c",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_2x2_bottom_r2.npy",
+          "expected_sha256": "a60216a5880905bdfa0f4353b48b79af1435c7770639d3f695a43d8d4a6abd0d",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_2x2_bottom_r3.npy",
+          "expected_sha256": "a60216a5880905bdfa0f4353b48b79af1435c7770639d3f695a43d8d4a6abd0d",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_2x2_bottom_r24.npy",
+          "expected_sha256": "5b03d998c6d0003201df078c4d13b4c54bd98a9d78cd19dbfff16e0178f6ff69",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_2x2_bottom_r25.npy",
+          "expected_sha256": "5b03d998c6d0003201df078c4d13b4c54bd98a9d78cd19dbfff16e0178f6ff69",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_2x2_left": {
+      "shape": [
+        2,
+        2
+      ],
+      "quadrant": "left",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_2x2_left.npy",
+      "hard_sha256": "7dc3bd79b3ece4908f04cfd82f8c2d0c042d8337b283198f97bcd382ba7d9a9e",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_2x2_left_r0.npy",
+          "expected_sha256": "7dc3bd79b3ece4908f04cfd82f8c2d0c042d8337b283198f97bcd382ba7d9a9e",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_2x2_left_r1.npy",
+          "expected_sha256": "7dc3bd79b3ece4908f04cfd82f8c2d0c042d8337b283198f97bcd382ba7d9a9e",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_2x2_left_r2.npy",
+          "expected_sha256": "33a521b2a1169a0bd5285bfbed23510062a1b38c4d2ca95880617f07e93600c9",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_2x2_left_r3.npy",
+          "expected_sha256": "33a521b2a1169a0bd5285bfbed23510062a1b38c4d2ca95880617f07e93600c9",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_2x2_left_r24.npy",
+          "expected_sha256": "77db0f09154f25872184686c6309a66bd91cfabe9f59306475ab201761952e71",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_2x2_left_r25.npy",
+          "expected_sha256": "77db0f09154f25872184686c6309a66bd91cfabe9f59306475ab201761952e71",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_2x2_right": {
+      "shape": [
+        2,
+        2
+      ],
+      "quadrant": "right",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_2x2_right.npy",
+      "hard_sha256": "62d13c2fb4d3b2c7ec7b42245ee000a33da55e00b5466111bce9b8ffdd66481a",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_2x2_right_r0.npy",
+          "expected_sha256": "62d13c2fb4d3b2c7ec7b42245ee000a33da55e00b5466111bce9b8ffdd66481a",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_2x2_right_r1.npy",
+          "expected_sha256": "62d13c2fb4d3b2c7ec7b42245ee000a33da55e00b5466111bce9b8ffdd66481a",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_2x2_right_r2.npy",
+          "expected_sha256": "e4724c6863e78c7ccbeff263e0e7bc5539ce19ccd5589c966eb3f571971a21b8",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_2x2_right_r3.npy",
+          "expected_sha256": "e4724c6863e78c7ccbeff263e0e7bc5539ce19ccd5589c966eb3f571971a21b8",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_2x2_right_r24.npy",
+          "expected_sha256": "657299e26d2283037719f0711c04e4baa153289911149d09dd2d90d0262f3324",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_2x2_right_r25.npy",
+          "expected_sha256": "657299e26d2283037719f0711c04e4baa153289911149d09dd2d90d0262f3324",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_2x2_center": {
+      "shape": [
+        2,
+        2
+      ],
+      "quadrant": "center",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_2x2_center.npy",
+      "hard_sha256": "ae568e6e54beac25d7377933fed463d1286bc8aacf09516a9c6eab4096bec231",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_2x2_center_r0.npy",
+          "expected_sha256": "ae568e6e54beac25d7377933fed463d1286bc8aacf09516a9c6eab4096bec231",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_2x2_center_r1.npy",
+          "expected_sha256": "ae568e6e54beac25d7377933fed463d1286bc8aacf09516a9c6eab4096bec231",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_2x2_center_r2.npy",
+          "expected_sha256": "bff46329ffac60ee08f5b6edf72330d064bc9b5abf263339f2cf7ed08a3c22a6",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_2x2_center_r3.npy",
+          "expected_sha256": "bff46329ffac60ee08f5b6edf72330d064bc9b5abf263339f2cf7ed08a3c22a6",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_2x2_center_r24.npy",
+          "expected_sha256": "28e57d3fa38667e994e74dbf4146024f2052c381dbe3922614097eeca38eb5e5",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_2x2_center_r25.npy",
+          "expected_sha256": "28e57d3fa38667e994e74dbf4146024f2052c381dbe3922614097eeca38eb5e5",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_3x3_top": {
+      "shape": [
+        3,
+        3
+      ],
+      "quadrant": "top",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_3x3_top.npy",
+      "hard_sha256": "0b234c0bcbae2e5ee5435d13c3b51368c121071dfbb67ff247d8956b9eec5d82",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_3x3_top_r0.npy",
+          "expected_sha256": "0b234c0bcbae2e5ee5435d13c3b51368c121071dfbb67ff247d8956b9eec5d82",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_3x3_top_r1.npy",
+          "expected_sha256": "0b234c0bcbae2e5ee5435d13c3b51368c121071dfbb67ff247d8956b9eec5d82",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_3x3_top_r2.npy",
+          "expected_sha256": "e1fa3ab428509f570c221500c8c6c27c06562f3641badc1efa092dde73e64159",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_3x3_top_r3.npy",
+          "expected_sha256": "e1fa3ab428509f570c221500c8c6c27c06562f3641badc1efa092dde73e64159",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_3x3_top_r24.npy",
+          "expected_sha256": "e198dcec39c72f4b77dd8c679a43d4b6514ee3190124e9a189a3611b7f2c6853",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_3x3_top_r25.npy",
+          "expected_sha256": "e198dcec39c72f4b77dd8c679a43d4b6514ee3190124e9a189a3611b7f2c6853",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_3x3_bottom": {
+      "shape": [
+        3,
+        3
+      ],
+      "quadrant": "bottom",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_3x3_bottom.npy",
+      "hard_sha256": "efe33e46f3355e65bd637bfe384f4930491488b3d6d974d59223b6208231045e",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_3x3_bottom_r0.npy",
+          "expected_sha256": "efe33e46f3355e65bd637bfe384f4930491488b3d6d974d59223b6208231045e",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_3x3_bottom_r1.npy",
+          "expected_sha256": "efe33e46f3355e65bd637bfe384f4930491488b3d6d974d59223b6208231045e",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_3x3_bottom_r2.npy",
+          "expected_sha256": "699ffab6b711a691f7a85f66703f7eae79b4d94e0af34b8001a5ba4d904d12b4",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_3x3_bottom_r3.npy",
+          "expected_sha256": "699ffab6b711a691f7a85f66703f7eae79b4d94e0af34b8001a5ba4d904d12b4",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_3x3_bottom_r24.npy",
+          "expected_sha256": "34ee2b1aeab70482d4910362861a3cdbd4a1735de0817ed8e62adee49dabee3a",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_3x3_bottom_r25.npy",
+          "expected_sha256": "34ee2b1aeab70482d4910362861a3cdbd4a1735de0817ed8e62adee49dabee3a",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_3x3_left": {
+      "shape": [
+        3,
+        3
+      ],
+      "quadrant": "left",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_3x3_left.npy",
+      "hard_sha256": "99b8031c418708019af934991278e831db98a24376a1336d1e2842de4134611c",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_3x3_left_r0.npy",
+          "expected_sha256": "99b8031c418708019af934991278e831db98a24376a1336d1e2842de4134611c",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_3x3_left_r1.npy",
+          "expected_sha256": "99b8031c418708019af934991278e831db98a24376a1336d1e2842de4134611c",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_3x3_left_r2.npy",
+          "expected_sha256": "8f036b598d12a8d7cf682d679d66f200f8c7bb7e9c09481f3738cb601377759d",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_3x3_left_r3.npy",
+          "expected_sha256": "8f036b598d12a8d7cf682d679d66f200f8c7bb7e9c09481f3738cb601377759d",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_3x3_left_r24.npy",
+          "expected_sha256": "5f44516edec5302103ef421e561dca78d61236ac76996b7087074ed0e041bcd5",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_3x3_left_r25.npy",
+          "expected_sha256": "5f44516edec5302103ef421e561dca78d61236ac76996b7087074ed0e041bcd5",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_3x3_right": {
+      "shape": [
+        3,
+        3
+      ],
+      "quadrant": "right",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_3x3_right.npy",
+      "hard_sha256": "df7f6b6efb51e749739b14afc46404cd778b468f3244fc07c8d140c1733edaea",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_3x3_right_r0.npy",
+          "expected_sha256": "df7f6b6efb51e749739b14afc46404cd778b468f3244fc07c8d140c1733edaea",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_3x3_right_r1.npy",
+          "expected_sha256": "df7f6b6efb51e749739b14afc46404cd778b468f3244fc07c8d140c1733edaea",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_3x3_right_r2.npy",
+          "expected_sha256": "5bdf375019a05f94d6edaf8652cfc2db4f338060f6f1d4c1ca262296be465272",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_3x3_right_r3.npy",
+          "expected_sha256": "5bdf375019a05f94d6edaf8652cfc2db4f338060f6f1d4c1ca262296be465272",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_3x3_right_r24.npy",
+          "expected_sha256": "28b4987b110861e0fc6947822f8034e1a79b9e6fe5a57fee71676055a57857d9",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_3x3_right_r25.npy",
+          "expected_sha256": "28b4987b110861e0fc6947822f8034e1a79b9e6fe5a57fee71676055a57857d9",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_3x3_center": {
+      "shape": [
+        3,
+        3
+      ],
+      "quadrant": "center",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_3x3_center.npy",
+      "hard_sha256": "8858e13ea450103819d751d73099b0d66f08352937f88ef023e6cfdefb01c2da",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_3x3_center_r0.npy",
+          "expected_sha256": "8858e13ea450103819d751d73099b0d66f08352937f88ef023e6cfdefb01c2da",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_3x3_center_r1.npy",
+          "expected_sha256": "8858e13ea450103819d751d73099b0d66f08352937f88ef023e6cfdefb01c2da",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_3x3_center_r2.npy",
+          "expected_sha256": "da4db54672ef321964b7a47718c0de93512e9dfe56b6eda0a56aeb2bace7a8df",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_3x3_center_r3.npy",
+          "expected_sha256": "da4db54672ef321964b7a47718c0de93512e9dfe56b6eda0a56aeb2bace7a8df",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_3x3_center_r24.npy",
+          "expected_sha256": "14c0e1365c5a2253421a148487c95f9ae62f4626493382f92c3a1526c91b5059",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_3x3_center_r25.npy",
+          "expected_sha256": "14c0e1365c5a2253421a148487c95f9ae62f4626493382f92c3a1526c91b5059",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_6x10_top": {
+      "shape": [
+        6,
+        10
+      ],
+      "quadrant": "top",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_6x10_top.npy",
+      "hard_sha256": "a9a6740af628faeeac9ef45c126f88810b0b0fe76231c4799c346f44ac40c189",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_6x10_top_r0.npy",
+          "expected_sha256": "a9a6740af628faeeac9ef45c126f88810b0b0fe76231c4799c346f44ac40c189",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_6x10_top_r1.npy",
+          "expected_sha256": "a9a6740af628faeeac9ef45c126f88810b0b0fe76231c4799c346f44ac40c189",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_6x10_top_r2.npy",
+          "expected_sha256": "857b7ffb39f7aac0b797100fda3774c3a6570621534c4e2a5b9852f0fe9ff853",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_6x10_top_r3.npy",
+          "expected_sha256": "857b7ffb39f7aac0b797100fda3774c3a6570621534c4e2a5b9852f0fe9ff853",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_6x10_top_r24.npy",
+          "expected_sha256": "36c9de067de6d1cc87cb6ddffe74236b11705cc2c6f043c666ff51e27babc47d",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_6x10_top_r25.npy",
+          "expected_sha256": "36c9de067de6d1cc87cb6ddffe74236b11705cc2c6f043c666ff51e27babc47d",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_6x10_bottom": {
+      "shape": [
+        6,
+        10
+      ],
+      "quadrant": "bottom",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_6x10_bottom.npy",
+      "hard_sha256": "bc33c225de58d5cc63a8d500b1d374b6863f735387946c2a6c15434baedf3c3a",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_6x10_bottom_r0.npy",
+          "expected_sha256": "bc33c225de58d5cc63a8d500b1d374b6863f735387946c2a6c15434baedf3c3a",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_6x10_bottom_r1.npy",
+          "expected_sha256": "bc33c225de58d5cc63a8d500b1d374b6863f735387946c2a6c15434baedf3c3a",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_6x10_bottom_r2.npy",
+          "expected_sha256": "d387ba0281dc40b4d84e627adfd03c9365f78c9cbb798ab1f775d72c486c4390",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_6x10_bottom_r3.npy",
+          "expected_sha256": "d387ba0281dc40b4d84e627adfd03c9365f78c9cbb798ab1f775d72c486c4390",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_6x10_bottom_r24.npy",
+          "expected_sha256": "2e427e8e86f59c20f4cfb13b6e0e3fb9e74e8b38d61f9eea2bd25f409ebfc0e1",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_6x10_bottom_r25.npy",
+          "expected_sha256": "2e427e8e86f59c20f4cfb13b6e0e3fb9e74e8b38d61f9eea2bd25f409ebfc0e1",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_6x10_left": {
+      "shape": [
+        6,
+        10
+      ],
+      "quadrant": "left",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_6x10_left.npy",
+      "hard_sha256": "34d489116d8364dfc21324a344a1f09e41c0068f9f0f3bc418ae1563a9a28434",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_6x10_left_r0.npy",
+          "expected_sha256": "34d489116d8364dfc21324a344a1f09e41c0068f9f0f3bc418ae1563a9a28434",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_6x10_left_r1.npy",
+          "expected_sha256": "34d489116d8364dfc21324a344a1f09e41c0068f9f0f3bc418ae1563a9a28434",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_6x10_left_r2.npy",
+          "expected_sha256": "f196c211dbe5bd184af2894177a1a978fdbebdc8e1401fb18ec52781aa9d3426",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_6x10_left_r3.npy",
+          "expected_sha256": "f196c211dbe5bd184af2894177a1a978fdbebdc8e1401fb18ec52781aa9d3426",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_6x10_left_r24.npy",
+          "expected_sha256": "7d75f2651cb238d510e11576104d9bd85b2f45e35d54ca4eda196338cccb6b8f",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_6x10_left_r25.npy",
+          "expected_sha256": "7d75f2651cb238d510e11576104d9bd85b2f45e35d54ca4eda196338cccb6b8f",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_6x10_right": {
+      "shape": [
+        6,
+        10
+      ],
+      "quadrant": "right",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_6x10_right.npy",
+      "hard_sha256": "bdee2865c7efbdcce121238acc0eda634fa6031a3cf40f743f524c762cbcc4ff",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_6x10_right_r0.npy",
+          "expected_sha256": "bdee2865c7efbdcce121238acc0eda634fa6031a3cf40f743f524c762cbcc4ff",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_6x10_right_r1.npy",
+          "expected_sha256": "bdee2865c7efbdcce121238acc0eda634fa6031a3cf40f743f524c762cbcc4ff",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_6x10_right_r2.npy",
+          "expected_sha256": "826790c47b6f11d52f06ca3e728281007ebe92e7ec205334faaeb5e2b862f956",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_6x10_right_r3.npy",
+          "expected_sha256": "826790c47b6f11d52f06ca3e728281007ebe92e7ec205334faaeb5e2b862f956",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_6x10_right_r24.npy",
+          "expected_sha256": "83b3da1d63d4fb774db3b8c1bbfcf1400fd84920df2e2ff0e877ae5e84d12f8f",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_6x10_right_r25.npy",
+          "expected_sha256": "83b3da1d63d4fb774db3b8c1bbfcf1400fd84920df2e2ff0e877ae5e84d12f8f",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_6x10_center": {
+      "shape": [
+        6,
+        10
+      ],
+      "quadrant": "center",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_6x10_center.npy",
+      "hard_sha256": "9502811aac7a6c51be4558542c271bbe8fc8113cb045a1e7f19b08c0c76b89a4",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_6x10_center_r0.npy",
+          "expected_sha256": "9502811aac7a6c51be4558542c271bbe8fc8113cb045a1e7f19b08c0c76b89a4",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_6x10_center_r1.npy",
+          "expected_sha256": "9502811aac7a6c51be4558542c271bbe8fc8113cb045a1e7f19b08c0c76b89a4",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_6x10_center_r2.npy",
+          "expected_sha256": "2a67088bdc66db49b8f0ca64988edbdaa9f456f8fb2a1ba8700cb6466f4c3b92",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_6x10_center_r3.npy",
+          "expected_sha256": "2a67088bdc66db49b8f0ca64988edbdaa9f456f8fb2a1ba8700cb6466f4c3b92",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_6x10_center_r24.npy",
+          "expected_sha256": "9f0819d180a12c20cb30837efe3d53b5240e31782a9fb731c784a3d27fac1c89",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_6x10_center_r25.npy",
+          "expected_sha256": "9f0819d180a12c20cb30837efe3d53b5240e31782a9fb731c784a3d27fac1c89",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_7x9_top": {
+      "shape": [
+        7,
+        9
+      ],
+      "quadrant": "top",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_7x9_top.npy",
+      "hard_sha256": "4bfd58ccc301b30df80fee9139e80dd4f4a52e2fdb36a8c2bf92011bdbe10294",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_7x9_top_r0.npy",
+          "expected_sha256": "4bfd58ccc301b30df80fee9139e80dd4f4a52e2fdb36a8c2bf92011bdbe10294",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_7x9_top_r1.npy",
+          "expected_sha256": "4bfd58ccc301b30df80fee9139e80dd4f4a52e2fdb36a8c2bf92011bdbe10294",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_7x9_top_r2.npy",
+          "expected_sha256": "c209286f85588a2469d867c455a2273278029f6f41e2a12af5d9026f6e4796ea",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_7x9_top_r3.npy",
+          "expected_sha256": "c209286f85588a2469d867c455a2273278029f6f41e2a12af5d9026f6e4796ea",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_7x9_top_r24.npy",
+          "expected_sha256": "cedf8e8ca134451f4a7ac34c3c055331e35a73a0d6d1c4e792add97bc69d3e50",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_7x9_top_r25.npy",
+          "expected_sha256": "cedf8e8ca134451f4a7ac34c3c055331e35a73a0d6d1c4e792add97bc69d3e50",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_7x9_bottom": {
+      "shape": [
+        7,
+        9
+      ],
+      "quadrant": "bottom",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_7x9_bottom.npy",
+      "hard_sha256": "664321de747eb17db170d5b316e30cf6269356de21123a168ba9aa12a99de335",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_7x9_bottom_r0.npy",
+          "expected_sha256": "664321de747eb17db170d5b316e30cf6269356de21123a168ba9aa12a99de335",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_7x9_bottom_r1.npy",
+          "expected_sha256": "664321de747eb17db170d5b316e30cf6269356de21123a168ba9aa12a99de335",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_7x9_bottom_r2.npy",
+          "expected_sha256": "02224733c7406c502fe0c039f13b7402811fbcff3cefea692a5789ac31724de1",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_7x9_bottom_r3.npy",
+          "expected_sha256": "02224733c7406c502fe0c039f13b7402811fbcff3cefea692a5789ac31724de1",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_7x9_bottom_r24.npy",
+          "expected_sha256": "4f29ff4aa6179cacbce18763f2a7ab670daab1f909d05de11221deadb7a3ccdc",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_7x9_bottom_r25.npy",
+          "expected_sha256": "4f29ff4aa6179cacbce18763f2a7ab670daab1f909d05de11221deadb7a3ccdc",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_7x9_left": {
+      "shape": [
+        7,
+        9
+      ],
+      "quadrant": "left",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_7x9_left.npy",
+      "hard_sha256": "00a77187cbc38bc2692639bb382c646040a97d963d939ba20a6d866cfa110f20",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_7x9_left_r0.npy",
+          "expected_sha256": "00a77187cbc38bc2692639bb382c646040a97d963d939ba20a6d866cfa110f20",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_7x9_left_r1.npy",
+          "expected_sha256": "00a77187cbc38bc2692639bb382c646040a97d963d939ba20a6d866cfa110f20",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_7x9_left_r2.npy",
+          "expected_sha256": "1f8e6e33ecf8d0db12f2638899b2c1c1aec5c7c6f4dcc3dc457daf5085c06d83",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_7x9_left_r3.npy",
+          "expected_sha256": "1f8e6e33ecf8d0db12f2638899b2c1c1aec5c7c6f4dcc3dc457daf5085c06d83",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_7x9_left_r24.npy",
+          "expected_sha256": "7ff8c28f7fb771cb1d0e058e5d8dec86a0e7466636a37af92b52658aadd4cd62",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_7x9_left_r25.npy",
+          "expected_sha256": "7ff8c28f7fb771cb1d0e058e5d8dec86a0e7466636a37af92b52658aadd4cd62",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_7x9_right": {
+      "shape": [
+        7,
+        9
+      ],
+      "quadrant": "right",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_7x9_right.npy",
+      "hard_sha256": "ed64be1da39ce30c7668e7b1ba86daf10f7a819bd7d18a943b646f3088f1b0c8",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_7x9_right_r0.npy",
+          "expected_sha256": "ed64be1da39ce30c7668e7b1ba86daf10f7a819bd7d18a943b646f3088f1b0c8",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_7x9_right_r1.npy",
+          "expected_sha256": "ed64be1da39ce30c7668e7b1ba86daf10f7a819bd7d18a943b646f3088f1b0c8",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_7x9_right_r2.npy",
+          "expected_sha256": "b66541fd0614fd685abdf6c0cd288646d4a5da7107626fa59b932cd768f35155",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_7x9_right_r3.npy",
+          "expected_sha256": "b66541fd0614fd685abdf6c0cd288646d4a5da7107626fa59b932cd768f35155",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_7x9_right_r24.npy",
+          "expected_sha256": "3bde50abd42726e3a1dd9b2bab1a738c52bee92346b119c50c6c86e7c191b8cb",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_7x9_right_r25.npy",
+          "expected_sha256": "3bde50abd42726e3a1dd9b2bab1a738c52bee92346b119c50c6c86e7c191b8cb",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_7x9_center": {
+      "shape": [
+        7,
+        9
+      ],
+      "quadrant": "center",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_7x9_center.npy",
+      "hard_sha256": "6a29d569646415639e7c121a866ca55a440eb84cafb934a4548dd53c91dc70ee",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_7x9_center_r0.npy",
+          "expected_sha256": "6a29d569646415639e7c121a866ca55a440eb84cafb934a4548dd53c91dc70ee",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_7x9_center_r1.npy",
+          "expected_sha256": "6a29d569646415639e7c121a866ca55a440eb84cafb934a4548dd53c91dc70ee",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_7x9_center_r2.npy",
+          "expected_sha256": "f689e0f2dc8bad5cd53cb148c1eeb61cab4f4a4f2d8fe9098c20af3b7e9643a1",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_7x9_center_r3.npy",
+          "expected_sha256": "f689e0f2dc8bad5cd53cb148c1eeb61cab4f4a4f2d8fe9098c20af3b7e9643a1",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_7x9_center_r24.npy",
+          "expected_sha256": "1a1ce69fe3e65a43492f9151cd8cbd3de80a3d70d5c6d7945f792b06499d1cc9",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_7x9_center_r25.npy",
+          "expected_sha256": "1a1ce69fe3e65a43492f9151cd8cbd3de80a3d70d5c6d7945f792b06499d1cc9",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_8x12_top": {
+      "shape": [
+        8,
+        12
+      ],
+      "quadrant": "top",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_8x12_top.npy",
+      "hard_sha256": "89ede2374ea444883d205b08be45497b54a5f591f14c057a52e55d2454cf0aef",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_8x12_top_r0.npy",
+          "expected_sha256": "89ede2374ea444883d205b08be45497b54a5f591f14c057a52e55d2454cf0aef",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_8x12_top_r1.npy",
+          "expected_sha256": "89ede2374ea444883d205b08be45497b54a5f591f14c057a52e55d2454cf0aef",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_8x12_top_r2.npy",
+          "expected_sha256": "6ea9d805496d09ba9996e268d2e49db4ab7a2f9b206931e294e2613d81b98f6a",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_8x12_top_r3.npy",
+          "expected_sha256": "6ea9d805496d09ba9996e268d2e49db4ab7a2f9b206931e294e2613d81b98f6a",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_8x12_top_r24.npy",
+          "expected_sha256": "e6e1c31704c08eafd5a7c0e1608f0b10468a1f665cc06dbd714217eb4e703470",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_8x12_top_r25.npy",
+          "expected_sha256": "e6e1c31704c08eafd5a7c0e1608f0b10468a1f665cc06dbd714217eb4e703470",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_8x12_bottom": {
+      "shape": [
+        8,
+        12
+      ],
+      "quadrant": "bottom",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_8x12_bottom.npy",
+      "hard_sha256": "8e93886c80763cc4bbbab3b2205eadbc6400a284f4d51d4a7ad9b2cebcb5cefd",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_8x12_bottom_r0.npy",
+          "expected_sha256": "8e93886c80763cc4bbbab3b2205eadbc6400a284f4d51d4a7ad9b2cebcb5cefd",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_8x12_bottom_r1.npy",
+          "expected_sha256": "8e93886c80763cc4bbbab3b2205eadbc6400a284f4d51d4a7ad9b2cebcb5cefd",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_8x12_bottom_r2.npy",
+          "expected_sha256": "6b2824f0fcdd32d018996b4e1bcd47bba4612300e9c64a457bc50fb959c73036",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_8x12_bottom_r3.npy",
+          "expected_sha256": "6b2824f0fcdd32d018996b4e1bcd47bba4612300e9c64a457bc50fb959c73036",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_8x12_bottom_r24.npy",
+          "expected_sha256": "85414cf11037de7e95e3e84d8a509f28e1a90aa97cc6971eb5e1feef3eac48c1",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_8x12_bottom_r25.npy",
+          "expected_sha256": "85414cf11037de7e95e3e84d8a509f28e1a90aa97cc6971eb5e1feef3eac48c1",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_8x12_left": {
+      "shape": [
+        8,
+        12
+      ],
+      "quadrant": "left",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_8x12_left.npy",
+      "hard_sha256": "bd14185948ac82efbc30c473b1e9e1245f306c6f9c762fefa9f5a800af19e8c6",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_8x12_left_r0.npy",
+          "expected_sha256": "bd14185948ac82efbc30c473b1e9e1245f306c6f9c762fefa9f5a800af19e8c6",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_8x12_left_r1.npy",
+          "expected_sha256": "bd14185948ac82efbc30c473b1e9e1245f306c6f9c762fefa9f5a800af19e8c6",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_8x12_left_r2.npy",
+          "expected_sha256": "979c0af15c5ca66ac14d53b63515580628a59baa8bc4b37c14d0d7be3dc12fd2",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_8x12_left_r3.npy",
+          "expected_sha256": "979c0af15c5ca66ac14d53b63515580628a59baa8bc4b37c14d0d7be3dc12fd2",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_8x12_left_r24.npy",
+          "expected_sha256": "6b9608c32f9339604aa0b4b2ec6ac5b1624f4d59e186d8b6950f8d52b94283d9",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_8x12_left_r25.npy",
+          "expected_sha256": "6b9608c32f9339604aa0b4b2ec6ac5b1624f4d59e186d8b6950f8d52b94283d9",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_8x12_right": {
+      "shape": [
+        8,
+        12
+      ],
+      "quadrant": "right",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_8x12_right.npy",
+      "hard_sha256": "6d5c810057932788b0e64c86060be0634eb9a3e10fbb42f0404634c3f8c98163",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_8x12_right_r0.npy",
+          "expected_sha256": "6d5c810057932788b0e64c86060be0634eb9a3e10fbb42f0404634c3f8c98163",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_8x12_right_r1.npy",
+          "expected_sha256": "6d5c810057932788b0e64c86060be0634eb9a3e10fbb42f0404634c3f8c98163",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_8x12_right_r2.npy",
+          "expected_sha256": "743ec20e19d998cba1ce65d54a36fe38cf4fcf316df8d35fcb980a3336bab803",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_8x12_right_r3.npy",
+          "expected_sha256": "743ec20e19d998cba1ce65d54a36fe38cf4fcf316df8d35fcb980a3336bab803",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_8x12_right_r24.npy",
+          "expected_sha256": "95924e5825760bba1f256a70fa4a764c7062d02c4057a4def8c7351b29f857df",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_8x12_right_r25.npy",
+          "expected_sha256": "95924e5825760bba1f256a70fa4a764c7062d02c4057a4def8c7351b29f857df",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "shape_8x12_center": {
+      "shape": [
+        8,
+        12
+      ],
+      "quadrant": "center",
+      "source": "independent np.indices coordinate oracle",
+      "source_kind": "coordinate_oracle",
+      "hard": "hard/shape_8x12_center.npy",
+      "hard_sha256": "3b993c25be7214c6ef78fc2cd3654e953e34c6011e8ea9294d1e20e7a74d75a9",
+      "soft": {
+        "0": {
+          "expected": "soft/shape_8x12_center_r0.npy",
+          "expected_sha256": "3b993c25be7214c6ef78fc2cd3654e953e34c6011e8ea9294d1e20e7a74d75a9",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/shape_8x12_center_r1.npy",
+          "expected_sha256": "3b993c25be7214c6ef78fc2cd3654e953e34c6011e8ea9294d1e20e7a74d75a9",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/shape_8x12_center_r2.npy",
+          "expected_sha256": "7f0f0110c68cd81b49885c1de54e7750fca7b7bf12535156ce42b478f47e8ad7",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/shape_8x12_center_r3.npy",
+          "expected_sha256": "7f0f0110c68cd81b49885c1de54e7750fca7b7bf12535156ce42b478f47e8ad7",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/shape_8x12_center_r24.npy",
+          "expected_sha256": "94509c3f2da8a1521abc87e53ee18c1d037d6aa230115bd215ec5ef18339f980",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/shape_8x12_center_r25.npy",
+          "expected_sha256": "94509c3f2da8a1521abc87e53ee18c1d037d6aa230115bd215ec5ef18339f980",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "web_right": {
+      "shape": [
+        1,
+        10
+      ],
+      "quadrant": "right",
+      "source": "NumPy slicing example x[5:] converted to mask",
+      "source_kind": "web_right",
+      "hard": "hard/web_right.npy",
+      "hard_sha256": "131ca50412c63033103ad71a7847e663d9d97cb47ae1f111bafbed318737e18b",
+      "soft": {
+        "0": {
+          "expected": "soft/web_right_r0.npy",
+          "expected_sha256": "131ca50412c63033103ad71a7847e663d9d97cb47ae1f111bafbed318737e18b",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/web_right_r1.npy",
+          "expected_sha256": "131ca50412c63033103ad71a7847e663d9d97cb47ae1f111bafbed318737e18b",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/web_right_r2.npy",
+          "expected_sha256": "6834148b91686a3735c4563a78993f2aa1c489de13804a02d76aee32285e601b",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/web_right_r3.npy",
+          "expected_sha256": "6834148b91686a3735c4563a78993f2aa1c489de13804a02d76aee32285e601b",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/web_right_r24.npy",
+          "expected_sha256": "56858bc6f3bdeb94608525db69b933849c8f2c4cec5891c7ab1bbc0e49099338",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/web_right_r25.npy",
+          "expected_sha256": "56858bc6f3bdeb94608525db69b933849c8f2c4cec5891c7ab1bbc0e49099338",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    },
+    "web_center": {
+      "shape": [
+        6,
+        6
+      ],
+      "quadrant": "center",
+      "source": "scikit-image rectangle example padded to 6x6",
+      "source_kind": "web_center",
+      "hard": "hard/web_center.npy",
+      "hard_sha256": "b1eed01a00e27f039baf19cf1a92b336fb0972b72871183d36aa8469ca19e1dd",
+      "soft": {
+        "0": {
+          "expected": "soft/web_center_r0.npy",
+          "expected_sha256": "b1eed01a00e27f039baf19cf1a92b336fb0972b72871183d36aa8469ca19e1dd",
+          "kernel_size": 0,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "1": {
+          "expected": "soft/web_center_r1.npy",
+          "expected_sha256": "b1eed01a00e27f039baf19cf1a92b336fb0972b72871183d36aa8469ca19e1dd",
+          "kernel_size": 1,
+          "sigma": 0.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "2": {
+          "expected": "soft/web_center_r2.npy",
+          "expected_sha256": "2cb330d8c34eec67b2be8c83ce13bf0930420675a2bf9480ee967afc250f7479",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "3": {
+          "expected": "soft/web_center_r3.npy",
+          "expected_sha256": "2cb330d8c34eec67b2be8c83ce13bf0930420675a2bf9480ee967afc250f7479",
+          "kernel_size": 3,
+          "sigma": 1.0,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "24": {
+          "expected": "soft/web_center_r24.npy",
+          "expected_sha256": "6ec80c91784b42d7dab56c15c9f55919c12312b7cc72733e4664dc5a143eb17f",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        },
+        "25": {
+          "expected": "soft/web_center_r25.npy",
+          "expected_sha256": "6ec80c91784b42d7dab56c15c9f55919c12312b7cc72733e4664dc5a143eb17f",
+          "kernel_size": 25,
+          "sigma": 8.333333333333334,
+          "border": "mirror / BORDER_REFLECT_101"
+        }
+      }
+    }
+  }
+}

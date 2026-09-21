@@ -1,0 +1,24 @@
+{
+  "case_count": 52,
+  "soft_comparisons": 312,
+  "soft_pass": 312,
+  "soft_fail": 0,
+  "hard_comparisons": 52,
+  "hard_pixel_mismatch": 0,
+  "hard_min_iou": 1.0,
+  "worst_soft_case": {
+    "case_id": "odd_5x7_right",
+    "shape": "5x7",
+    "quadrant": "right",
+    "feather_radius": 24,
+    "maxae": 1.2105293745179324e-07,
+    "mae": 5.363499998102737e-08,
+    "rmse": 7.161349554839343e-08,
+    "passed": true
+  },
+  "threshold": {
+    "maxae": 1e-06,
+    "mae": 1e-07
+  },
+  "passed": true
+}
