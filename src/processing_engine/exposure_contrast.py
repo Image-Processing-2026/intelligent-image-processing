@@ -35,13 +35,16 @@ def _raw_clahe(
     image: np.ndarray, clip_limit: float = 2.0, tile_grid_size: Tuple[int, int] = (8, 8)
 ) -> np.ndarray:
     """Cân bằng lược đồ độ sáng cục bộ thích ứng có giới hạn độ tương phản (CLAHE) trong không gian LAB."""
-    # Chuyển đổi sang không gian màu LAB để chỉ xử lý kênh độ sáng L
+    clahe_op = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
+
+    # Ảnh grayscale (1 kênh): áp CLAHE trực tiếp lên kênh sáng duy nhất
+    if image.ndim == 2:
+        return clahe_op.apply(image)
+
+    # Ảnh màu (3 kênh): chuyển sang LAB để chỉ xử lý kênh độ sáng L, tránh lệch màu
     lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB)
     l_ch, a_ch, b_ch = cv2.split(lab)
-
-    clahe_op = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
     l_enhanced = clahe_op.apply(l_ch)
-
     lab_merged = cv2.merge((l_enhanced, a_ch, b_ch))
     return cv2.cvtColor(lab_merged, cv2.COLOR_LAB2RGB)
 
