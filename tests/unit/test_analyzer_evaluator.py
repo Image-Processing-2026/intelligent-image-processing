@@ -1218,3 +1218,54 @@ def test_gray_hist_stats_single_pass_matches_direct_computation():
     assert abs(stats["p1"] - float(np.percentile(gray, 1))) <= 1.0
     assert abs(stats["p99"] - float(np.percentile(gray, 99))) <= 1.0
     assert stats["dynamic_range"] == stats["p99"] - stats["p1"]
+
+
+def test_reference_eval_tiny_images_no_zerodivision():
+    """evaluate_reference không được gây ZeroDivisionError với ảnh cực nhỏ (1x1, 2x2)."""
+    img_1x1 = np.full((1, 1, 3), 128, dtype=np.uint8)
+    res_1x1 = evaluate_reference(img_1x1, img_1x1)
+    assert res_1x1.ssim == 1.0
+    assert res_1x1.mse == 0.0
+
+    img_2x2 = np.full((2, 2, 3), 128, dtype=np.uint8)
+    res_2x2 = evaluate_reference(img_2x2, img_2x2)
+    assert res_2x2.ssim == 1.0
+    assert res_2x2.mse == 0.0
+
+
+def test_reference_eval_channel_mismatch_resilience():
+    """evaluate_reference phải tự đồng bộ số kênh (grayscale vs RGB) mà không gây ValueError broadcast."""
+    gt_gray = np.full((50, 50), 128, dtype=np.uint8)
+    cur_rgb = np.full((50, 50, 3), 128, dtype=np.uint8)
+    res = evaluate_reference(cur_rgb, gt_gray)
+    assert res.ssim == 1.0
+    assert res.mse == 0.0
+
+
+def test_no_reference_eval_estimated_quality_score():
+    """evaluate_no_reference phải trả về estimated_quality_score kiểu float trong [0, 100]."""
+    img = np.full((64, 64, 3), 128, dtype=np.uint8)
+    res = evaluate_no_reference(img)
+    assert res.estimated_quality_score is not None
+    assert 0.0 <= res.estimated_quality_score <= 100.0
+
+
+def test_no_reference_eval_grayscale_input_safe_with_pyiqa(monkeypatch):
+    """evaluate_no_reference nhận ảnh xám 2D không được crash torch tensor permute khi mock pyiqa."""
+    import src.analyzer_evaluator.no_reference_eval as nr_mod
+
+    class DummyMetric:
+        def __call__(self, tensor):
+            import torch
+
+            return torch.tensor([42.0])
+
+    monkeypatch.setattr(nr_mod, "PYIQA_AVAILABLE", True)
+    monkeypatch.setattr(nr_mod, "_brisque_metric", DummyMetric())
+    monkeypatch.setattr(nr_mod, "_niqe_metric", DummyMetric())
+
+    gray_img = np.full((32, 32), 128, dtype=np.uint8)
+    res = nr_mod.evaluate_no_reference(gray_img)
+    assert res.brisque_score == 42.0
+    assert res.niqe_score == 42.0
+    assert res.estimated_quality_score is not None

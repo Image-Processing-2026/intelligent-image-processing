@@ -15,7 +15,7 @@ from typing import Optional
 
 import numpy as np
 
-from .analyzer import analyze_image
+from .analyzer import _ensure_rgb_and_gray, analyze_image
 from .schemas import EvaluationResult, TechnicalMetrics
 
 logger = logging.getLogger("img_doctor.analyzer_evaluator")
@@ -345,14 +345,15 @@ def evaluate_no_reference(
     )
 
     # -----------------------------------------------------------------------
-    # Bước 1: Trích xuất TechnicalMetrics
+    # Bước 1: Trích xuất TechnicalMetrics & Chuẩn hóa RGB cho PyTorch tensor
     # -----------------------------------------------------------------------
-    curr_metrics = analyze_image(current_image)
+    rgb_image, _ = _ensure_rgb_and_gray(current_image)
+    curr_metrics = analyze_image(rgb_image)
 
     # -----------------------------------------------------------------------
     # Bước 2: Tier 1 — pyiqa BRISQUE + NIQE
     # -----------------------------------------------------------------------
-    brisque_score, niqe_score = _compute_pyiqa_scores(current_image)
+    brisque_score, niqe_score = _compute_pyiqa_scores(rgb_image)
 
     # -----------------------------------------------------------------------
     # Bước 3: Tier 2 — Heuristic Composite Score (luôn chạy)
@@ -384,6 +385,7 @@ def evaluate_no_reference(
         is_reference_eval=False,
         brisque_score=brisque_score,
         niqe_score=niqe_score,
+        estimated_quality_score=round(heuristic_score, 2),
         technical_metrics=curr_metrics,
         delta_metrics=delta_metrics,
         quality_improved=quality_improved,

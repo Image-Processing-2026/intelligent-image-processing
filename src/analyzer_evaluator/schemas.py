@@ -78,6 +78,10 @@ class EvaluationResult(BaseModel):
     niqe_score: Optional[float] = Field(
         default=None, description="Điểm NIQE tự nhiên, càng thấp càng tốt"
     )
+    estimated_quality_score: Optional[float] = Field(
+        default=None,
+        description="Điểm chất lượng cảm nhận tổng hợp theo Heuristic [0, 100], càng cao càng tốt",
+    )
     technical_metrics: TechnicalMetrics = Field(
         ..., description="Chỉ số kỹ thuật của bức ảnh sau vòng xử lý hiện tại"
     )

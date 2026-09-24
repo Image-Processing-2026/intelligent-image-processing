@@ -10,7 +10,7 @@ import logging
 import cv2
 import numpy as np
 
-from .analyzer import analyze_image
+from .analyzer import _ensure_rgb_and_gray, analyze_image
 from .schemas import EvaluationResult
 
 logger = logging.getLogger("img_doctor.analyzer_evaluator")
@@ -99,13 +99,13 @@ def _compute_ssim(ground_truth: np.ndarray, current: np.ndarray) -> float:
     Returns:
         float: Giá trị SSIM trong khoảng [-1, 1]. 1.0 là trùng khớp hoàn hảo.
     """
-    if SKIMAGE_AVAILABLE:
-        # Cửa sổ mặc định 7x7 — thu nhỏ nếu ảnh quá nhỏ
-        min_dim = min(ground_truth.shape[0], ground_truth.shape[1])
+    min_dim = min(ground_truth.shape[0], ground_truth.shape[1])
+    if SKIMAGE_AVAILABLE and min_dim >= 3:
+        # Cửa sổ mặc định 7x7 — thu nhỏ nếu ảnh quá nhỏ (scikit-image yêu cầu win_size >= 3)
         win_size = min(7, min_dim)
         # win_size phải lẻ
         if win_size % 2 == 0:
-            win_size = max(1, win_size - 1)
+            win_size = max(3, win_size - 1)
 
         channel_axis = 2 if ground_truth.ndim == 3 else None
         ssim = float(
@@ -119,8 +119,12 @@ def _compute_ssim(ground_truth: np.ndarray, current: np.ndarray) -> float:
         )
         logger.debug("SSIM computed (scikit-image, win_size=%d): %.6f", win_size, ssim)
     else:
-        # Fallback: SSIM đơn giản toàn cục (không sliding window)
-        logger.debug("scikit-image unavailable, using global SSIM fallback.")
+        # Fallback: SSIM đơn giản toàn cục (không sliding window) hoặc cho ảnh nhỏ < 3x3
+        logger.debug(
+            "Using global SSIM fallback (SKIMAGE_AVAILABLE=%s, min_dim=%d).",
+            SKIMAGE_AVAILABLE,
+            min_dim,
+        )
         c1 = (0.01 * 255) ** 2
         c2 = (0.03 * 255) ** 2
         img1 = ground_truth.astype(np.float64)
@@ -142,18 +146,21 @@ def _ensure_shape_match(
     ground_truth: np.ndarray, current: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Đảm bảo hai ảnh có cùng kích thước trước khi tính toán metrics.
+    Đảm bảo hai ảnh có cùng không gian màu RGB và cùng kích thước trước khi tính metrics.
 
-    Nếu kích thước lệch nhau (thường do một số bộ lọc thêm padding),
-    tự động resize ground_truth về khớp shape current bằng INTER_AREA.
+    Chuẩn hóa số kênh qua _ensure_rgb_and_gray để tránh lỗi broadcast khi một ảnh là grayscale/RGBA.
+    Nếu kích thước (H, W) lệch nhau, tự động resize ground_truth về khớp current bằng INTER_AREA.
 
     Args:
         ground_truth: Ảnh gốc sạch ground-truth.
         current: Ảnh đã qua xử lý (kích thước chuẩn tham chiếu).
 
     Returns:
-        Tuple (ground_truth_resized, current): Cặp ảnh cùng kích thước.
+        Tuple (ground_truth_resized, current): Cặp ảnh cùng kích thước và cùng 3 kênh RGB.
     """
+    ground_truth, _ = _ensure_rgb_and_gray(ground_truth)
+    current, _ = _ensure_rgb_and_gray(current)
+
     if ground_truth.shape != current.shape:
         logger.warning(
             "Shape mismatch: ground_truth=%s vs current=%s. "
