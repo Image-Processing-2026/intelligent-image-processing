@@ -80,16 +80,16 @@ Module 1 executes at **two distinct stages** in the loop:
 **Primary Pydantic Schema — `TechnicalMetrics`:**
 ```python
 class TechnicalMetrics(BaseModel):
-    brightness_mean: float          # Mean luminance [0, 255]
-    brightness_level: str           # "underexposed" | "normal" | "overexposed"
-    contrast_std: float             # Standard deviation of luminance
-    contrast_level: str             # "low" | "normal" | "high"
-    noise_variance: float           # Estimated noise variance
-    noise_level: str                # "clean" | "low" | "medium" | "severe"
+    brightness_mean: float  # Mean luminance [0, 255]
+    brightness_level: str  # "underexposed" | "normal" | "overexposed"
+    contrast_std: float  # Standard deviation of luminance
+    contrast_level: str  # "low" | "normal" | "high"
+    noise_variance: float  # Estimated noise variance
+    noise_level: str  # "clean" | "low" | "medium" | "severe"
     sharpness_laplacian_var: float  # Variance of Laplacian operator
-    blur_level: str                 # "sharp" | "mild_blur" | "severe_blur"
-    color_cast: str                 # "warm" | "cool" | "greenish" | "none"
-    histogram_stats: dict           # Histogram statistics (min, max, skewness)
+    blur_level: str  # "sharp" | "mild_blur" | "severe_blur"
+    color_cast: str  # "warm" | "cool" | "greenish" | "none"
+    histogram_stats: dict  # Histogram statistics (min, max, skewness)
 ```
 
 ---

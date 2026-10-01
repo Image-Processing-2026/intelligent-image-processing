@@ -57,23 +57,37 @@ def diagnose_and_plan_node(state: DoctorState) -> Dict[str, Any]:
 
 def process_node(state: DoctorState) -> Dict[str, Any]:
     """Node 4: Thực thi kế hoạch điều trị (Module 2 & Module 3)."""
+    prev_img = state["current_image"].copy()
     if not state.get("treatment_plan") or not state["treatment_plan"].actions:
-        return {"current_image": state["current_image"]}
+        return {"current_image": state["current_image"], "previous_image": prev_img}
 
     processed_img = execute_plan(state["current_image"], state["treatment_plan"])
-    return {"current_image": processed_img}
+    return {"current_image": processed_img, "previous_image": prev_img}
 
 
 def evaluate_node(state: DoctorState) -> Dict[str, Any]:
     """Node 5: Đánh giá chất lượng sau khi xử lý (Module 1)."""
     is_syn = state.get("is_synthetic", False)
     gt = state.get("ground_truth_image")
+    prev_img = (
+        state["previous_image"]
+        if state.get("previous_image") is not None
+        else state["original_image"]
+    )
+    iteration = state.get("iteration", 1)
 
     if is_syn and gt is not None:
-        eval_metrics = evaluate_reference(state["current_image"], gt)
+        eval_metrics = evaluate_reference(
+            current_image=state["current_image"],
+            ground_truth_image=gt,
+            iteration=iteration,
+            previous_image=prev_img,
+        )
     else:
         eval_metrics = evaluate_no_reference(
-            current_image=state["current_image"], previous_image=state["original_image"]
+            current_image=state["current_image"],
+            previous_image=prev_img,
+            iteration=iteration,
         )
 
     # Chuẩn hóa về dict thuần trước khi đưa vào state: DoctorState khai báo
@@ -104,6 +118,10 @@ def _decide_synthetic(eval_result: Dict[str, Any], history: List[HistoryItem]) -
 
 def _decide_real(eval_result: Dict[str, Any], history: List[HistoryItem]) -> str:
     """Logic quyết định dành cho ảnh thực không có Ground-Truth."""
+    # Kiểm tra suy thoái qua Module 1 Degradation Guard (nhiễu bùng nổ hoặc xuất hiện cháy sáng)
+    if eval_result.get("quality_improved") is False:
+        return "STOP_BEST_EFFORT"
+
     current_quality = float(eval_result.get("estimated_quality_score", 50.0))
 
     # Kiểm tra suy thoái: quality score vòng này tệ hơn vòng trước
@@ -139,12 +157,16 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
         iteration=iteration, reasoning="No treatment plan provided", actions=[]
     )
 
-    # Cập nhật lịch sử
+    # Cập nhật lịch sử (Zero-Redundant Compute: tái sử dụng technical_metrics từ evaluate_node)
+    metrics_after = eval_result.get("technical_metrics")
+    if not metrics_after:
+        metrics_after = analyze_image(state["current_image"]).model_dump()
+
     history_entry = HistoryItem(
         iteration=iteration,
         plan=plan,
         metrics_before=state.get("technical_metrics", {}),
-        metrics_after=analyze_image(state["current_image"]).model_dump(),
+        metrics_after=metrics_after,
         eval_score=eval_result,
         decision="PENDING",  # sẽ cập nhật bên dưới
     )
@@ -225,6 +247,7 @@ def run_pipeline(
     initial_state: DoctorState = {
         "original_image": image,
         "current_image": image.copy(),
+        "previous_image": None,
         "ground_truth_image": ground_truth,
         "is_synthetic": is_synthetic,
         "iteration": 1,

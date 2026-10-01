@@ -125,6 +125,7 @@ def mock_gemini_response_unknown_op():
 # Helper: Tạo mock Gemini model
 # ============================================================
 
+
 def _create_mock_model(response_text: str):
     """Tạo mock GenerativeModel trả về response text cố định."""
     mock_response = MagicMock()
@@ -137,6 +138,7 @@ def _create_mock_model(response_text: str):
 # ============================================================
 # Test Cases
 # ============================================================
+
 
 class TestVLMValidResponse:
     """Test khi VLM trả về JSON chuẩn."""
@@ -171,7 +173,9 @@ class TestVLMValidResponse:
     @patch("src.agent.vlm_diagnostician.genai")
     def test_json_with_plain_fences(self, mock_genai):
         """VLM bọc JSON trong ``` ... ``` (không ghi 'json') → parser vẫn strip được."""
-        mock_genai.GenerativeModel.return_value = _create_mock_model(MOCK_JSON_WITH_MARKDOWN_NO_LANG)
+        mock_genai.GenerativeModel.return_value = _create_mock_model(
+            MOCK_JSON_WITH_MARKDOWN_NO_LANG
+        )
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 128
         plan = diagnose_and_plan(img, {}, iteration=1)
@@ -186,7 +190,9 @@ class TestVLMExtremeParams:
     @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
     @patch("src.agent.vlm_diagnostician.genai")
     def test_extreme_params_clamped(self, mock_genai, mock_gemini_response_extreme_params):
-        mock_genai.GenerativeModel.return_value = _create_mock_model(mock_gemini_response_extreme_params)
+        mock_genai.GenerativeModel.return_value = _create_mock_model(
+            mock_gemini_response_extreme_params
+        )
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 128
         plan = diagnose_and_plan(img, {}, iteration=1)
@@ -207,7 +213,9 @@ class TestVLMUnknownOperation:
     @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
     @patch("src.agent.vlm_diagnostician.genai")
     def test_unknown_op_removed(self, mock_genai, mock_gemini_response_unknown_op):
-        mock_genai.GenerativeModel.return_value = _create_mock_model(mock_gemini_response_unknown_op)
+        mock_genai.GenerativeModel.return_value = _create_mock_model(
+            mock_gemini_response_unknown_op
+        )
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 128
         plan = diagnose_and_plan(img, {}, iteration=1)
@@ -224,7 +232,9 @@ class TestVLMInvalidJSON:
     @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
     @patch("src.agent.vlm_diagnostician.genai")
     def test_invalid_json_falls_back_safely(self, mock_genai, mock_gemini_response_invalid_json):
-        mock_genai.GenerativeModel.return_value = _create_mock_model(mock_gemini_response_invalid_json)
+        mock_genai.GenerativeModel.return_value = _create_mock_model(
+            mock_gemini_response_invalid_json
+        )
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 128
         plan = diagnose_and_plan(img, {}, iteration=1)

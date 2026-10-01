@@ -13,6 +13,8 @@ from src.agent.graph import (
     _decide_synthetic,
     decide_node,
     diagnose_and_plan_node,
+    evaluate_node,
+    process_node,
 )
 from src.agent.planner import clamp_parameters, validate_and_sort_plan
 from src.agent.state import DoctorState, HistoryItem, RegionOperation, TreatmentPlan
@@ -517,3 +519,304 @@ def test_decide_node_synthetic_ship_on_target_quality():
     assert res["iteration"] == 2
     assert len(res["history"]) == 1
     assert res["history"][0].decision == "SHIP"
+
+
+def test_process_node_tracks_previous_image_multi_turn():
+    """[INT-01] Kiểm tra process_node lưu previous_image:
+    - Vòng 1: previous_image là ảnh gốc.
+    - Vòng 2: previous_image là ảnh kết quả của vòng 1.
+    """
+    img_orig = np.ones((32, 32, 3), dtype=np.uint8) * 100
+    plan_round_1 = TreatmentPlan(
+        iteration=1,
+        reasoning="Tăng sáng vòng 1",
+        actions=[
+            RegionOperation(
+                region_id="full",
+                target_prompt="full",
+                detected_issue="underexposed",
+                operation="gamma_correct",
+                parameters={"gamma": 1.5},
+            )
+        ],
+    )
+
+    state_round_1: DoctorState = {
+        "original_image": img_orig.copy(),
+        "current_image": img_orig.copy(),
+        "previous_image": None,
+        "ground_truth_image": None,
+        "is_synthetic": False,
+        "iteration": 1,
+        "max_iterations": 3,
+        "technical_metrics": {},
+        "treatment_plan": plan_round_1,
+        "evaluation_result": {},
+        "history": [],
+        "intermediate_images": [],
+        "decision": "INITIALIZING",
+        "error_message": None,
+    }
+
+    # Thực thi vòng 1
+    res_1 = process_node(state_round_1)
+    assert "previous_image" in res_1
+    assert res_1["previous_image"] is not None
+    # Vòng 1: previous_image là ảnh trước khi xử lý (ảnh gốc)
+    np.testing.assert_array_equal(res_1["previous_image"], img_orig)
+    # current_image đã bị thay đổi qua gamma
+    assert not np.array_equal(res_1["current_image"], img_orig)
+
+    # Chuẩn bị cho Vòng 2
+    img_after_round_1 = res_1["current_image"]
+    plan_round_2 = TreatmentPlan(
+        iteration=2,
+        reasoning="Khử nhiễu vòng 2",
+        actions=[
+            RegionOperation(
+                region_id="full",
+                target_prompt="full",
+                detected_issue="noise",
+                operation="denoise",
+                parameters={"method": "bilateral", "strength": 1.0},
+            )
+        ],
+    )
+    state_round_2: DoctorState = {
+        **state_round_1,
+        "iteration": 2,
+        "current_image": img_after_round_1,
+        "previous_image": res_1["previous_image"],
+        "treatment_plan": plan_round_2,
+    }
+
+    # Thực thi vòng 2
+    res_2 = process_node(state_round_2)
+    assert "previous_image" in res_2
+    # Vòng 2: previous_image phải là ảnh của vòng liền kề trước đó (img_after_round_1)
+    np.testing.assert_array_equal(res_2["previous_image"], img_after_round_1)
+
+
+def test_process_node_tracks_previous_image_empty_plan():
+    """[INT-01] Kế hoạch rỗng: previous_image vẫn lưu lại current_image hiện tại."""
+    img = np.ones((32, 32, 3), dtype=np.uint8) * 120
+    state: DoctorState = {
+        "original_image": img,
+        "current_image": img.copy(),
+        "previous_image": None,
+        "ground_truth_image": None,
+        "is_synthetic": False,
+        "iteration": 1,
+        "max_iterations": 3,
+        "technical_metrics": {},
+        "treatment_plan": None,
+        "evaluation_result": {},
+        "history": [],
+        "intermediate_images": [],
+        "decision": "INITIALIZING",
+        "error_message": None,
+    }
+    res = process_node(state)
+    assert "previous_image" in res
+    np.testing.assert_array_equal(res["previous_image"], img)
+    np.testing.assert_array_equal(res["current_image"], img)
+
+
+def test_evaluate_node_passes_params_synthetic():
+    """[INT-02] evaluate_node truyền iteration và previous_image khi is_synthetic=True, sinh delta_metrics."""
+    gt = np.ones((32, 32, 3), dtype=np.uint8) * 128
+    prev = np.clip(gt.astype(np.int16) + 30, 0, 255).astype(np.uint8)
+    curr = np.clip(gt.astype(np.int16) + 10, 0, 255).astype(np.uint8)
+
+    state: DoctorState = {
+        "original_image": prev,
+        "current_image": curr,
+        "previous_image": prev,
+        "ground_truth_image": gt,
+        "is_synthetic": True,
+        "iteration": 2,
+        "max_iterations": 3,
+        "technical_metrics": {},
+        "treatment_plan": None,
+        "evaluation_result": {},
+        "history": [],
+        "intermediate_images": [],
+        "decision": "PENDING",
+        "error_message": None,
+    }
+
+    res = evaluate_node(state)
+    eval_res = res["evaluation_result"]
+    assert eval_res["iteration"] == 2
+    assert eval_res["is_reference_eval"] is True
+    assert "technical_metrics" in eval_res
+    assert "delta_metrics" in eval_res
+    assert eval_res["delta_metrics"] is not None
+    assert "delta_psnr" in eval_res["delta_metrics"]
+    assert "delta_ssim" in eval_res["delta_metrics"]
+
+
+def test_evaluate_node_passes_params_real():
+    """[INT-02] evaluate_node truyền iteration và previous_image khi is_synthetic=False."""
+    prev = np.ones((32, 32, 3), dtype=np.uint8) * 80
+    curr = np.ones((32, 32, 3), dtype=np.uint8) * 110
+
+    state: DoctorState = {
+        "original_image": prev,
+        "current_image": curr,
+        "previous_image": prev,
+        "ground_truth_image": None,
+        "is_synthetic": False,
+        "iteration": 2,
+        "max_iterations": 3,
+        "technical_metrics": {},
+        "treatment_plan": None,
+        "evaluation_result": {},
+        "history": [],
+        "intermediate_images": [],
+        "decision": "PENDING",
+        "error_message": None,
+    }
+
+    res = evaluate_node(state)
+    eval_res = res["evaluation_result"]
+    assert eval_res["iteration"] == 2
+    assert eval_res["is_reference_eval"] is False
+    assert "technical_metrics" in eval_res
+    assert "delta_metrics" in eval_res
+    assert eval_res["delta_metrics"] is not None
+    assert "delta_brightness" in eval_res["delta_metrics"]
+
+
+def test_decide_node_zero_redundant_compute():
+    """[INT-02] decide_node tái sử dụng technical_metrics từ evaluate_node, không gọi analyze_image."""
+    img = np.ones((16, 16, 3), dtype=np.uint8) * 100
+    fake_tech_metrics = {"brightness_mean": 100.0, "noise_variance": 5.0}
+
+    state: DoctorState = {
+        "original_image": img,
+        "current_image": img,
+        "previous_image": img,
+        "ground_truth_image": None,
+        "is_synthetic": False,
+        "iteration": 1,
+        "max_iterations": 3,
+        "technical_metrics": {"brightness_mean": 90.0},
+        "treatment_plan": TreatmentPlan(
+            iteration=1,
+            reasoning="test",
+            actions=[
+                RegionOperation(
+                    region_id="1", target_prompt="full", detected_issue="blur", operation="sharpen"
+                )
+            ],
+        ),
+        "evaluation_result": {
+            "estimated_quality_score": 75.0,
+            "technical_metrics": fake_tech_metrics,
+        },
+        "history": [],
+        "intermediate_images": [],
+        "decision": "PENDING",
+        "error_message": None,
+    }
+
+    with patch("src.agent.graph.analyze_image") as mock_analyze:
+        res = decide_node(state)
+        # analyze_image KHÔNG được phép gọi lại
+        mock_analyze.assert_not_called()
+        # metrics_after phải lấy chính xác fake_tech_metrics
+        assert res["history"][-1].metrics_after == fake_tech_metrics
+
+
+def test_decide_node_fallback_when_no_technical_metrics():
+    """[INT-02] decide_node fallback gọi analyze_image nếu evaluation_result thiếu technical_metrics."""
+    img = np.ones((16, 16, 3), dtype=np.uint8) * 100
+    state: DoctorState = {
+        "original_image": img,
+        "current_image": img,
+        "previous_image": img,
+        "ground_truth_image": None,
+        "is_synthetic": False,
+        "iteration": 1,
+        "max_iterations": 3,
+        "technical_metrics": {},
+        "treatment_plan": TreatmentPlan(
+            iteration=1,
+            reasoning="test",
+            actions=[
+                RegionOperation(
+                    region_id="1", target_prompt="full", detected_issue="blur", operation="sharpen"
+                )
+            ],
+        ),
+        "evaluation_result": {"estimated_quality_score": 75.0},  # Thiếu technical_metrics
+        "history": [],
+        "intermediate_images": [],
+        "decision": "PENDING",
+        "error_message": None,
+    }
+
+    with patch("src.agent.graph.analyze_image") as mock_analyze:
+        mock_analyze.return_value.model_dump.return_value = {"fallback": True}
+        res = decide_node(state)
+        mock_analyze.assert_called_once()
+        assert res["history"][-1].metrics_after == {"fallback": True}
+
+
+def test_decide_real_stop_on_quality_improved_false():
+    """[INT-03] Khi Module 1 báo quality_improved=False (cháy sáng / nổ nhiễu) → STOP_BEST_EFFORT ngay lập tức."""
+    eval_result = {
+        "estimated_quality_score": 85.0,
+        "quality_improved": False,  # Bị Module 1 chặn suy thoái
+    }
+    assert _decide_real(eval_result, []) == "STOP_BEST_EFFORT"
+
+
+def test_decide_real_continue_when_quality_improved_true():
+    """[INT-03] Khi quality_improved=True và điểm số tốt → RE_PROCESS."""
+    eval_result = {
+        "estimated_quality_score": 85.0,
+        "quality_improved": True,
+    }
+    assert _decide_real(eval_result, []) == "RE_PROCESS"
+
+
+def test_decide_node_stops_immediately_on_degradation_guard():
+    """[INT-03] decide_node dừng sớm STOP_BEST_EFFORT ngay tại vòng 1 nếu phát hiện làm hỏng ảnh."""
+    img = np.ones((16, 16, 3), dtype=np.uint8) * 100
+    state: DoctorState = {
+        "original_image": img,
+        "current_image": img,
+        "previous_image": img,
+        "ground_truth_image": None,
+        "is_synthetic": False,
+        "iteration": 1,
+        "max_iterations": 3,
+        "technical_metrics": {},
+        "treatment_plan": TreatmentPlan(
+            iteration=1,
+            reasoning="thử tăng sáng",
+            actions=[
+                RegionOperation(
+                    region_id="1",
+                    target_prompt="full",
+                    detected_issue="dark",
+                    operation="gamma_correct",
+                )
+            ],
+        ),
+        "evaluation_result": {
+            "estimated_quality_score": 80.0,
+            "quality_improved": False,  # Báo động suy thoái
+            "technical_metrics": {},
+        },
+        "history": [],
+        "intermediate_images": [],
+        "decision": "PENDING",
+        "error_message": None,
+    }
+
+    res = decide_node(state)
+    assert res["decision"] == "STOP_BEST_EFFORT"
+    assert res["history"][-1].decision == "STOP_BEST_EFFORT"

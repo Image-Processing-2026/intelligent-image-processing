@@ -80,16 +80,16 @@ Module này chạy ở **hai thời điểm** trong chu trình:
 **Schema dữ liệu chính — `TechnicalMetrics`:**
 ```python
 class TechnicalMetrics(BaseModel):
-    brightness_mean: float          # Độ sáng trung bình [0, 255]
-    brightness_level: str           # "underexposed" | "normal" | "overexposed"
-    contrast_std: float             # Độ lệch chuẩn cường độ
-    contrast_level: str             # "low" | "normal" | "high"
-    noise_variance: float           # Phương sai nhiễu ước lượng
-    noise_level: str                # "clean" | "low" | "medium" | "severe"
+    brightness_mean: float  # Độ sáng trung bình [0, 255]
+    brightness_level: str  # "underexposed" | "normal" | "overexposed"
+    contrast_std: float  # Độ lệch chuẩn cường độ
+    contrast_level: str  # "low" | "normal" | "high"
+    noise_variance: float  # Phương sai nhiễu ước lượng
+    noise_level: str  # "clean" | "low" | "medium" | "severe"
     sharpness_laplacian_var: float  # Phương sai toán tử Laplacian
-    blur_level: str                 # "sharp" | "mild_blur" | "severe_blur"
-    color_cast: str                 # "warm" | "cool" | "greenish" | "none"
-    histogram_stats: dict           # Thống kê histogram
+    blur_level: str  # "sharp" | "mild_blur" | "severe_blur"
+    color_cast: str  # "warm" | "cool" | "greenish" | "none"
+    histogram_stats: dict  # Thống kê histogram
 ```
 
 ---

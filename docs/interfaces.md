@@ -28,6 +28,7 @@ This document defines the strict contracts and schemas shared across the 4 modul
 from typing import Literal, Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
+
 # ---------------------------------------------------------
 # Module 1: Image Analyzer Output Schema
 # ---------------------------------------------------------
@@ -43,31 +44,34 @@ class TechnicalMetrics(BaseModel):
     color_cast: Optional[str] = Field(None, description="e.g., 'warm', 'cool', 'greenish', 'none'")
     histogram_stats: Dict[str, Any] = Field(default_factory=dict)
 
+
 # ---------------------------------------------------------
 # Module 4: Agent Plan Schema (Emitted by VLM / Orchestrator)
 # ---------------------------------------------------------
 class RegionOperationPlan(BaseModel):
-    region_id: str = Field(..., description="Unique ID or target descriptor, e.g. 'sky', 'face', 'full_image'")
+    region_id: str = Field(
+        ..., description="Unique ID or target descriptor, e.g. 'sky', 'face', 'full_image'"
+    )
     target_prompt: str = Field(..., description="Text prompt for segmentation or bounding box")
     region_type: Literal["semantic", "face", "spatial", "full"]
-    detected_issue: str = Field(..., description="e.g. 'underexposed', 'high_noise', 'low_contrast'")
-    operation: Literal[
-        "denoise", 
-        "gamma_correct", 
-        "clahe", 
-        "sharpen", 
-        "color_correct"
-    ]
-    parameters: Dict[str, Any] = Field(
-        default_factory=dict, 
-        description="Parameters specific to operation (e.g. {'clip_limit': 2.0, 'gamma': 1.2})"
+    detected_issue: str = Field(
+        ..., description="e.g. 'underexposed', 'high_noise', 'low_contrast'"
     )
-    order: int = Field(default=0, description="Execution priority order (e.g., denoise before sharpen)")
+    operation: Literal["denoise", "gamma_correct", "clahe", "sharpen", "color_correct"]
+    parameters: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Parameters specific to operation (e.g. {'clip_limit': 2.0, 'gamma': 1.2})",
+    )
+    order: int = Field(
+        default=0, description="Execution priority order (e.g., denoise before sharpen)"
+    )
+
 
 class TreatmentPlan(BaseModel):
     iteration: int = 1
     reasoning: str = Field(..., description="VLM clinical reasoning for proposed treatments")
     actions: List[RegionOperationPlan] = Field(..., description="Ordered list of operations")
+
 
 # ---------------------------------------------------------
 # Module 1 & 6: Evaluation Output Schema
@@ -95,16 +99,14 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
     """Tính toán toàn bộ các chỉ số kỹ thuật của ảnh (độ sáng, tương phản, nhiễu, độ mờ)."""
     ...
 
-def evaluate_reference(
-    current_image: np.ndarray, 
-    ground_truth: np.ndarray
-) -> EvaluationResult:
+
+def evaluate_reference(current_image: np.ndarray, ground_truth: np.ndarray) -> EvaluationResult:
     """Đánh giá chất lượng với ảnh gốc mẫu (PSNR, SSIM, MSE)."""
     ...
 
+
 def evaluate_no_reference(
-    current_image: np.ndarray, 
-    previous_image: Optional[np.ndarray] = None
+    current_image: np.ndarray, previous_image: Optional[np.ndarray] = None
 ) -> EvaluationResult:
     """Đánh giá chất lượng ảnh thực không có ground-truth (BRISQUE, NIQE, chênh lệch chỉ số)."""
     ...
@@ -117,9 +119,11 @@ def segment_by_prompt(image: np.ndarray, text_prompt: str) -> np.ndarray:
     Trả về soft mask dtype=float32 trong khoảng [0.0, 1.0]."""
     ...
 
+
 def detect_faces(image: np.ndarray) -> List[np.ndarray]:
     """Phát hiện và tạo mặt nạ khuôn mặt bằng MediaPipe."""
     ...
+
 
 def create_soft_mask(binary_mask: np.ndarray, feather_radius: int = 15) -> np.ndarray:
     """Làm mịn biên mặt nạ (Gaussian feathering) để tránh tạo viền khi ghép ảnh."""
@@ -130,46 +134,48 @@ def create_soft_mask(binary_mask: np.ndarray, feather_radius: int = 15) -> np.nd
 All operations implement the standard wrapped signature:
 ```python
 def apply_denoise(
-    image: np.ndarray, 
-    mask: Optional[np.ndarray] = None, 
+    image: np.ndarray,
+    mask: Optional[np.ndarray] = None,
     method: Literal["gaussian", "median", "bilateral", "nlm"] = "bilateral",
     strength: float = 1.0,
-    **kwargs
+    **kwargs,
 ) -> np.ndarray:
     """Khử nhiễu cục bộ hoặc toàn cục theo mặt nạ mềm."""
     ...
 
+
 def apply_gamma(
-    image: np.ndarray, 
-    mask: Optional[np.ndarray] = None, 
-    gamma: float = 1.0
+    image: np.ndarray, mask: Optional[np.ndarray] = None, gamma: float = 1.0
 ) -> np.ndarray:
     """Hiệu chỉnh độ sáng phi tuyến tính bằng hàm Gamma."""
     ...
 
+
 def apply_clahe(
-    image: np.ndarray, 
-    mask: Optional[np.ndarray] = None, 
-    clip_limit: float = 2.0, 
-    tile_grid_size: tuple[int, int] = (8, 8)
+    image: np.ndarray,
+    mask: Optional[np.ndarray] = None,
+    clip_limit: float = 2.0,
+    tile_grid_size: tuple[int, int] = (8, 8),
 ) -> np.ndarray:
     """Cân bằng lược đồ độ sáng cục bộ thích ứng độ tương phản (CLAHE)."""
     ...
 
+
 def apply_sharpen(
-    image: np.ndarray, 
-    mask: Optional[np.ndarray] = None, 
+    image: np.ndarray,
+    mask: Optional[np.ndarray] = None,
     method: Literal["unsharp_mask", "laplacian"] = "unsharp_mask",
-    amount: float = 1.0
+    amount: float = 1.0,
 ) -> np.ndarray:
     """Tăng cường độ sắc nét cục bộ."""
     ...
 
+
 def apply_color_balance(
-    image: np.ndarray, 
-    mask: Optional[np.ndarray] = None, 
+    image: np.ndarray,
+    mask: Optional[np.ndarray] = None,
     saturation_scale: float = 1.0,
-    temperature_shift: float = 0.0
+    temperature_shift: float = 0.0,
 ) -> np.ndarray:
     """Cân bằng trắng và điều chỉnh độ bão hòa màu sắc."""
     ...
@@ -179,11 +185,12 @@ def apply_color_balance(
 ```python
 from langgraph.graph import StateGraph
 
+
 def run_doctor_pipeline(
-    image_bytes: bytes, 
-    is_synthetic: bool = False, 
+    image_bytes: bytes,
+    is_synthetic: bool = False,
     ground_truth_bytes: Optional[bytes] = None,
-    max_iterations: int = 3
+    max_iterations: int = 3,
 ) -> Dict[str, Any]:
     """Khởi chạy toàn bộ vòng lặp khép kín: Analyze -> Diagnose -> Plan -> Process -> Eval -> Decision."""
     ...

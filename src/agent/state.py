@@ -55,6 +55,7 @@ class DoctorState(TypedDict):
 
     original_image: np.ndarray
     current_image: np.ndarray
+    previous_image: Optional[np.ndarray] = None
     ground_truth_image: Optional[np.ndarray]
     is_synthetic: bool
     iteration: int

@@ -49,9 +49,7 @@ def test_process_interface_synthetic_input():
     clean_img = np.ones((32, 32, 3), dtype=np.uint8) * 128
     noisy_img = np.clip(clean_img.astype(np.int16) + 10, 0, 255).astype(np.uint8)
 
-    out_img, status, gallery, reasoning, details = process_interface(
-        noisy_img, clean_img, 1
-    )
+    out_img, status, gallery, reasoning, details = process_interface(noisy_img, clean_img, 1)
 
     assert out_img is not None
     assert "Chỉ số tham chiếu" in status or "Quyết định" in status

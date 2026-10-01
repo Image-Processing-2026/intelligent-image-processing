@@ -185,7 +185,9 @@ def diagnose_and_plan(
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+
+        # Cập nhật họ model Gemini 3.5 Flash-Lite theo cảnh báo deprecate 2.5
+        model = genai.GenerativeModel("gemini-3.5-flash-lite")
 
         pil_img = Image.fromarray(image)
         history_feedback = _build_history_feedback(history)

@@ -71,11 +71,17 @@ Hệ thống phân tách rõ ràng giữa:
 
 ```python
 class RegionOperation(BaseModel):
-    region_id: str = Field(..., description="Định danh vùng, ví dụ: 'sky', 'face', 'foreground', 'full_image'")
+    region_id: str = Field(
+        ..., description="Định danh vùng, ví dụ: 'sky', 'face', 'foreground', 'full_image'"
+    )
     target_prompt: str = Field(..., description="Từ khóa nhận diện phục vụ MobileSAM/GroundingDINO")
-    detected_issue: str = Field(..., description="Vấn đề kỹ thuật: underexposed, noise, low_contrast, blur, etc.")
+    detected_issue: str = Field(
+        ..., description="Vấn đề kỹ thuật: underexposed, noise, low_contrast, blur, etc."
+    )
     operation: str = Field(..., description="Tên công cụ hợp lệ trong Toolbox")
-    parameters: Dict[str, Any] = Field(default_factory=dict, description="Siêu tham số thực thi thuật toán")
+    parameters: Dict[str, Any] = Field(
+        default_factory=dict, description="Siêu tham số thực thi thuật toán"
+    )
     order: int = Field(default=0, description="Độ ưu tiên thực thi trong pipeline")
 ```
 
@@ -98,7 +104,9 @@ class RegionOperation(BaseModel):
 class TreatmentPlan(BaseModel):
     iteration: int = 1
     reasoning: str = Field(..., description="Lý do chuyên môn từ mô hình VLM")
-    actions: List[RegionOperation] = Field(default_factory=list, description="Danh sách các thao tác thực thi")
+    actions: List[RegionOperation] = Field(
+        default_factory=list, description="Danh sách các thao tác thực thi"
+    )
 ```
 
 #### Chi tiết từng trường dữ liệu:
@@ -324,8 +332,7 @@ if is_syn and gt is not None:
 else:
     # Nhánh 2: Real-World Photo (Không có Ground-Truth)
     eval_metrics = evaluate_no_reference(
-        current_image=state["current_image"], 
-        previous_image=state["original_image"]
+        current_image=state["current_image"], previous_image=state["original_image"]
     )
 
 return {"evaluation_result": eval_metrics}
@@ -391,14 +398,7 @@ def should_continue(state: DoctorState) -> str:
 
 Trong hàm `build_doctor_graph()`, cạnh điều kiện được thiết lập như sau:
 ```python
-workflow.add_conditional_edges(
-    "decide",
-    should_continue,
-    {
-        "re_process": "analyze",
-        "ship": END
-    }
-)
+workflow.add_conditional_edges("decide", should_continue, {"re_process": "analyze", "ship": END})
 ```
 
 ### 4.2 Bảng Chuyển trạng thái (State Transition Table)
@@ -456,6 +456,7 @@ Trên các máy tính phát triển sử dụng iGPU (ví dụ: AMD Radeon 680M/
 Tại điểm cuối của `decide_node` khi chuẩn bị quay lại vòng lặp mới, hệ thống thực hiện giải phóng tài nguyên:
 ```python
 import gc
+
 # Giải phóng các vùng đệm bộ nhớ không sử dụng giữa các iteration
 gc.collect()
 ```
@@ -497,12 +498,13 @@ from src.analyzer_evaluator.no_reference_eval import evaluate_no_reference
 
 logger = logging.getLogger("DoctorGraph")
 
+
 def analyze_node(state: DoctorState) -> Dict[str, Any]:
     """Node 1: Phân tích chỉ số kỹ thuật với cơ chế bắt lỗi an toàn."""
     try:
         if state["current_image"] is None or state["current_image"].size == 0:
             raise ValueError("Bức ảnh hiện tại rỗng hoặc không hợp lệ.")
-        
+
         metrics = analyze_image(state["current_image"])
         return {"technical_metrics": metrics.model_dump(), "error_message": None}
     except Exception as e:
@@ -517,12 +519,13 @@ def analyze_node(state: DoctorState) -> Dict[str, Any]:
             "sharpness_laplacian_var": 100.0,
             "blur_level": "sharp",
             "color_cast": "none",
-            "histogram_stats": {}
+            "histogram_stats": {},
         }
         return {
             "technical_metrics": default_metrics,
-            "error_message": f"AnalyzeNode Warning: {str(e)}"
+            "error_message": f"AnalyzeNode Warning: {str(e)}",
         }
+
 
 def process_node(state: DoctorState) -> Dict[str, Any]:
     """Node 3: Thực thi kế hoạch điều trị với cơ chế cô lập lỗi từng thao tác."""
@@ -538,7 +541,7 @@ def process_node(state: DoctorState) -> Dict[str, Any]:
         # Fallback an toàn: Bảo toàn ảnh trước đó, không làm hỏng dữ liệu
         return {
             "current_image": state["current_image"],
-            "error_message": f"ProcessNode Fallback: Giữ nguyên ảnh do lỗi thực thi ({str(e)})"
+            "error_message": f"ProcessNode Fallback: Giữ nguyên ảnh do lỗi thực thi ({str(e)})",
         }
 ```
 

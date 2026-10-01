@@ -84,8 +84,7 @@ async def process_image_endpoint(
 
         # Encode ảnh trung gian
         intermediate_b64 = [
-            _encode_image_to_base64(img)
-            for img in result_state.get("intermediate_images", [])
+            _encode_image_to_base64(img) for img in result_state.get("intermediate_images", [])
         ]
 
         return ProcessResponse(
