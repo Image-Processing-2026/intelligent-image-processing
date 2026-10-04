@@ -14,6 +14,10 @@ def _raw_color_balance(
     image: np.ndarray, saturation_scale: float = 1.0, temperature_shift: float = 0.0
 ) -> np.ndarray:
     """Hiệu chỉnh màu sắc và cân bằng nhiệt độ màu."""
+    # Ảnh grayscale không có thông tin màu -> saturation/temperature vô nghĩa, trả về nguyên trạng
+    if image.ndim == 2:
+        return image
+
     # 1. Điều chỉnh độ bão hòa màu trong không gian HSV
     if abs(saturation_scale - 1.0) > 1e-3:
         hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV).astype(np.float32)

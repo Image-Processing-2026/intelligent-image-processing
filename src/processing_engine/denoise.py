@@ -37,6 +37,8 @@ def _raw_denoise(
     elif method == "nlm":
         # Non-Local Means: khử nhiễu bằng cách tìm kiếm mẫu lặp lại trong ảnh
         h_lum = float(strength * 10.0)
+        if image.ndim == 2:
+            return cv2.fastNlMeansDenoising(image, None, h_lum, 7, 21)
         return cv2.fastNlMeansDenoisingColored(image, None, h_lum, h_lum, 7, 21)
 
     return image
