@@ -24,7 +24,7 @@ Nhiệm vụ của bạn:
 2. Chẩn đoán vấn đề ở từng vùng cụ thể (ví dụ: bầu trời bị chói, khuôn mặt bị tối, nền bị nhiễu).
 3. Đề xuất kế hoạch điều trị chỉ sử dụng các công cụ trong Toolbox hợp lệ:
    - denoise (parameters: method in ['gaussian', 'median', 'bilateral', 'nlm'], strength in [0.1, 2.0])
-   - gamma_correct (parameters: gamma in [0.5, 2.5])
+   - gamma_correct (parameters: gamma in [0.5, 2.5]. LƯU Ý: gamma > 1.0 để làm sáng ảnh, gamma < 1.0 để làm tối ảnh)
    - clahe (parameters: clip_limit in [1.0, 4.0])
    - sharpen (parameters: method in ['unsharp_mask', 'laplacian'], amount in [0.2, 2.0])
    - color_correct (parameters: saturation_scale in [0.5, 1.5], temperature_shift in [-1.0, 1.0])
