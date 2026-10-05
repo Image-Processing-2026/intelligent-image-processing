@@ -3,6 +3,7 @@ Integration test: xác nhận Module 4's execute_plan() gọi đúng
 các hàm Module 3 (apply_denoise, apply_gamma, ...) với format
 tham số khớp nhau, và pipeline không vỡ khi ghép Agent <-> Processing Engine.
 """
+
 import numpy as np
 
 from src.agent.executor import execute_plan
