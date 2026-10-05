@@ -1,0 +1,11 @@
+case,baseline_type,e_max,mae,rmse,exact_channel_rate,exact_pixel_rate,differing_channels,one_off_channels,boundary_qualified,near_integer_differences
+w3c_opaque,W3C 5.1.1 opaque normalized to uint8 RGB,0,0.0,0.0,1.0,1.0,0,0,True,0
+w3c_half,W3C 5.1.1 half-alpha normalized to uint8 RGB,0,0.0,0.0,1.0,1.0,0,0,True,0
+spatial_2x2,project hand-calculated spatial mask,0,0.0,0.0,1.0,1.0,0,0,True,0
+dyadic,independent int64 oracle for alpha t/256,0,0.0,0.0,1.0,1.0,0,0,True,0
+random,Fraction oracle from stored float32 mask,0,0.0,0.0,1.0,1.0,0,0,True,0
+same,identity-channel preservation,0,0.0,0.0,1.0,1.0,0,0,True,0
+zero,mask zero identity,0,0.0,0.0,1.0,1.0,0,0,True,0
+one,mask one processed image,0,0.0,0.0,1.0,1.0,0,0,True,0
+none,None mask selects processed image,0,0.0,0.0,1.0,1.0,0,0,True,0
+near_integer,Fraction oracle for float32 0.1 and adjacent values,1,0.3333333333333333,0.5773502691896257,0.6666666666666666,0.6666666666666666,3,3,True,3

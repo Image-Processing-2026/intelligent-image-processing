@@ -1,0 +1,42 @@
+[
+  {
+    "case_id": "MULTI_UNION",
+    "boxes": [
+      [
+        1,
+        0,
+        3,
+        2
+      ],
+      [
+        2,
+        1,
+        5,
+        3
+      ]
+    ],
+    "scores": [
+      0.9,
+      0.9
+    ]
+  },
+  {
+    "case_id": "EMPTY",
+    "boxes": [],
+    "scores": []
+  },
+  {
+    "case_id": "EDGE",
+    "boxes": [
+      [
+        -2,
+        -1,
+        2,
+        2
+      ]
+    ],
+    "scores": [
+      0.9
+    ]
+  }
+]

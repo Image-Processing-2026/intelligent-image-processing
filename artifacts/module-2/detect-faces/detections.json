@@ -1,0 +1,98 @@
+[
+  {
+    "case_id": "CENTER",
+    "bboxes": [
+      [
+        4,
+        3,
+        8,
+        7
+      ]
+    ],
+    "scores": [
+      0.9
+    ]
+  },
+  {
+    "case_id": "EXPAND",
+    "bboxes": [
+      [
+        3,
+        2,
+        9,
+        8
+      ]
+    ],
+    "scores": [
+      0.9
+    ]
+  },
+  {
+    "case_id": "DEFAULT_EXPAND",
+    "bboxes": [
+      [
+        3,
+        2,
+        9,
+        8
+      ]
+    ],
+    "scores": [
+      0.9
+    ]
+  },
+  {
+    "case_id": "EDGE",
+    "bboxes": [
+      [
+        -1,
+        -1,
+        5,
+        5
+      ]
+    ],
+    "scores": [
+      0.9
+    ]
+  },
+  {
+    "case_id": "OUTSIDE",
+    "bboxes": [
+      [
+        20,
+        20,
+        22,
+        22
+      ]
+    ],
+    "scores": [
+      0.9
+    ]
+  },
+  {
+    "case_id": "EMPTY",
+    "bboxes": [],
+    "scores": []
+  },
+  {
+    "case_id": "MULTI",
+    "bboxes": [
+      [
+        0,
+        2,
+        2,
+        4
+      ],
+      [
+        4,
+        5,
+        6,
+        7
+      ]
+    ],
+    "scores": [
+      0.8,
+      0.99
+    ]
+  }
+]

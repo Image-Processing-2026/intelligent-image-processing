@@ -1,0 +1,36 @@
+{
+  "fixture_cases": 10,
+  "exact_cases": 9,
+  "cases_with_differences": 1,
+  "total_differing_channels": 3,
+  "total_one_off_channels": 3,
+  "all_differences_boundary_qualified": true,
+  "quantization_boundary": [
+    {
+      "alpha": "0.1",
+      "reference": 20.000000149011612,
+      "actual": 20,
+      "expected": 20,
+      "difference": 0
+    },
+    {
+      "alpha": "nextafter down",
+      "reference": 19.999999403953552,
+      "actual": 20,
+      "expected": 19,
+      "difference": 1
+    },
+    {
+      "alpha": "nextafter up",
+      "reference": 20.00000089406967,
+      "actual": 20,
+      "expected": 20,
+      "difference": 0
+    }
+  ],
+  "environment": {
+    "python": "3.13.13",
+    "numpy": "2.2.6",
+    "matplotlib": "3.10.9"
+  }
+}

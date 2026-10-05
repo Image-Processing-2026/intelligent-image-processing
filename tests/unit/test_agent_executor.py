@@ -5,8 +5,9 @@ Unit tests for Module 4: Agent Tool Dispatcher & Robust Executor.
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 
-from src.agent.executor import _validate_mask, execute_plan
+from src.agent.executor import _infer_region_kind, _validate_mask, execute_plan
 from src.agent.state import RegionOperation, TreatmentPlan
 from src.processing_engine.exposure_contrast import apply_gamma
 
@@ -229,8 +230,8 @@ def test_execute_plan_face_detected_vietnamese_target():
     assert not np.array_equal(result, img)
 
 
-def test_execute_plan_invalid_mask_fallback_to_full():
-    """Mặt nạ không hợp lệ (ví dụ: toàn 0 hoặc sai kích thước) → fallback sang full image (mask=None)."""
+def test_execute_plan_invalid_mask_uses_heuristic_region():
+    """Mask ngữ nghĩa sai kích thước cho 'sky' → dùng heuristic góc trên (D1), không xử lý toàn ảnh."""
     img = np.ones((64, 64, 3), dtype=np.uint8) * 100
     plan = TreatmentPlan(
         iteration=1,
@@ -252,11 +253,16 @@ def test_execute_plan_invalid_mask_fallback_to_full():
         with patch("src.agent.executor.apply_gamma", wraps=apply_gamma) as mock_gamma:
             result = execute_plan(img, plan)
             mock_gamma.assert_called_once()
-            # Mask truyền vào apply_gamma phải là None do fallback
-            assert mock_gamma.call_args[1]["mask"] is None
+            mask = mock_gamma.call_args[1]["mask"]
 
+    # Mask heuristic: phủ nửa trên, nửa dưới gần như không bị tác động
+    assert mask is not None
+    assert mask.shape == (64, 64)
+    assert mask[:16].mean() > 0.9
+    assert mask[48:].mean() < 0.1
     assert result.shape == img.shape
     assert result.dtype == np.uint8
+    assert result[:8].mean() > result[56:].mean()
 
 
 def test_execute_plan_segmentation_exception_handled():
@@ -338,3 +344,72 @@ def test_execute_plan_empty_or_none():
 
     empty_plan = TreatmentPlan(iteration=1, reasoning="", actions=[])
     assert np.array_equal(execute_plan(img, empty_plan), img)
+
+
+def test_execute_plan_semantic_backend_unavailable_uses_heuristic():
+    """Không có trọng số GroundingDINO/MobileSAM (mặc định trong CI) → 'sky' dùng heuristic."""
+    img = np.ones((64, 64, 3), dtype=np.uint8) * 100
+    plan = TreatmentPlan(
+        iteration=1,
+        reasoning="Real segment_by_prompt without model assets",
+        actions=[
+            RegionOperation(
+                region_id="sky",
+                target_prompt="bầu trời",
+                region_type="semantic",
+                detected_issue="dark",
+                operation="gamma_correct",
+                parameters={"gamma": 2.0},
+            )
+        ],
+    )
+    with patch.dict("os.environ", {"REGION_DINO_MODEL_PATH": "does/not/exist"}):
+        result = execute_plan(img, plan)
+    assert result[:8].mean() > 100
+    assert result[56:].mean() < 105
+
+
+def test_execute_plan_unknown_prompt_without_backend_is_skipped():
+    """Prompt không có heuristic và backend không khả dụng → bỏ qua, không xử lý toàn ảnh (D1)."""
+    img = np.ones((64, 64, 3), dtype=np.uint8) * 100
+    plan = TreatmentPlan(
+        iteration=1,
+        reasoning="Unknown prompt",
+        actions=[
+            RegionOperation(
+                region_id="dog",
+                target_prompt="dog",
+                detected_issue="dark",
+                operation="gamma_correct",
+                parameters={"gamma": 2.0},
+            )
+        ],
+    )
+    with patch.dict("os.environ", {"REGION_DINO_MODEL_PATH": "does/not/exist"}):
+        result = execute_plan(img, plan)
+    assert np.array_equal(result, img)
+
+
+@pytest.mark.parametrize(
+    ("target", "region_type", "expected"),
+    [
+        ("face", None, "face"),
+        ("khuôn mặt", "semantic", "face"),
+        ("full", None, "full"),
+        ("toàn bộ", "semantic", "full"),
+        ("top", None, "spatial"),
+        ("sky", None, "semantic"),
+        ("sky", "spatial", "spatial"),
+        ("anything", "bbox", "bbox"),
+    ],
+)
+def test_infer_region_kind(target, region_type, expected):
+    """region_type=None hoặc 'semantic' được suy ra từ target_prompt; loại tường minh khác giữ nguyên (D2)."""
+    action = RegionOperation(
+        region_id="r",
+        target_prompt=target,
+        region_type=region_type,
+        detected_issue="x",
+        operation="denoise",
+    )
+    assert _infer_region_kind(action) == expected

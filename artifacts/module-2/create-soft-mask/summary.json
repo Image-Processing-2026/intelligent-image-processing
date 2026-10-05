@@ -1,0 +1,15 @@
+{
+  "case_count": 20,
+  "passed_atol_1e-6": 20,
+  "worst_case": {
+    "case_id": "rect",
+    "feather_radius": 15,
+    "e_max": 1.1454386061870991e-07,
+    "mae": 1.4794331371959831e-08,
+    "rmse": 2.8461990189631996e-08
+  },
+  "threshold": {
+    "atol": 1e-06,
+    "rtol": 0
+  }
+}

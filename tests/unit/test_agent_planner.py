@@ -61,14 +61,14 @@ def test_validate_and_sort_plan():
 
 
 def test_region_operation_default_region_type():
-    """Kiểm tra giá trị mặc định của region_type trong RegionOperation."""
+    """region_type mặc định là None → executor tự suy ra từ target_prompt (D2)."""
     op = RegionOperation(
         region_id="full_image",
         target_prompt="full",
         detected_issue="noise",
         operation="denoise",
     )
-    assert op.region_type == "full"
+    assert op.region_type is None
 
 
 def test_build_history_feedback_empty():

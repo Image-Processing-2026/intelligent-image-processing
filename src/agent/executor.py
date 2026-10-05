@@ -12,12 +12,31 @@ from src.processing_engine.color import apply_color_balance
 from src.processing_engine.denoise import apply_denoise
 from src.processing_engine.exposure_contrast import apply_clahe, apply_gamma
 from src.processing_engine.sharpen import apply_sharpen
+from src.region_engine.controller import (
+    InvalidRegionRequestError,
+    RegionBackendUnavailableError,
+    RegionInferenceError,
+    RegionRequest,
+)
+from src.region_engine.controller import resolve_region as resolve_module_region
 from src.region_engine.detector import segment_by_prompt
 from src.region_engine.face_detector import detect_faces
 
-from .state import TreatmentPlan
+from .state import RegionOperation, TreatmentPlan
 
 logger = logging.getLogger(__name__)
+
+_FACE_TARGETS = frozenset(("face", "faces", "khuôn mặt", "khuôn mặt người"))
+_FULL_TARGETS = frozenset(("full", "all", "toàn", "toàn bộ", "full_image"))
+_SPATIAL_TARGETS = frozenset(("top", "bottom", "left", "right", "center", "giữa"))
+
+# Heuristic dự phòng (quyết định D1): chỉ dùng khi backend ngữ nghĩa không khả dụng
+# hoặc suy luận lỗi. Từ khóa không khớp → bỏ qua action, KHÔNG xử lý toàn ảnh.
+_HEURISTIC_QUADRANTS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("sky", "trời"), "top"),
+    (("ground", "floor", "đất"), "bottom"),
+    (("center", "centre", "giữa"), "center"),
+)
 
 
 def _validate_mask(mask: Any, image_shape: tuple) -> bool:
@@ -46,6 +65,132 @@ def _validate_mask(mask: Any, image_shape: tuple) -> bool:
     return True
 
 
+def _infer_region_kind(action: RegionOperation) -> str:
+    """
+    Xác định loại vùng cho Module 2 (quyết định D2).
+    region_type=None → suy ra từ target_prompt; 'semantic' với từ khóa đặc biệt
+    (face/full/quadrant) được chuyển sang bộ phân giải rẻ hơn tương ứng.
+    """
+    target = action.target_prompt.strip().casefold()
+    kind = action.region_type
+    if kind is None or kind == "semantic":
+        if target in _FACE_TARGETS:
+            return "face"
+        if target in _FULL_TARGETS:
+            return "full"
+        if target in _SPATIAL_TARGETS:
+            return "spatial"
+        return "semantic"
+    return kind
+
+
+def _request_for_action(action: RegionOperation, kind: str) -> RegionRequest:
+    """Chuyển một action của kế hoạch thành RegionRequest chuẩn của Module 2."""
+    return RegionRequest(
+        kind=kind,
+        bbox=action.bbox,
+        quadrant=action.quadrant or (action.target_prompt if kind == "spatial" else None),
+        prompt=action.target_prompt if kind == "semantic" else None,
+        binary_mask=action.binary_mask if kind == "binary_mask" else None,
+        feather_radius=action.feather_radius,
+        expand_ratio=action.expand_ratio,
+        merge_policy=action.merge_policy,
+        face_mode=action.face_mode,
+        num_faces=action.num_faces,
+        instance_selection=action.instance_selection,
+        instance_index=action.instance_index,
+        box_threshold=action.box_threshold,
+        text_threshold=action.text_threshold,
+        nms_iou_threshold=action.nms_iou_threshold,
+    )
+
+
+def _heuristic_quadrant(prompt: str) -> Optional[str]:
+    """Ánh xạ từ khóa không gian quen thuộc sang góc phần tư; None nếu không khớp."""
+    lowered = prompt.casefold()
+    for keywords, quadrant in _HEURISTIC_QUADRANTS:
+        if any(keyword in lowered for keyword in keywords):
+            return quadrant
+    return None
+
+
+def _as_rgb_for_detection(image: np.ndarray) -> np.ndarray:
+    """Module 2 chỉ nhận RGB (H, W, 3); ảnh xám được nhân bản kênh chỉ để dò vùng."""
+    if image.ndim == 2:
+        return np.repeat(image[:, :, None], 3, axis=2)
+    if image.ndim == 3 and image.shape[2] == 1:
+        return np.repeat(image, 3, axis=2)
+    return image
+
+
+def _resolve_action_mask(
+    image: np.ndarray, action: RegionOperation
+) -> tuple[bool, Optional[np.ndarray]]:
+    """
+    Tạo mặt nạ vùng cho một action thông qua Module 2 controller.
+
+    Returns:
+        (proceed, mask): proceed=False → bỏ qua action; mask=None → xử lý toàn ảnh.
+    """
+    kind = _infer_region_kind(action)
+    if kind == "full":
+        return True, None
+
+    detection_image = _as_rgb_for_detection(image)
+    request = _request_for_action(action, kind)
+    try:
+        # Truyền resolver qua namespace của executor để test có thể patch.
+        region = resolve_module_region(
+            detection_image,
+            request,
+            _face_resolver=detect_faces,
+            _semantic_resolver=segment_by_prompt,
+        )
+    except (RegionBackendUnavailableError, RegionInferenceError) as exc:
+        quadrant = _heuristic_quadrant(action.target_prompt) if kind == "semantic" else None
+        if quadrant is None:
+            logger.warning(
+                "Region '%s' (%s) could not be resolved (%s). Skipping action '%s'.",
+                action.region_id,
+                kind,
+                exc,
+                action.operation,
+            )
+            return False, None
+        logger.warning(
+            "Semantic backend failed for region '%s' (%s). Using heuristic '%s' quadrant.",
+            action.region_id,
+            exc,
+            quadrant,
+        )
+        region = resolve_module_region(
+            detection_image,
+            RegionRequest(kind="spatial", quadrant=quadrant, feather_radius=action.feather_radius),
+        )
+    except InvalidRegionRequestError as exc:
+        logger.warning(
+            "Invalid region request for '%s': %s. Skipping action '%s'.",
+            action.region_id,
+            exc,
+            action.operation,
+        )
+        return False, None
+
+    if region.is_empty or not _validate_mask(region.mask, image.shape):
+        logger.warning(
+            "No usable mask for region '%s' (%s). Skipping action '%s'.",
+            action.region_id,
+            kind,
+            action.operation,
+        )
+        return False, None
+
+    # Module 3 hiểu mask=None là toàn ảnh; giữ tối ưu này cho vùng 'full'.
+    if region.metadata.get("kind") == "full":
+        return True, None
+    return True, region.mask
+
+
 def execute_plan(image: np.ndarray, plan: TreatmentPlan) -> np.ndarray:
     """
     Thực thi tuần tự các hành động trong kế hoạch điều trị trên ảnh.
@@ -66,31 +211,9 @@ def execute_plan(image: np.ndarray, plan: TreatmentPlan) -> np.ndarray:
     for action in plan.actions:
         try:
             # 1. Tạo mặt nạ vùng thông qua Module 2
-            mask: Optional[np.ndarray] = None
-            target = action.target_prompt.lower().strip()
-
-            if target in ["face", "khuôn mặt"]:
-                face_masks = detect_faces(current_img)
-                if face_masks:
-                    mask = face_masks[0]
-                else:
-                    logger.warning(
-                        "No face detected for action '%s' on region '%s'. Skipping action.",
-                        action.operation,
-                        action.region_id,
-                    )
-                    continue
-            elif target not in ["full", "all", "toàn bộ", "full_image"]:
-                mask = segment_by_prompt(current_img, action.target_prompt)
-
-            # Validate mask
-            if mask is not None and not _validate_mask(mask, current_img.shape):
-                logger.warning(
-                    "Invalid mask for action '%s' on region '%s'. Fallback to full-image processing (mask=None).",
-                    action.operation,
-                    action.region_id,
-                )
-                mask = None
+            proceed, mask = _resolve_action_mask(current_img, action)
+            if not proceed:
+                continue
 
             # 2. Áp dụng thao tác xử lý ảnh tương ứng từ Module 3
             op = action.operation.lower().strip()

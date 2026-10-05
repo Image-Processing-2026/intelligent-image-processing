@@ -1,0 +1,24 @@
+{
+  "case_count": 117,
+  "soft_comparisons": 819,
+  "soft_pass": 819,
+  "soft_fail": 0,
+  "hard_comparisons": 117,
+  "hard_pixel_mismatch": 0,
+  "hard_min_iou": 1.0,
+  "worst_soft_case": {
+    "case_id": "random_056",
+    "shape": "17x23",
+    "bbox": "(7, -6, 21, 14)",
+    "feather_radius": 25,
+    "maxae": 1.7616806258224926e-07,
+    "mae": 3.374017337487235e-08,
+    "rmse": 4.436850055533421e-08,
+    "passed": true
+  },
+  "threshold": {
+    "maxae": 1e-06,
+    "mae": 1e-07
+  },
+  "passed": true
+}
