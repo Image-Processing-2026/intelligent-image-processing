@@ -3,7 +3,7 @@ Trạng thái làm việc của LangGraph (Doctor State Schema).
 Lưu trữ toàn bộ dữ liệu ảnh, chỉ số kỹ thuật, lịch sử xử lý và kế hoạch điều trị.
 """
 
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 import numpy as np
 from pydantic import BaseModel, Field
@@ -14,10 +14,40 @@ class RegionOperation(BaseModel):
 
     region_id: str = Field(..., description="Tên vùng, ví dụ: 'sky', 'face', 'full'")
     target_prompt: str = Field(..., description="Từ khóa nhận diện vùng hoặc mô tả không gian")
-    region_type: str = Field(
-        default="full",
-        description="Loại vùng: 'semantic' (GroundingDINO+SAM), 'face' (MediaPipe), 'spatial' (quadrant), 'full' (toàn ảnh)",
+    # None → executor suy ra loại vùng từ target_prompt (face/full/quadrant/semantic)
+    region_type: Optional[Literal["semantic", "face", "spatial", "full", "bbox", "binary_mask"]] = (
+        Field(
+            default=None,
+            description="Bộ phân giải vùng của Module 2; None thì suy ra từ target_prompt",
+        )
     )
+    bbox: Optional[tuple[int, int, int, int]] = Field(
+        default=None,
+        description="Half-open pixel bbox (xmin, ymin, xmax, ymax) for bbox regions",
+    )
+    quadrant: Optional[str] = Field(
+        default=None,
+        description="top, bottom, left, right, or center for spatial regions",
+    )
+    binary_mask: Optional[Any] = Field(
+        default=None,
+        description="In-process bool/uint8 binary mask for binary_mask regions",
+    )
+    # Không đặt ge/le ở đây: một giá trị vượt biên từ VLM sẽ làm hỏng cả kế hoạch.
+    # Biên được kẹp trong planner.REGION_FIELD_BOUNDS (giống PARAMETER_BOUNDS).
+    feather_radius: int = Field(default=15)
+    expand_ratio: float = Field(default=0.15)
+    merge_policy: Literal["max"] = Field(default="max")
+    face_mode: Literal["bbox", "oval", "sam_refined"] = Field(
+        default="bbox",
+        description="Face region mode. bbox is backward-compatible; oval requires Face Landmarker.",
+    )
+    num_faces: int = Field(default=4)
+    instance_selection: Literal["all", "largest", "index"] = Field(default="all")
+    instance_index: Optional[int] = Field(default=None)
+    box_threshold: float = Field(default=0.35)
+    text_threshold: float = Field(default=0.25)
+    nms_iou_threshold: float = Field(default=0.8)
     detected_issue: str = Field(
         ..., description="Vấn đề kỹ thuật: underexposed, noise, low_contrast, etc."
     )

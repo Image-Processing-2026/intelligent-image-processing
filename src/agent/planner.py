@@ -4,7 +4,8 @@ Kiểm tra tính hợp lệ của kế hoạch điều trị (Plan Validator).
 """
 
 import logging
-from typing import Any, Dict, List, Set
+import math
+from typing import Any, Dict, List, Mapping, Optional, Set
 
 from .state import RegionOperation, TreatmentPlan
 
@@ -39,6 +40,129 @@ PARAMETER_BOUNDS: Dict[str, Dict[str, Any]] = {
         "temperature_shift": {"min": -1.0, "max": 1.0, "default": 0.0},
     },
 }
+
+
+# Bảng ràng buộc các trường vùng (Module 2) mà VLM có thể đề xuất.
+# Kẹp ở đây thay vì ge/le trong Pydantic để một giá trị sai không xóa cả kế hoạch.
+REGION_FIELD_BOUNDS: Dict[str, Dict[str, Any]] = {
+    # min=5: ADR-003 yêu cầu mask luôn được làm mềm, không cho VLM tắt feather
+    "feather_radius": {"min": 5, "max": 50, "default": 15, "integer": True},
+    "expand_ratio": {"min": 0.0, "max": 1.0, "default": 0.15},
+    "num_faces": {"min": 1, "max": 10, "default": 4, "integer": True},
+    "box_threshold": {"min": 0.0, "max": 1.0, "default": 0.35},
+    "text_threshold": {"min": 0.0, "max": 1.0, "default": 0.25},
+    "nms_iou_threshold": {"min": 0.0, "max": 1.0, "default": 0.8},
+    # bbox/binary_mask chỉ dùng trong tiến trình, VLM không cung cấp được → suy ra (D2)
+    "region_type": {"allowed": [None, "full", "face", "spatial", "semantic"], "default": None},
+    "quadrant": {
+        "allowed": [None, "top", "bottom", "left", "right", "center", "giữa"],
+        "default": None,
+    },
+    # sam_refined chưa được bật trong bản build này → dùng bbox
+    "face_mode": {"allowed": ["bbox", "oval"], "default": "bbox"},
+    "merge_policy": {"allowed": ["max"], "default": "max"},
+    "instance_selection": {"allowed": ["all", "largest", "index"], "default": "all"},
+}
+
+# Các trường chỉ hợp lệ trong tiến trình (ndarray, toạ độ pixel); luôn bỏ khỏi đầu ra VLM.
+IN_PROCESS_REGION_FIELDS: tuple[str, ...] = ("bbox", "binary_mask")
+
+
+def _clamp_number(field: str, raw_val: Any, constraint: Dict[str, Any]) -> float | int:
+    """Ép kiểu số và kẹp về [min, max]; giá trị không phải số hữu hạn → default."""
+    try:
+        val = float(raw_val)
+    except (TypeError, ValueError):
+        val = math.nan
+    if isinstance(raw_val, bool) or not math.isfinite(val):
+        logger.warning(
+            "Invalid value '%s' for region.%s. Resetting to default %s.",
+            raw_val,
+            field,
+            constraint["default"],
+        )
+        return constraint["default"]
+    clamped_val = max(constraint["min"], min(constraint["max"], val))
+    if constraint.get("integer"):
+        clamped_val = int(round(clamped_val))
+    if clamped_val != val:
+        logger.warning(
+            "Clamped region.%s from %s to %s (bounds: [%s, %s]).",
+            field,
+            raw_val,
+            clamped_val,
+            constraint["min"],
+            constraint["max"],
+        )
+    return clamped_val
+
+
+def _clamp_instance_index(fields: Dict[str, Any]) -> None:
+    """instance_index chỉ hợp lệ khi instance_selection='index' và là số nguyên >= 0."""
+    raw_index = fields.get("instance_index")
+    if fields["instance_selection"] != "index":
+        if raw_index is not None:
+            logger.warning(
+                "Dropping region.instance_index=%s because instance_selection is '%s'.",
+                raw_index,
+                fields["instance_selection"],
+            )
+        fields["instance_index"] = None
+        return
+    index: Optional[int] = None
+    if not isinstance(raw_index, bool):
+        try:
+            value = float(raw_index)
+            if math.isfinite(value) and value >= 0 and value == int(value):
+                index = int(value)
+        except (TypeError, ValueError):
+            index = None
+    if index is None:
+        logger.warning(
+            "Invalid region.instance_index '%s'. Resetting instance_selection to 'all'.",
+            raw_index,
+        )
+        fields["instance_selection"] = "all"
+    fields["instance_index"] = index
+
+
+def clamp_region_fields(fields: Mapping[str, Any]) -> Dict[str, Any]:
+    """
+    Kẹp các trường vùng của một action về khoảng an toàn (tương tự clamp_parameters).
+    Nhận dict thô từ VLM hoặc từ RegionOperation; các khóa khác được giữ nguyên.
+    - Số vượt biên → kéo về min/max; không phải số → default.
+    - Enum không hợp lệ → default (region_type → None để executor suy ra, D2).
+    - bbox/binary_mask luôn bị đặt về None vì VLM không thể cung cấp hợp lệ.
+    - Trường bị thiếu → bổ sung giá trị default.
+    """
+    clamped = dict(fields)
+
+    for field, constraint in REGION_FIELD_BOUNDS.items():
+        raw_val = clamped.get(field)
+        if "allowed" in constraint:
+            val = raw_val.strip().casefold() if isinstance(raw_val, str) else raw_val
+            if val not in constraint["allowed"]:
+                logger.warning(
+                    "Invalid value '%s' for region.%s. Resetting to default '%s'.",
+                    raw_val,
+                    field,
+                    constraint["default"],
+                )
+                val = constraint["default"]
+            clamped[field] = val
+        elif raw_val is None:
+            clamped[field] = constraint["default"]
+        else:
+            clamped[field] = _clamp_number(field, raw_val, constraint)
+
+    _clamp_instance_index(clamped)
+
+    for field in IN_PROCESS_REGION_FIELDS:
+        if clamped.get(field) is not None:
+            logger.warning("Dropping region.%s supplied by the plan (in-process only).", field)
+        clamped[field] = None
+
+    return clamped
 
 
 def clamp_parameters(operation: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -95,7 +219,7 @@ def validate_and_sort_plan(plan: TreatmentPlan) -> TreatmentPlan:
     """
     Xác thực kế hoạch điều trị:
     1. Loại bỏ các thao tác không nằm trong Toolbox.
-    2. Kẹp (clamp) tham số về khoảng an toàn.
+    2. Kẹp (clamp) tham số và các trường vùng về khoảng an toàn.
     3. Sắp xếp thứ tự ưu tiên (khử nhiễu -> cân bằng sáng -> CLAHE -> làm nét -> chỉnh màu).
     """
     valid_actions: List[RegionOperation] = []
@@ -113,6 +237,13 @@ def validate_and_sort_plan(plan: TreatmentPlan) -> TreatmentPlan:
         if op_name in ALLOWED_OPERATIONS:
             # Kẹp tham số về khoảng an toàn
             action.parameters = clamp_parameters(op_name, action.parameters)
+            # Kẹp các trường vùng (Module 2) và bỏ bbox/binary_mask
+            region_fields = {
+                name: getattr(action, name)
+                for name in (*REGION_FIELD_BOUNDS, "instance_index", *IN_PROCESS_REGION_FIELDS)
+            }
+            for name, value in clamp_region_fields(region_fields).items():
+                setattr(action, name, value)
             # Gán lại độ ưu tiên mặc định nếu chưa được sắp xếp
             calculated_priority = priority_map.get(op_name, 99)
             action.order = calculated_priority

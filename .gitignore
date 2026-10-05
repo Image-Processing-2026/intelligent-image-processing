@@ -28,8 +28,11 @@ wheels/
 
 # Testing & Coverage
 .pytest_cache/
+**/.pytest_cache/
 .coverage
 htmlcov/
+.ruff_cache/
+**/.ruff_cache/
 
 # Environment variables & keys
 .env
@@ -61,3 +64,6 @@ data/real/*
 !data/synthetic/degraded/.gitkeep
 !data/real/.gitkeep
 
+# Generated artifacts (output images, reports) — keep explicitly committed ones
+artifacts/*
+!artifacts/region_engine_person_output.png

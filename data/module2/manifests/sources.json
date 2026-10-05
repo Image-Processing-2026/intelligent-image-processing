@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "sources": [],
+  "note": "Add only pinned sources with URL, release/revision, license/terms, archive SHA-256 and a raw destination. Empty means no dataset is approved for acceptance yet."
+}

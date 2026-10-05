@@ -226,6 +226,138 @@ class TestVLMUnknownOperation:
         assert validated.actions[0].operation == "sharpen"
 
 
+def _region_action(**region_fields) -> dict:
+    """Action gamma_correct trên vùng 'sky' kèm các trường vùng tùy ý từ VLM."""
+    return {
+        "region_id": "sky",
+        "target_prompt": "sky",
+        "detected_issue": "overexposed",
+        "operation": "gamma_correct",
+        "parameters": {"gamma": 0.8},
+        **region_fields,
+    }
+
+
+def _vlm_plan(*actions: dict) -> str:
+    return json.dumps({"iteration": 1, "reasoning": "Vùng trời bị chói.", "actions": list(actions)})
+
+
+class TestVLMRegionFields:
+    """M2-INT-04: một trường vùng sai từ VLM không được làm rỗng cả kế hoạch (SHIP âm thầm)."""
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_out_of_range_region_values_are_clamped_not_dropped(self, mock_genai):
+        response = _vlm_plan(
+            _region_action(
+                region_type="semantic",
+                feather_radius=-3,
+                expand_ratio=7.5,
+                num_faces=0,
+                box_threshold=2.0,
+                instance_index=-1,
+                bbox=[10.5, 0, "x", 4],
+                binary_mask=[[1, 0]],
+            )
+        )
+        mock_genai.GenerativeModel.return_value = _create_mock_model(response)
+
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        plan = validate_and_sort_plan(diagnose_and_plan(img, {}, iteration=1))
+
+        assert len(plan.actions) == 1
+        action = plan.actions[0]
+        assert action.operation == "gamma_correct"
+        assert action.region_type == "semantic"
+        assert action.feather_radius == 5
+        assert action.expand_ratio == 1.0
+        assert action.num_faces == 1
+        assert action.box_threshold == 1.0
+        assert action.instance_index is None
+        assert action.bbox is None
+        assert action.binary_mask is None
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_invalid_enum_values_are_reset(self, mock_genai):
+        response = _vlm_plan(
+            _region_action(
+                region_type="polygon",
+                face_mode="sam_refined",
+                instance_selection="smallest",
+                merge_policy="mean",
+            )
+        )
+        mock_genai.GenerativeModel.return_value = _create_mock_model(response)
+
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        plan = diagnose_and_plan(img, {}, iteration=1)
+
+        assert len(plan.actions) == 1
+        action = plan.actions[0]
+        assert action.region_type is None
+        assert action.face_mode == "bbox"
+        assert action.instance_selection == "all"
+        assert action.merge_policy == "max"
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_one_malformed_action_does_not_empty_the_plan(self, mock_genai):
+        """Action thiếu trường bắt buộc bị loại riêng, các action khác giữ nguyên."""
+        broken = _region_action()
+        del broken["operation"]
+        response = _vlm_plan(broken, "not an object", _region_action(target_prompt="face"))
+        mock_genai.GenerativeModel.return_value = _create_mock_model(response)
+
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        plan = diagnose_and_plan(img, {}, iteration=1)
+
+        assert [a.target_prompt for a in plan.actions] == ["face"]
+        assert plan.reasoning == "Vùng trời bị chói."
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_omitted_region_type_is_inferred(self, mock_genai):
+        """Không có region_type → None, executor suy ra từ target_prompt (D2)."""
+        from src.agent.executor import _infer_region_kind
+
+        response = _vlm_plan(_region_action(target_prompt="face"), _region_action())
+        mock_genai.GenerativeModel.return_value = _create_mock_model(response)
+
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        plan = validate_and_sort_plan(diagnose_and_plan(img, {}, iteration=1))
+
+        assert [a.region_type for a in plan.actions] == [None, None]
+        assert [_infer_region_kind(a) for a in plan.actions] == ["face", "semantic"]
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_pipeline_does_not_ship_on_bad_region_value(self, mock_genai):
+        """Trước M2-INT-04, feather_radius=-1 làm plan rỗng → vòng 1 SHIP ngay."""
+        bad = _vlm_plan(
+            {
+                "region_id": "full_image",
+                "target_prompt": "full",
+                "region_type": "full",
+                "feather_radius": -1,
+                "detected_issue": "underexposed",
+                "operation": "gamma_correct",
+                "parameters": {"gamma": 1.5},
+            }
+        )
+        empty = json.dumps({"iteration": 2, "reasoning": "Ảnh đã tốt", "actions": []})
+        mock_model = MagicMock()
+        mock_model.generate_content.side_effect = [MagicMock(text=bad), MagicMock(text=empty)]
+        mock_genai.GenerativeModel.return_value = mock_model
+
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 60
+        result_state = run_pipeline(image=img, max_iterations=2)
+
+        first = result_state["history"][0]
+        assert len(first.plan.actions) == 1
+        assert first.plan.actions[0].feather_radius == 5
+
+
 class TestVLMInvalidJSON:
     """Test khi VLM trả về chuỗi không phải JSON → exception handler phải bắt."""
 

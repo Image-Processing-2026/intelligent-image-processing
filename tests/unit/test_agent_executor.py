@@ -5,10 +5,24 @@ Unit tests for Module 4: Agent Tool Dispatcher & Robust Executor.
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 
-from src.agent.executor import _validate_mask, execute_plan
+from src.agent.executor import _infer_region_kind, _validate_mask, execute_plan
 from src.agent.state import RegionOperation, TreatmentPlan
 from src.processing_engine.exposure_contrast import apply_gamma
+from src.region_engine.detector import PromptSegmentationResult
+from src.region_engine.segmentation_backend import GroundingDetection
+
+# Executor không truyền resolver ngữ nghĩa → patch đường production trong controller.
+_SEMANTIC_TARGET = "src.region_engine.controller.resolve_prompt_instances"
+
+
+def _semantic_result(*masks: np.ndarray) -> PromptSegmentationResult:
+    """Tạo kết quả GroundingDINO + MobileSAM giả với một detection cho mỗi instance mask."""
+    detections = tuple(
+        GroundingDetection((0.0, 0.0, 1.0, 1.0), 0.9, "object") for _ in range(len(masks))
+    )
+    return PromptSegmentationResult("object", "object.", detections, tuple(masks))
 
 
 def test_validate_mask_direct():
@@ -229,8 +243,8 @@ def test_execute_plan_face_detected_vietnamese_target():
     assert not np.array_equal(result, img)
 
 
-def test_execute_plan_invalid_mask_fallback_to_full():
-    """Mặt nạ không hợp lệ (ví dụ: toàn 0 hoặc sai kích thước) → fallback sang full image (mask=None)."""
+def test_execute_plan_invalid_mask_uses_heuristic_region():
+    """Mask ngữ nghĩa sai kích thước cho 'sky' → dùng heuristic góc trên (D1), không xử lý toàn ảnh."""
     img = np.ones((64, 64, 3), dtype=np.uint8) * 100
     plan = TreatmentPlan(
         iteration=1,
@@ -246,21 +260,26 @@ def test_execute_plan_invalid_mask_fallback_to_full():
         ],
     )
 
-    # Giả lập segment_by_prompt trả về mask sai kích thước (32, 32)
-    invalid_mask = np.ones((32, 32), dtype=np.float32)
-    with patch("src.agent.executor.segment_by_prompt", return_value=invalid_mask):
+    # Giả lập backend ngữ nghĩa trả về instance mask sai kích thước (32, 32)
+    invalid = _semantic_result(np.ones((32, 32), dtype=bool))
+    with patch(_SEMANTIC_TARGET, return_value=invalid):
         with patch("src.agent.executor.apply_gamma", wraps=apply_gamma) as mock_gamma:
             result = execute_plan(img, plan)
             mock_gamma.assert_called_once()
-            # Mask truyền vào apply_gamma phải là None do fallback
-            assert mock_gamma.call_args[1]["mask"] is None
+            mask = mock_gamma.call_args[1]["mask"]
 
+    # Mask heuristic: phủ nửa trên, nửa dưới gần như không bị tác động
+    assert mask is not None
+    assert mask.shape == (64, 64)
+    assert mask[:16].mean() > 0.9
+    assert mask[48:].mean() < 0.1
     assert result.shape == img.shape
     assert result.dtype == np.uint8
+    assert result[:8].mean() > result[56:].mean()
 
 
 def test_execute_plan_segmentation_exception_handled():
-    """segment_by_prompt ném exception → action bị bắt lỗi và bỏ qua an toàn."""
+    """Backend ngữ nghĩa ném exception → action bị bắt lỗi và bỏ qua an toàn."""
     img = np.ones((64, 64, 3), dtype=np.uint8) * 128
     plan = TreatmentPlan(
         iteration=1,
@@ -275,7 +294,7 @@ def test_execute_plan_segmentation_exception_handled():
             )
         ],
     )
-    with patch("src.agent.executor.segment_by_prompt", side_effect=ValueError("SAM model error")):
+    with patch(_SEMANTIC_TARGET, side_effect=ValueError("SAM model error")):
         result = execute_plan(img, plan)
     assert result.shape == img.shape
     assert np.array_equal(result, img)
@@ -338,3 +357,146 @@ def test_execute_plan_empty_or_none():
 
     empty_plan = TreatmentPlan(iteration=1, reasoning="", actions=[])
     assert np.array_equal(execute_plan(img, empty_plan), img)
+
+
+def test_execute_plan_semantic_backend_unavailable_uses_heuristic():
+    """Không có trọng số GroundingDINO/MobileSAM (mặc định trong CI) → 'sky' dùng heuristic."""
+    img = np.ones((64, 64, 3), dtype=np.uint8) * 100
+    plan = TreatmentPlan(
+        iteration=1,
+        reasoning="Real segment_by_prompt without model assets",
+        actions=[
+            RegionOperation(
+                region_id="sky",
+                target_prompt="bầu trời",
+                region_type="semantic",
+                detected_issue="dark",
+                operation="gamma_correct",
+                parameters={"gamma": 2.0},
+            )
+        ],
+    )
+    with patch.dict("os.environ", {"REGION_DINO_MODEL_PATH": "does/not/exist"}):
+        result = execute_plan(img, plan)
+    assert result[:8].mean() > 100
+    assert result[56:].mean() < 105
+
+
+def test_execute_plan_unknown_prompt_without_backend_is_skipped():
+    """Prompt không có heuristic và backend không khả dụng → bỏ qua, không xử lý toàn ảnh (D1)."""
+    img = np.ones((64, 64, 3), dtype=np.uint8) * 100
+    plan = TreatmentPlan(
+        iteration=1,
+        reasoning="Unknown prompt",
+        actions=[
+            RegionOperation(
+                region_id="dog",
+                target_prompt="dog",
+                detected_issue="dark",
+                operation="gamma_correct",
+                parameters={"gamma": 2.0},
+            )
+        ],
+    )
+    with patch.dict("os.environ", {"REGION_DINO_MODEL_PATH": "does/not/exist"}):
+        result = execute_plan(img, plan)
+    assert np.array_equal(result, img)
+
+
+def _two_instances() -> tuple[np.ndarray, np.ndarray]:
+    """Hai instance: nhỏ ở góc trên-trái (8x8) và lớn ở nửa dưới (32x64)."""
+    small = np.zeros((64, 64), dtype=bool)
+    small[:8, :8] = True
+    large = np.zeros((64, 64), dtype=bool)
+    large[32:, :] = True
+    return small, large
+
+
+def _semantic_action(target_prompt: str = "dog", **region_fields) -> RegionOperation:
+    return RegionOperation(
+        region_id=target_prompt,
+        target_prompt=target_prompt,
+        region_type="semantic",
+        detected_issue="dark",
+        operation="gamma_correct",
+        parameters={"gamma": 2.0},
+        **region_fields,
+    )
+
+
+@pytest.mark.parametrize(
+    ("region_fields", "small_edited", "large_edited"),
+    [
+        ({}, True, True),
+        ({"instance_selection": "largest"}, False, True),
+        ({"instance_selection": "index", "instance_index": 0}, True, False),
+    ],
+)
+def test_execute_plan_semantic_instance_selection(region_fields, small_edited, large_edited):
+    """Đường ngữ nghĩa production tôn trọng instance_selection/instance_index (M2-INT-03)."""
+    img = np.ones((64, 64, 3), dtype=np.uint8) * 100
+    plan = TreatmentPlan(iteration=1, reasoning="t", actions=[_semantic_action(**region_fields)])
+    with patch(_SEMANTIC_TARGET, return_value=_semantic_result(*_two_instances())) as fake:
+        result = execute_plan(img, plan)
+
+    fake.assert_called_once()
+    assert bool(result[2, 2].mean() > 100) is small_edited
+    assert bool(result[60, 32].mean() > 100) is large_edited
+    # Vùng không thuộc instance nào luôn giữ nguyên (không xử lý toàn ảnh)
+    assert result[16, 48].mean() == 100
+
+
+def test_execute_plan_semantic_instance_index_out_of_range_is_skipped():
+    """instance_index vượt số instance → action bị bỏ qua, ảnh giữ nguyên."""
+    img = np.ones((64, 64, 3), dtype=np.uint8) * 100
+    action = _semantic_action(instance_selection="index", instance_index=5)
+    plan = TreatmentPlan(iteration=1, reasoning="t", actions=[action])
+    with patch(_SEMANTIC_TARGET, return_value=_semantic_result(*_two_instances())):
+        result = execute_plan(img, plan)
+    assert np.array_equal(result, img)
+
+
+def test_execute_plan_semantic_backend_is_logged(caplog):
+    """Backend tạo mask được ghi log để demo thấy vùng đến từ model hay heuristic."""
+    img = np.ones((64, 64, 3), dtype=np.uint8) * 100
+    plan = TreatmentPlan(iteration=1, reasoning="t", actions=[_semantic_action()])
+    with caplog.at_level("INFO", logger="src.agent.executor"):
+        with patch(_SEMANTIC_TARGET, return_value=_semantic_result(*_two_instances())):
+            execute_plan(img, plan)
+    assert "backend 'groundingdino+mobilesam'" in caplog.text
+
+
+def test_execute_plan_heuristic_fallback_is_logged(caplog):
+    """Fallback D1 được ghi nhận là backend 'heuristic', không phải 'geometry'."""
+    img = np.ones((64, 64, 3), dtype=np.uint8) * 100
+    action = _semantic_action(target_prompt="sky")
+    plan = TreatmentPlan(iteration=1, reasoning="t", actions=[action])
+    with caplog.at_level("INFO", logger="src.agent.executor"):
+        with patch.dict("os.environ", {"REGION_DINO_MODEL_PATH": "does/not/exist"}):
+            execute_plan(img, plan)
+    assert "backend 'heuristic'" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("target", "region_type", "expected"),
+    [
+        ("face", None, "face"),
+        ("khuôn mặt", "semantic", "face"),
+        ("full", None, "full"),
+        ("toàn bộ", "semantic", "full"),
+        ("top", None, "spatial"),
+        ("sky", None, "semantic"),
+        ("sky", "spatial", "spatial"),
+        ("anything", "bbox", "bbox"),
+    ],
+)
+def test_infer_region_kind(target, region_type, expected):
+    """region_type=None hoặc 'semantic' được suy ra từ target_prompt; loại tường minh khác giữ nguyên (D2)."""
+    action = RegionOperation(
+        region_id="r",
+        target_prompt=target,
+        region_type=region_type,
+        detected_issue="x",
+        operation="denoise",
+    )
+    assert _infer_region_kind(action) == expected
