@@ -10,24 +10,26 @@ from src.agent.graph import run_pipeline
 DATA_DIR = os.path.join("data", "real")
 
 
+def _load_real_image(filename: str) -> np.ndarray:
+    """Đọc ảnh mẫu thực (RGB); skip test nếu ảnh không có (data/real bị gitignore)."""
+    path = os.path.join(DATA_DIR, filename)
+    img = cv2.imread(path)
+    if img is None:
+        pytest.skip(
+            f"Real sample image '{path}' is missing; "
+            "run scripts/download_real_samples.py to fetch it."
+        )
+    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+
 @pytest.fixture
 def dark_img():
-    img = cv2.imread(os.path.join(DATA_DIR, "coffee_underexposed.jpg"))
-    return (
-        cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        if img is not None
-        else np.zeros((100, 100, 3), dtype=np.uint8)
-    )
+    return _load_real_image("coffee_underexposed.jpg")
 
 
 @pytest.fixture
 def noisy_img():
-    img = cv2.imread(os.path.join(DATA_DIR, "astro_noisy.jpg"))
-    return (
-        cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        if img is not None
-        else np.zeros((100, 100, 3), dtype=np.uint8)
-    )
+    return _load_real_image("astro_noisy.jpg")
 
 
 def test_e2e_dark_img(dark_img):
