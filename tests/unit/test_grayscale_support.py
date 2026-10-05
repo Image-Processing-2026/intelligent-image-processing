@@ -2,6 +2,7 @@
 Kiểm tra Module 3 hoạt động đúng với ảnh grayscale (1 kênh, shape (H, W)),
 không chỉ ảnh RGB (H, W, 3) như test ban đầu.
 """
+
 import numpy as np
 
 from src.processing_engine.color import apply_color_balance
