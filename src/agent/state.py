@@ -48,6 +48,9 @@ class HistoryItem(BaseModel):
     metrics_after: Dict[str, Any]
     eval_score: Dict[str, Any]
     decision: str
+    rolled_back: bool = Field(
+        default=False, description="True nếu vòng này suy thoái và đã rollback về ảnh trước đó"
+    )
 
 
 class DoctorState(TypedDict):
@@ -66,4 +69,5 @@ class DoctorState(TypedDict):
     history: List[HistoryItem]
     intermediate_images: List[np.ndarray]  # Ảnh thumbnail sau mỗi vòng lặp
     decision: str  # "SHIP", "RE_PROCESS", "STOP_BEST_EFFORT"
+    rolled_back: bool  # True nếu kết quả cuối là ảnh đã rollback do suy thoái
     error_message: Optional[str]

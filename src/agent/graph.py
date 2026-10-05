@@ -3,6 +3,7 @@ Xây dựng đồ thị trạng thái LangGraph (LangGraph Orchestration Graph).
 Quản lý chu trình khép kín: Analyze -> Diagnose -> Plan -> Process -> Evaluate -> Decide.
 """
 
+import logging
 from typing import Any, Dict, List, Optional
 
 import cv2
@@ -27,6 +28,8 @@ from .executor import execute_plan
 from .planner import validate_and_sort_plan
 from .state import DoctorState, HistoryItem, TreatmentPlan
 from .vlm_diagnostician import diagnose_and_plan
+
+logger = logging.getLogger(__name__)
 
 # Ngưỡng chất lượng cho quyết định dừng (Synthetic Benchmark)
 PSNR_THRESHOLD = 28.0  # dB — Chất lượng phục hồi chấp nhận được
@@ -96,6 +99,36 @@ def evaluate_node(state: DoctorState) -> Dict[str, Any]:
     return {"evaluation_result": eval_metrics.model_dump()}
 
 
+def _is_degraded_synthetic(eval_result: Dict[str, Any], history: List[HistoryItem]) -> bool:
+    """Phát hiện suy thoái (Synthetic): PSNR vòng này thấp hơn vòng trước quá ngưỡng."""
+    psnr = float(eval_result.get("psnr", 0.0))
+    ssim = float(eval_result.get("ssim", 0.0))
+
+    # Đã đạt chất lượng mục tiêu thì không coi là suy thoái
+    if psnr >= PSNR_THRESHOLD and ssim >= SSIM_THRESHOLD:
+        return False
+
+    if history:
+        prev_eval = history[-1].eval_score or {}
+        prev_psnr = float(prev_eval.get("psnr", 0.0))
+        return prev_psnr - psnr > PSNR_DEGRADATION
+    return False
+
+
+def _is_degraded_real(eval_result: Dict[str, Any], history: List[HistoryItem]) -> bool:
+    """Phát hiện suy thoái (Real): Degradation Guard của Module 1 hoặc quality score giảm."""
+    # Module 1 Degradation Guard (nhiễu bùng nổ hoặc xuất hiện cháy sáng)
+    if eval_result.get("quality_improved") is False:
+        return True
+
+    if history:
+        current_quality = float(eval_result.get("estimated_quality_score", 50.0))
+        prev_eval = history[-1].eval_score or {}
+        prev_quality = float(prev_eval.get("estimated_quality_score", 50.0))
+        return current_quality < prev_quality
+    return False
+
+
 def _decide_synthetic(eval_result: Dict[str, Any], history: List[HistoryItem]) -> str:
     """Logic quyết định dành cho ảnh nhân tạo có Ground-Truth."""
     psnr = float(eval_result.get("psnr", 0.0))
@@ -105,12 +138,8 @@ def _decide_synthetic(eval_result: Dict[str, Any], history: List[HistoryItem]) -
     if psnr >= PSNR_THRESHOLD and ssim >= SSIM_THRESHOLD:
         return "SHIP"
 
-    # Kiểm tra suy thoái: PSNR vòng này thấp hơn vòng trước quá ngưỡng
-    if history:
-        prev_eval = history[-1].eval_score or {}
-        prev_psnr = float(prev_eval.get("psnr", 0.0))
-        if prev_psnr - psnr > PSNR_DEGRADATION:
-            return "STOP_BEST_EFFORT"
+    if _is_degraded_synthetic(eval_result, history):
+        return "STOP_BEST_EFFORT"
 
     # Chưa đạt, còn dư vòng → tiếp tục
     return "RE_PROCESS"
@@ -118,18 +147,8 @@ def _decide_synthetic(eval_result: Dict[str, Any], history: List[HistoryItem]) -
 
 def _decide_real(eval_result: Dict[str, Any], history: List[HistoryItem]) -> str:
     """Logic quyết định dành cho ảnh thực không có Ground-Truth."""
-    # Kiểm tra suy thoái qua Module 1 Degradation Guard (nhiễu bùng nổ hoặc xuất hiện cháy sáng)
-    if eval_result.get("quality_improved") is False:
+    if _is_degraded_real(eval_result, history):
         return "STOP_BEST_EFFORT"
-
-    current_quality = float(eval_result.get("estimated_quality_score", 50.0))
-
-    # Kiểm tra suy thoái: quality score vòng này tệ hơn vòng trước
-    if history:
-        prev_eval = history[-1].eval_score or {}
-        prev_quality = float(prev_eval.get("estimated_quality_score", 50.0))
-        if current_quality < prev_quality:
-            return "STOP_BEST_EFFORT"
 
     # Chưa đạt, còn dư vòng → tiếp tục
     return "RE_PROCESS"
@@ -172,13 +191,24 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
     )
 
     # ====== LOGIC RA QUYẾT ĐỊNH ======
+    has_actions = bool(state.get("treatment_plan") and state["treatment_plan"].actions)
 
-    # 1. Giới hạn cứng: Hết vòng lặp → dừng nỗ lực tốt nhất
-    if iteration >= max_iters:
+    # 0. Phát hiện suy thoái ở MỌI vòng (kể cả vòng cuối) trước khi xét giới hạn vòng lặp
+    degraded = has_actions and (
+        _is_degraded_synthetic(eval_result, history)
+        if is_syn
+        else _is_degraded_real(eval_result, history)
+    )
+
+    if degraded:
+        decision = "STOP_BEST_EFFORT"
+
+    # 1. Giới hạn cứng: Hết vòng lặp → dừng nỗ lực tốt nhất (giữ ảnh hiện tại)
+    elif iteration >= max_iters:
         decision = "STOP_BEST_EFFORT"
 
     # 2. Kế hoạch rỗng → VLM cho rằng ảnh đã tốt
-    elif not state.get("treatment_plan") or not state["treatment_plan"].actions:
+    elif not has_actions:
         decision = "SHIP"
 
     # 3. Phân nhánh Synthetic vs Real
@@ -187,14 +217,37 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
     else:
         decision = _decide_real(eval_result, history)
 
+    # Rollback: trả về ảnh trước vòng xử lý này nếu vòng này làm chất lượng xấu đi
+    final_image = state["current_image"]
+    rolled_back = False
+    if degraded:
+        previous_image = state.get("previous_image")
+        if previous_image is not None:
+            final_image = previous_image
+            rolled_back = True
+            logger.warning(
+                "Iteration %d degraded image quality; rolling back to the previous image.",
+                iteration,
+            )
+        else:
+            logger.warning(
+                "Iteration %d degraded image quality but no previous image is available; "
+                "keeping the current image.",
+                iteration,
+            )
+
     history_entry.decision = decision
+    history_entry.rolled_back = rolled_back
     new_history = history + [history_entry]
 
     # Lưu ảnh trung gian dạng thumbnail sau mỗi vòng
+    # (giữ ảnh thực tế vừa tạo ra làm bằng chứng, kể cả khi đã rollback)
     thumbnail = _create_thumbnail(state["current_image"])
     new_intermediates = list(state.get("intermediate_images") or []) + [thumbnail]
 
     return {
+        "current_image": final_image,
+        "rolled_back": rolled_back,
         "iteration": iteration + 1,
         "decision": decision,
         "history": new_history,
@@ -258,6 +311,7 @@ def run_pipeline(
         "history": [],
         "intermediate_images": [],
         "decision": "INITIALIZING",
+        "rolled_back": False,
         "error_message": None,
     }
     return app.invoke(initial_state)
