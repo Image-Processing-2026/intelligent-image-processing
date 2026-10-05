@@ -16,7 +16,7 @@ from src.agent.graph import (
     evaluate_node,
     process_node,
 )
-from src.agent.planner import clamp_parameters, validate_and_sort_plan
+from src.agent.planner import clamp_parameters, clamp_region_fields, validate_and_sort_plan
 from src.agent.state import DoctorState, HistoryItem, RegionOperation, TreatmentPlan
 from src.agent.vlm_diagnostician import _build_history_feedback, diagnose_and_plan
 
@@ -350,6 +350,107 @@ def test_validate_plan_with_extreme_params():
     assert validated.actions[0].parameters["method"] == "bilateral"
     assert validated.actions[1].operation == "gamma_correct"
     assert validated.actions[1].parameters["gamma"] == 2.5
+
+
+def test_clamp_region_fields_numeric_bounds():
+    """Trường vùng số vượt biên được kẹp; không phải số → default (M2-INT-04)."""
+    res = clamp_region_fields(
+        {
+            "feather_radius": 500,
+            "expand_ratio": -2.0,
+            "num_faces": 0,
+            "box_threshold": 1.7,
+            "text_threshold": "abc",
+            "nms_iou_threshold": float("nan"),
+        }
+    )
+    assert res["feather_radius"] == 50
+    assert isinstance(res["feather_radius"], int)
+    assert res["expand_ratio"] == 0.0
+    assert res["num_faces"] == 1
+    assert res["box_threshold"] == 1.0
+    assert res["text_threshold"] == 0.25
+    assert res["nms_iou_threshold"] == 0.8
+
+    # ADR-003: không cho tắt feather; số thực được làm tròn về số nguyên
+    assert clamp_region_fields({"feather_radius": 0})["feather_radius"] == 5
+    assert clamp_region_fields({"feather_radius": 12.6})["feather_radius"] == 13
+
+
+def test_clamp_region_fields_enums_and_defaults():
+    """Enum sai → default; trường thiếu được bổ sung; khóa khác giữ nguyên."""
+    res = clamp_region_fields(
+        {
+            "operation": "clahe",
+            "region_type": "polygon",
+            "quadrant": "upper-left",
+            "face_mode": "sam_refined",
+            "merge_policy": "min",
+            "instance_selection": "random",
+        }
+    )
+    assert res["operation"] == "clahe"
+    assert res["region_type"] is None
+    assert res["quadrant"] is None
+    assert res["face_mode"] == "bbox"
+    assert res["merge_policy"] == "max"
+    assert res["instance_selection"] == "all"
+
+    defaults = clamp_region_fields({})
+    assert defaults["feather_radius"] == 15
+    assert defaults["region_type"] is None
+    assert defaults["instance_index"] is None
+
+    # Chữ hoa/khoảng trắng được chuẩn hóa thay vì bị coi là sai
+    assert clamp_region_fields({"region_type": " Semantic "})["region_type"] == "semantic"
+
+
+def test_clamp_region_fields_drops_in_process_fields():
+    """bbox/binary_mask từ VLM luôn bị đặt về None; region_type bbox → suy ra (D2)."""
+    res = clamp_region_fields(
+        {"region_type": "bbox", "bbox": [1.5, 2, 3, 4], "binary_mask": [[1, 0], [0, 1]]}
+    )
+    assert res["bbox"] is None
+    assert res["binary_mask"] is None
+    assert res["region_type"] is None
+
+
+def test_clamp_region_fields_instance_index():
+    """instance_index chỉ giữ khi instance_selection='index' và là số nguyên >= 0."""
+    ok = clamp_region_fields({"instance_selection": "index", "instance_index": 2})
+    assert (ok["instance_selection"], ok["instance_index"]) == ("index", 2)
+
+    bad = clamp_region_fields({"instance_selection": "index", "instance_index": -1})
+    assert (bad["instance_selection"], bad["instance_index"]) == ("all", None)
+
+    stray = clamp_region_fields({"instance_selection": "largest", "instance_index": 3})
+    assert (stray["instance_selection"], stray["instance_index"]) == ("largest", None)
+
+
+def test_validate_plan_clamps_region_fields():
+    """validate_and_sort_plan kẹp trường vùng của RegionOperation (model không còn ge/le)."""
+    plan = TreatmentPlan(
+        iteration=1,
+        reasoning="Out-of-range region fields",
+        actions=[
+            RegionOperation(
+                region_id="sky",
+                target_prompt="sky",
+                detected_issue="overexposed",
+                operation="gamma_correct",
+                parameters={"gamma": 0.8},
+                feather_radius=999,
+                expand_ratio=3.0,
+                bbox=(0, 0, 4, 4),
+                region_type="bbox",
+            )
+        ],
+    )
+    action = validate_and_sort_plan(plan).actions[0]
+    assert action.feather_radius == 50
+    assert action.expand_ratio == 1.0
+    assert action.bbox is None
+    assert action.region_type is None
 
 
 def test_decide_synthetic_ship_on_good_quality():

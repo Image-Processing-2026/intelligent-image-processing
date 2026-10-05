@@ -33,19 +33,21 @@ class RegionOperation(BaseModel):
         default=None,
         description="In-process bool/uint8 binary mask for binary_mask regions",
     )
-    feather_radius: int = Field(default=15, ge=0)
-    expand_ratio: float = Field(default=0.15, ge=0.0, le=1.0)
+    # Không đặt ge/le ở đây: một giá trị vượt biên từ VLM sẽ làm hỏng cả kế hoạch.
+    # Biên được kẹp trong planner.REGION_FIELD_BOUNDS (giống PARAMETER_BOUNDS).
+    feather_radius: int = Field(default=15)
+    expand_ratio: float = Field(default=0.15)
     merge_policy: Literal["max"] = Field(default="max")
     face_mode: Literal["bbox", "oval", "sam_refined"] = Field(
         default="bbox",
         description="Face region mode. bbox is backward-compatible; oval requires Face Landmarker.",
     )
-    num_faces: int = Field(default=4, ge=1)
+    num_faces: int = Field(default=4)
     instance_selection: Literal["all", "largest", "index"] = Field(default="all")
-    instance_index: Optional[int] = Field(default=None, ge=0)
-    box_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
-    text_threshold: float = Field(default=0.25, ge=0.0, le=1.0)
-    nms_iou_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
+    instance_index: Optional[int] = Field(default=None)
+    box_threshold: float = Field(default=0.35)
+    text_threshold: float = Field(default=0.25)
+    nms_iou_threshold: float = Field(default=0.8)
     detected_issue: str = Field(
         ..., description="Vấn đề kỹ thuật: underexposed, noise, low_contrast, etc."
     )

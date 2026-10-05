@@ -57,10 +57,15 @@ class RegionOperationPlan(BaseModel):
     region_type: Optional[
         Literal["semantic", "face", "spatial", "full", "bbox", "binary_mask"]
     ] = None
+    # bbox / binary_mask are in-process only: the planner resets VLM-supplied values to None
     bbox: Optional[tuple[int, int, int, int]] = None
     quadrant: Optional[str] = None
-    feather_radius: int = Field(default=15, ge=0)
-    expand_ratio: float = Field(default=0.15, ge=0.0, le=1.0)
+    # No ge/le bounds on region fields: planner.clamp_region_fields() clamps them
+    # (REGION_FIELD_BOUNDS, e.g. feather_radius in [5, 50]) so one bad VLM value
+    # cannot invalidate the whole plan. Face/semantic options (face_mode, num_faces,
+    # instance_selection, instance_index, *_threshold) follow the same rule.
+    feather_radius: int = 15
+    expand_ratio: float = 0.15
     merge_policy: Literal["max"] = "max"
     binary_mask: Optional[Any] = None
     detected_issue: str = Field(
