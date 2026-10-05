@@ -41,4 +41,3 @@ def test_soft_fixture_cases_match_scipy_reference() -> None:
             expected = np.load(FIXTURE_DIR / reference["expected"])
             assert actual.dtype == np.float32
             np.testing.assert_allclose(actual, expected, rtol=0, atol=1e-6)
-

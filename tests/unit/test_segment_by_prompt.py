@@ -84,7 +84,10 @@ def test_exact_commands_do_not_load_semantic_backend(monkeypatch: pytest.MonkeyP
     )
     np.testing.assert_array_equal(
         segment_by_prompt(IMAGE, "GIỮA", feather_radius=0),
-        np.array([[0, 0, 0, 0, 0, 0], [0, 1, 1, 1, 0, 0], [0, 1, 1, 1, 0, 0], [0, 0, 0, 0, 0, 0]], dtype=np.float32),
+        np.array(
+            [[0, 0, 0, 0, 0, 0], [0, 1, 1, 1, 0, 0], [0, 1, 1, 1, 0, 0], [0, 0, 0, 0, 0, 0]],
+            dtype=np.float32,
+        ),
     )
     assert calls == 0
     backend_module.reset_segmentation_backend()
@@ -183,7 +186,9 @@ def test_nms_keeps_overlapping_different_phrases_as_separate_instances(
     assert fake_backend.predict_boxes == [duplicate, duplicate]
 
 
-def test_instance_api_preserves_hard_masks_and_wrapper_feathers_once(fake_backend: FakeBackend) -> None:
+def test_instance_api_preserves_hard_masks_and_wrapper_feathers_once(
+    fake_backend: FakeBackend,
+) -> None:
     first_box = (1.0, 0.0, 3.0, 2.0)
     second_box = (3.0, 1.0, 5.0, 3.0)
     fake_backend.detections = [detection(first_box), detection(second_box, score=0.8)]
@@ -237,7 +242,9 @@ def test_threshold_and_empty_phrase_are_filtered(fake_backend: FakeBackend) -> N
     assert fake_backend.set_images == []
 
 
-@pytest.mark.parametrize("raw_mask", [np.ones((3, 6), dtype=bool), np.ones((4, 6), dtype=np.float32)])
+@pytest.mark.parametrize(
+    "raw_mask", [np.ones((3, 6), dtype=bool), np.ones((4, 6), dtype=np.float32)]
+)
 def test_invalid_mask_contract_raises_and_resets(
     fake_backend: FakeBackend, raw_mask: np.ndarray
 ) -> None:

@@ -145,7 +145,9 @@ def test_semantic_backend_errors_are_typed_and_preserve_cause() -> None:
         raise cause
 
     with pytest.raises(RegionBackendUnavailableError) as raised:
-        resolve_region(IMAGE, {"kind": "semantic", "prompt": "person"}, _semantic_resolver=unavailable)
+        resolve_region(
+            IMAGE, {"kind": "semantic", "prompt": "person"}, _semantic_resolver=unavailable
+        )
 
     assert raised.value.__cause__ is cause
 

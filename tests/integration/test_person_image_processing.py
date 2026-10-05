@@ -26,9 +26,7 @@ from src.region_engine.mask_utils import blend_regions
 # Kích thước: 853 × 1280, RGB uint8
 # ---------------------------------------------------------------------------
 
-_IMAGE_PATH = (
-    Path(__file__).resolve().parents[2] / "data" / "image" / "human-pic.jpg"
-)
+_IMAGE_PATH = Path(__file__).resolve().parents[2] / "data" / "image" / "human-pic.jpg"
 
 
 def _load_person_image() -> np.ndarray:
@@ -76,7 +74,9 @@ class _FakeNoFaceBackend:
 def fake_face_backend(monkeypatch: pytest.MonkeyPatch):
     """Thay thế factory MediaPipe bằng backend giả, reset sau test."""
     reset_face_detector()
-    monkeypatch.setattr(face_detector_module, "_DETECTOR_FACTORY", lambda _path: _FakeMediaPipeBackend())
+    monkeypatch.setattr(
+        face_detector_module, "_DETECTOR_FACTORY", lambda _path: _FakeMediaPipeBackend()
+    )
     yield
     reset_face_detector()
 
@@ -84,7 +84,9 @@ def fake_face_backend(monkeypatch: pytest.MonkeyPatch):
 @pytest.fixture()
 def fake_no_face_backend(monkeypatch: pytest.MonkeyPatch):
     reset_face_detector()
-    monkeypatch.setattr(face_detector_module, "_DETECTOR_FACTORY", lambda _path: _FakeNoFaceBackend())
+    monkeypatch.setattr(
+        face_detector_module, "_DETECTOR_FACTORY", lambda _path: _FakeNoFaceBackend()
+    )
     yield
     reset_face_detector()
 
@@ -164,8 +166,12 @@ def test_spatial_region_on_person_image(quadrant: str) -> None:
 
 def test_spatial_top_and_bottom_are_complementary() -> None:
     """top + bottom phải bao phủ toàn ảnh (với feather_radius=0)."""
-    top = resolve_region(_PERSON_IMAGE, RegionRequest(kind="spatial", quadrant="top", feather_radius=0))
-    bot = resolve_region(_PERSON_IMAGE, RegionRequest(kind="spatial", quadrant="bottom", feather_radius=0))
+    top = resolve_region(
+        _PERSON_IMAGE, RegionRequest(kind="spatial", quadrant="top", feather_radius=0)
+    )
+    bot = resolve_region(
+        _PERSON_IMAGE, RegionRequest(kind="spatial", quadrant="bottom", feather_radius=0)
+    )
 
     combined = top.mask + bot.mask
     np.testing.assert_array_equal(combined, np.ones((_H, _W), dtype=np.float32))

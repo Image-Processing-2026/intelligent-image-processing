@@ -149,9 +149,7 @@ def _record_from_raw(raw: object, index: int) -> GroundingDetection:
             score = raw["score"]
             phrase = raw.get("phrase", "")
         except KeyError as exc:
-            raise SegmentationInferenceError(
-                f"detection {index} is missing {exc.args[0]}"
-            ) from exc
+            raise SegmentationInferenceError(f"detection {index} is missing {exc.args[0]}") from exc
     else:
         try:
             box = getattr(raw, "box")
@@ -194,9 +192,7 @@ def _clip_detection(
 def _iou(first: GroundingDetection, second: GroundingDetection) -> float:
     ax0, ay0, ax1, ay1 = first.box
     bx0, by0, bx1, by1 = second.box
-    intersection = max(0.0, min(ax1, bx1) - max(ax0, bx0)) * max(
-        0.0, min(ay1, by1) - max(ay0, by0)
-    )
+    intersection = max(0.0, min(ax1, bx1) - max(ax0, bx0)) * max(0.0, min(ay1, by1) - max(ay0, by0))
     first_area = (ax1 - ax0) * (ay1 - ay0)
     second_area = (bx1 - bx0) * (by1 - by0)
     union = first_area + second_area - intersection
@@ -258,7 +254,9 @@ def _mask_from_backend(raw: object, image_shape: tuple[int, int], index: int) ->
     if value.dtype == np.dtype(np.uint8):
         unique = np.unique(value)
         if not np.all(np.isin(unique, (0, 1, 255))):
-            raise SegmentationInferenceError(f"MobileSAM mask {index} contains non-binary uint8 values")
+            raise SegmentationInferenceError(
+                f"MobileSAM mask {index} contains non-binary uint8 values"
+            )
         return value != 0
     raise SegmentationInferenceError(
         f"MobileSAM mask {index} must be boolean or binary uint8, not {value.dtype}"
@@ -284,7 +282,9 @@ def _detect_with_config(
         parameters = inspect.signature(detect).parameters.values()
     except (TypeError, ValueError):
         parameters = ()
-    supports_keywords = any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters)
+    supports_keywords = any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters
+    )
     names = {parameter.name for parameter in parameters}
     if supports_keywords or {"box_threshold", "text_threshold"} <= names:
         return detect(

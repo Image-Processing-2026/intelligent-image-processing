@@ -112,9 +112,7 @@ def _record_from_raw(raw: object, index: int) -> GroundingDetection:
         try:
             values = (raw["box"], raw["score"], raw.get("phrase", ""))
         except KeyError as exc:
-            raise SegmentationInferenceError(
-                f"detection {index} is missing {exc.args[0]}"
-            ) from exc
+            raise SegmentationInferenceError(f"detection {index} is missing {exc.args[0]}") from exc
     else:
         try:
             values = (
@@ -175,9 +173,7 @@ class _GroundingDinoMobileSAMBackend:
             self._torch = torch
             self._image_type = Image
             self._device = torch.device("cpu")
-            self._processor = AutoProcessor.from_pretrained(
-                str(dino_path), local_files_only=True
-            )
+            self._processor = AutoProcessor.from_pretrained(str(dino_path), local_files_only=True)
             dino_config = AutoConfig.from_pretrained(str(dino_path), local_files_only=True)
             dino_config.disable_custom_kernels = True
             self._dino = AutoModelForZeroShotObjectDetection.from_pretrained(
@@ -248,9 +244,13 @@ class _GroundingDinoMobileSAMBackend:
             if boxes.size == 0:
                 return []
             if boxes.ndim != 2 or boxes.shape[1] != 4 or scores.ndim != 1:
-                raise SegmentationInferenceError("GroundingDINO output has invalid box/score shapes")
+                raise SegmentationInferenceError(
+                    "GroundingDINO output has invalid box/score shapes"
+                )
             if len(boxes) != len(scores) or len(phrases) != len(scores):
-                raise SegmentationInferenceError("GroundingDINO output fields have different lengths")
+                raise SegmentationInferenceError(
+                    "GroundingDINO output fields have different lengths"
+                )
             records: list[GroundingDetection] = []
             for index, (box, score, phrase) in enumerate(zip(boxes, scores, phrases)):
                 if not isinstance(phrase, str):
@@ -327,12 +327,12 @@ def _get_backend_locked() -> SegmentationBackend:
     except SegmentationUnavailableError:
         raise
     except Exception as exc:
-        raise SegmentationUnavailableError("Could not initialize semantic segmentation backend") from exc
+        raise SegmentationUnavailableError(
+            "Could not initialize semantic segmentation backend"
+        ) from exc
     for method in ("detect", "set_image", "predict", "reset_image", "close"):
         if not callable(getattr(backend, method, None)):
-            raise SegmentationUnavailableError(
-                f"semantic backend must provide callable {method}()"
-            )
+            raise SegmentationUnavailableError(f"semantic backend must provide callable {method}()")
     _SEGMENTATION_CACHE = backend
     _SEGMENTATION_CACHE_KEY = cache_key
     return backend

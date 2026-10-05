@@ -29,9 +29,42 @@ DEFAULT_NUM_FACES = 4
 # explicit avoids the incorrect and common shortcut of connecting all 468
 # landmarks in index order.
 FACE_OVAL_INDICES = (
-    10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365,
-    379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93,
-    234, 127, 162, 21, 54, 103, 67, 109,
+    10,
+    338,
+    297,
+    332,
+    284,
+    251,
+    389,
+    356,
+    454,
+    323,
+    361,
+    288,
+    397,
+    365,
+    379,
+    378,
+    400,
+    377,
+    152,
+    148,
+    176,
+    149,
+    150,
+    136,
+    172,
+    58,
+    132,
+    93,
+    234,
+    127,
+    162,
+    21,
+    54,
+    103,
+    67,
+    109,
 )
 
 
@@ -110,7 +143,9 @@ class _MediaPipeTasksLandmarkerBackend:
         try:
             self._landmarker.close()
         except Exception as exc:  # pragma: no cover - optional runtime
-            raise FaceLandmarkerUnavailableError("Could not close MediaPipe FaceLandmarker") from exc
+            raise FaceLandmarkerUnavailableError(
+                "Could not close MediaPipe FaceLandmarker"
+            ) from exc
 
 
 def _create_default_backend(model_path: Path, num_faces: int) -> _LandmarkerBackend:
@@ -170,7 +205,9 @@ def _get_backend_locked(num_faces: int) -> _LandmarkerBackend:
         raise FaceLandmarkerUnavailableError(
             f"Could not initialize face landmarker backend for {model_path}"
         ) from exc
-    if not callable(getattr(backend, "detect", None)) or not callable(getattr(backend, "close", None)):
+    if not callable(getattr(backend, "detect", None)) or not callable(
+        getattr(backend, "close", None)
+    ):
         raise FaceLandmarkerUnavailableError(
             "Face Landmarker backend must provide callable detect() and close() methods"
         )
@@ -247,7 +284,9 @@ def _point_from_raw(raw: object, face_index: int, point_index: int) -> tuple[flo
     )
 
 
-def _contour_from_landmarks(raw: object, image_shape: tuple[int, int], face_index: int) -> np.ndarray:
+def _contour_from_landmarks(
+    raw: object, image_shape: tuple[int, int], face_index: int
+) -> np.ndarray:
     if raw is None or isinstance(raw, (str, bytes)):
         raise FaceLandmarkerError(f"face {face_index} landmarks are not a sequence")
     try:
@@ -278,7 +317,9 @@ def _rasterize_contour(contour: np.ndarray, image_shape: tuple[int, int]) -> np.
     try:
         from PIL import Image, ImageDraw
     except Exception as exc:  # pragma: no cover - Pillow is a project dependency
-        raise FaceLandmarkerUnavailableError("Pillow is required to rasterize face contours") from exc
+        raise FaceLandmarkerUnavailableError(
+            "Pillow is required to rasterize face contours"
+        ) from exc
     height, width = image_shape
     canvas = Image.new("L", (width, height), 0)
     ImageDraw.Draw(canvas).polygon([tuple(point) for point in contour.tolist()], fill=1)

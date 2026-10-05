@@ -44,9 +44,7 @@ PERSON_MASK = (
 
 def _require_assets() -> None:
     missing = [
-        str(path)
-        for path in (DINO_PATH, SAM_PATH, PERSON_IMAGE, PERSON_MASK)
-        if not path.exists()
+        str(path) for path in (DINO_PATH, SAM_PATH, PERSON_IMAGE, PERSON_MASK) if not path.exists()
     ]
     if missing:
         pytest.fail(

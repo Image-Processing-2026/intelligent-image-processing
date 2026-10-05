@@ -27,9 +27,7 @@ def test_fixture_manifest_checksums_are_intact() -> None:
 
 def test_all_hard_fixture_cases_match_reference() -> None:
     for case in MANIFEST["cases"].values():
-        actual = create_quadrant_mask(
-            tuple(case["shape"]), case["quadrant"], feather_radius=0
-        )
+        actual = create_quadrant_mask(tuple(case["shape"]), case["quadrant"], feather_radius=0)
         expected = np.load(FIXTURE_DIR / case["hard"])
 
         np.testing.assert_array_equal(actual, expected.astype(np.float32))
@@ -44,4 +42,3 @@ def test_all_soft_fixture_cases_match_scipy_reference() -> None:
 
             assert actual.dtype == np.float32
             np.testing.assert_allclose(actual, expected, rtol=0, atol=1e-6)
-

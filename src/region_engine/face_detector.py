@@ -22,7 +22,12 @@ import numpy as np
 
 from .spatial import _validate_feather_radius, create_bbox_mask
 
-DEFAULT_MODEL_PATH = Path(__file__).resolve().parents[2] / "models" / "mediapipe" / "face_detection_full_range.tflite"
+DEFAULT_MODEL_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "models"
+    / "mediapipe"
+    / "face_detection_full_range.tflite"
+)
 MODEL_PATH_ENV = "REGION_FACE_MODEL_PATH"
 MIN_DETECTION_CONFIDENCE = 0.5
 MIN_SUPPRESSION_THRESHOLD = 0.3

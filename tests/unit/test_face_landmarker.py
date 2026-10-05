@@ -33,11 +33,15 @@ def _face() -> list[dict[str, float]]:
     points: list[dict[str, float]] = []
     for index in range(455):
         angle = 2 * np.pi * index / 455
-        points.append({"x": float(0.5 + 0.2 * np.cos(angle)), "y": float(0.5 + 0.3 * np.sin(angle))})
+        points.append(
+            {"x": float(0.5 + 0.2 * np.cos(angle)), "y": float(0.5 + 0.3 * np.sin(angle))}
+        )
     return points
 
 
-def test_landmarker_rasterizes_face_oval_and_preserves_pixel_contour(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_landmarker_rasterizes_face_oval_and_preserves_pixel_contour(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake = FakeLandmarker([_face()])
     landmarker.reset_face_landmarker()
     monkeypatch.setattr(landmarker, "_LANDMARKER_FACTORY", lambda _path, _count: fake)
@@ -55,7 +59,9 @@ def test_landmarker_rasterizes_face_oval_and_preserves_pixel_contour(monkeypatch
     assert fake.closed == 1
 
 
-def test_landmarker_rejects_short_or_invalid_landmark_sequences(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_landmarker_rejects_short_or_invalid_landmark_sequences(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake = FakeLandmarker([[{"x": 0.5, "y": 0.5}]])
     landmarker.reset_face_landmarker()
     monkeypatch.setattr(landmarker, "_LANDMARKER_FACTORY", lambda _path, _count: fake)

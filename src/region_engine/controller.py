@@ -256,12 +256,16 @@ def _validate_instance_selection(request: RegionRequest) -> tuple[str, int | Non
     index = request.instance_index
     if request.instance_selection == "index":
         if isinstance(index, (bool, np.bool_)) or not isinstance(index, (int, np.integer)):
-            raise InvalidRegionRequestError("instance_index is required when instance_selection is 'index'")
+            raise InvalidRegionRequestError(
+                "instance_index is required when instance_selection is 'index'"
+            )
         if int(index) < 0:
             raise InvalidRegionRequestError("instance_index must be non-negative")
         index = int(index)
     elif index is not None:
-        raise InvalidRegionRequestError("instance_index is allowed only when instance_selection is 'index'")
+        raise InvalidRegionRequestError(
+            "instance_index is allowed only when instance_selection is 'index'"
+        )
     return request.instance_selection, index
 
 
@@ -272,7 +276,9 @@ def _semantic_config(request: RegionRequest) -> PromptSegmentationConfig:
         "nms_iou_threshold": request.nms_iou_threshold,
     }
     for name, raw_value in raw_values.items():
-        if isinstance(raw_value, (bool, np.bool_)) or not isinstance(raw_value, (int, float, np.integer, np.floating)):
+        if isinstance(raw_value, (bool, np.bool_)) or not isinstance(
+            raw_value, (int, float, np.integer, np.floating)
+        ):
             raise InvalidRegionRequestError(f"{name} must be a finite number in [0, 1]")
         value = float(raw_value)
         if not math.isfinite(value) or not 0.0 <= value <= 1.0:
@@ -436,7 +442,9 @@ def resolve_region(
                 )
                 selected_masks, positions = _select_instances(normalized_masks, selection, index)
                 if _face_resolver is None:
-                    _mark_inference_verified("face_bbox", str(_resolved_path(FACE_MODEL_ENV, DEFAULT_FACE_MODEL_PATH)))
+                    _mark_inference_verified(
+                        "face_bbox", str(_resolved_path(FACE_MODEL_ENV, DEFAULT_FACE_MODEL_PATH))
+                    )
                 details = {
                     "kind": kind,
                     "face_mode": "bbox",
@@ -472,7 +480,9 @@ def resolve_region(
                     raise RegionInferenceError(f"face oval mask {oval_index} must be binary")
                 contour = np.asarray(oval.contour, dtype=np.float32)
                 if contour.ndim != 2 or contour.shape[1] != 2 or len(contour) < 3:
-                    raise RegionInferenceError(f"face oval contour {oval_index} must have shape (N, 2), N >= 3")
+                    raise RegionInferenceError(
+                        f"face oval contour {oval_index} must have shape (N, 2), N >= 3"
+                    )
                 if not np.isfinite(contour).all():
                     raise RegionInferenceError(f"face oval contour {oval_index} must be finite")
                 normalized_masks.append(hard_mask)
@@ -482,7 +492,11 @@ def resolve_region(
             if _face_oval_resolver is None:
                 _mark_inference_verified(
                     "face_oval",
-                    str(_resolved_path(FACE_LANDMARKER_MODEL_ENV, DEFAULT_FACE_LANDMARKER_MODEL_PATH)),
+                    str(
+                        _resolved_path(
+                            FACE_LANDMARKER_MODEL_ENV, DEFAULT_FACE_LANDMARKER_MODEL_PATH
+                        )
+                    ),
                     str(num_faces),
                 )
             details = {

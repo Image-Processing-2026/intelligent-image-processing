@@ -46,7 +46,9 @@ def fake_backend(monkeypatch: pytest.MonkeyPatch) -> FakeBackend:
     face_detector.reset_face_detector()
 
 
-def record(x: float, y: float, width: float, height: float, score: float = 0.9) -> FaceDetectionRecord:
+def record(
+    x: float, y: float, width: float, height: float, score: float = 0.9
+) -> FaceDetectionRecord:
     return FaceDetectionRecord(x=x, y=y, width=width, height=height, score=score)
 
 

@@ -87,7 +87,9 @@ def test_hard_geometry_matches_independent_index_oracle(
         ),
     ],
 )
-def test_tiny_shapes_keep_empty_slices(shape: tuple[int, int], expected: dict[str, list[list[int]]]) -> None:
+def test_tiny_shapes_keep_empty_slices(
+    shape: tuple[int, int], expected: dict[str, list[list[int]]]
+) -> None:
     for quadrant in QUADRANTS:
         np.testing.assert_array_equal(
             create_quadrant_mask(shape, quadrant, feather_radius=0),

@@ -62,9 +62,7 @@ def _bbox_iou(first: list[int], second: list[int]) -> float:
     bx0, by0, bw, bh = second
     ax1, ay1 = ax0 + aw, ay0 + ah
     bx1, by1 = bx0 + bw, by0 + bh
-    intersection = max(0, min(ax1, bx1) - max(ax0, bx0)) * max(
-        0, min(ay1, by1) - max(ay0, by0)
-    )
+    intersection = max(0, min(ax1, bx1) - max(ax0, bx0)) * max(0, min(ay1, by1) - max(ay0, by0))
     union = aw * ah + bw * bh - intersection
     return 0.0 if union <= 0 else intersection / union
 

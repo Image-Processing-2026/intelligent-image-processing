@@ -98,9 +98,9 @@ def test_dyadic_alpha_matches_independent_integer_oracle() -> None:
     processed = np.array([[[255, 0, 128]] * 257], dtype=np.uint8)
     t = np.arange(257, dtype=np.int64).reshape(1, 257, 1)
     mask = (t.astype(np.float32) / np.float32(256.0))[..., 0]
-    expected = (((256 - t) * original.astype(np.int64) + t * processed.astype(np.int64)) // 256).astype(
-        np.uint8
-    )
+    expected = (
+        ((256 - t) * original.astype(np.int64) + t * processed.astype(np.int64)) // 256
+    ).astype(np.uint8)
     np.testing.assert_array_equal(blend_regions(original, processed, mask), expected)
 
 
@@ -137,7 +137,11 @@ def test_non_contiguous_and_read_only_inputs_are_supported() -> None:
 )
 def test_invalid_original_image_is_rejected(bad_original: object) -> None:
     valid = np.zeros((2, 3, 3), dtype=np.uint8)
-    expected_exception = TypeError if not isinstance(bad_original, np.ndarray) or bad_original.dtype != np.uint8 else ValueError
+    expected_exception = (
+        TypeError
+        if not isinstance(bad_original, np.ndarray) or bad_original.dtype != np.uint8
+        else ValueError
+    )
     with pytest.raises(expected_exception):
         blend_regions(bad_original, valid, None)  # type: ignore[arg-type]
 
@@ -163,7 +167,9 @@ def test_image_shape_and_dtype_mismatches_are_rejected() -> None:
         (np.float32(0.5), TypeError),
     ],
 )
-def test_invalid_mask_type_or_shape_is_rejected(bad_mask: object, exception: type[Exception]) -> None:
+def test_invalid_mask_type_or_shape_is_rejected(
+    bad_mask: object, exception: type[Exception]
+) -> None:
     image = np.zeros((2, 3, 3), dtype=np.uint8)
     with pytest.raises(exception):
         blend_regions(image, image, bad_mask)  # type: ignore[arg-type]
