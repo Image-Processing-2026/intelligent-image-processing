@@ -6,6 +6,7 @@ import numpy as np
 
 from src.agent.executor import execute_plan
 from src.agent.state import RegionOperation, TreatmentPlan
+from src.region_engine.detector import PromptSegmentationResult
 from src.region_engine.mask_utils import blend_regions
 
 
@@ -42,17 +43,19 @@ def test_semantic_union_mask_blends_module_3_once() -> None:
 
 def test_executor_skips_zero_semantic_mask_without_full_image_fallback(monkeypatch) -> None:
     import src.agent.executor as executor
+    import src.region_engine.controller as controller
 
     calls: list[np.ndarray | None] = []
 
-    def fake_segment(_image, _prompt):
-        return np.zeros((3, 4), dtype=np.float32)
+    def no_detections(_image, prompt, *, config=None):
+        # Suy luận thành công nhưng không tìm thấy đối tượng nào → mask rỗng
+        return PromptSegmentationResult(prompt, f"{prompt}.", (), ())
 
     def fake_gamma(image, mask=None, gamma=1.2):
         calls.append(mask)
         return image + 1
 
-    monkeypatch.setattr(executor, "segment_by_prompt", fake_segment)
+    monkeypatch.setattr(controller, "resolve_prompt_instances", no_detections)
     monkeypatch.setattr(executor, "apply_gamma", fake_gamma)
     image = np.zeros((3, 4, 3), dtype=np.uint8)
 
@@ -64,12 +67,13 @@ def test_executor_skips_zero_semantic_mask_without_full_image_fallback(monkeypat
 
 
 def test_executor_skips_unknown_prompt_when_semantic_backend_fails(monkeypatch) -> None:
-    import src.agent.executor as executor
+    import src.region_engine.controller as controller
+    from src.region_engine.segmentation_backend import SegmentationUnavailableError
 
     def failing_segmenter(*_args, **_kwargs):
-        raise RuntimeError("semantic backend unavailable")
+        raise SegmentationUnavailableError("semantic backend unavailable")
 
-    monkeypatch.setattr(executor, "segment_by_prompt", failing_segmenter)
+    monkeypatch.setattr(controller, "resolve_prompt_instances", failing_segmenter)
     image = np.zeros((3, 4, 3), dtype=np.uint8)
 
     # Prompt không có heuristic (quyết định D1) → bỏ qua, không xử lý toàn ảnh

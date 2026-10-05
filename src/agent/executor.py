@@ -19,7 +19,6 @@ from src.region_engine.controller import (
     RegionRequest,
 )
 from src.region_engine.controller import resolve_region as resolve_module_region
-from src.region_engine.detector import segment_by_prompt
 from src.region_engine.face_detector import detect_faces
 
 from .state import RegionOperation, TreatmentPlan
@@ -139,13 +138,10 @@ def _resolve_action_mask(
     detection_image = _as_rgb_for_detection(image)
     request = _request_for_action(action, kind)
     try:
-        # Truyền resolver qua namespace của executor để test có thể patch.
-        region = resolve_module_region(
-            detection_image,
-            request,
-            _face_resolver=detect_faces,
-            _semantic_resolver=segment_by_prompt,
-        )
+        # Resolver khuôn mặt truyền qua namespace của executor để test có thể patch.
+        # Không truyền resolver ngữ nghĩa: controller tự gọi resolve_prompt_instances
+        # để instance_selection/instance_index có hiệu lực (test patch hàm đó trong controller).
+        region = resolve_module_region(detection_image, request, _face_resolver=detect_faces)
     except (RegionBackendUnavailableError, RegionInferenceError) as exc:
         quadrant = _heuristic_quadrant(action.target_prompt) if kind == "semantic" else None
         if quadrant is None:
@@ -167,6 +163,8 @@ def _resolve_action_mask(
             detection_image,
             RegionRequest(kind="spatial", quadrant=quadrant, feather_radius=action.feather_radius),
         )
+        # Ghi nhận nguồn gốc mask là heuristic (quyết định D1), không phải backend ngữ nghĩa.
+        region.metadata["backend"] = "heuristic"
     except InvalidRegionRequestError as exc:
         logger.warning(
             "Invalid region request for '%s': %s. Skipping action '%s'.",
@@ -185,6 +183,12 @@ def _resolve_action_mask(
         )
         return False, None
 
+    logger.info(
+        "Region '%s' (%s) resolved by backend '%s'.",
+        action.region_id,
+        kind,
+        region.metadata.get("backend", "unknown"),
+    )
     # Module 3 hiểu mask=None là toàn ảnh; giữ tối ưu này cho vùng 'full'.
     if region.metadata.get("kind") == "full":
         return True, None
