@@ -77,13 +77,17 @@ def create_soft_mask(binary_mask: np.ndarray, feather_radius: int = 15) -> np.nd
 
 
 def _validate_image(image: object, name: str) -> np.ndarray:
-    """Validate one inter-module RGB image and return it unchanged."""
+    """Validate one inter-module RGB or grayscale image and return it unchanged.
+
+    Ảnh xám (H, W) hoặc (H, W, 1) được chấp nhận để giữ tương thích với
+    Module 3 (hỗ trợ ảnh đơn kênh); detector/controller vẫn chỉ nhận RGB.
+    """
     if not isinstance(image, np.ndarray):
         raise TypeError(f"{name} must be a NumPy array")
     if image.dtype != np.dtype(np.uint8):
         raise TypeError(f"{name} dtype must be uint8")
-    if image.ndim != 3 or image.shape[2] != 3:
-        raise ValueError(f"{name} must have shape (H, W, 3)")
+    if not (image.ndim == 2 or (image.ndim == 3 and image.shape[2] in (1, 3))):
+        raise ValueError(f"{name} must have shape (H, W, 3), (H, W, 1) or (H, W)")
     if image.shape[0] == 0 or image.shape[1] == 0:
         raise ValueError(f"{name} must be non-empty")
     return image
@@ -100,7 +104,8 @@ def blend_regions(
 
     ``output = mask * processed + (1 - mask) * original``
 
-    Images must be non-empty RGB ``uint8`` arrays with identical shapes.  The
+    Images must be non-empty ``uint8`` arrays with identical shapes: RGB
+    ``(H, W, 3)`` or grayscale ``(H, W)`` / ``(H, W, 1)``.  The
     mask must be a ``float32`` array of shape ``(H, W)`` or ``(H, W, 1)`` and
     every value must be finite and in ``[0, 1]``.  A mask of ``None`` means
     that the complete processed image is selected, but a copy is returned so
@@ -138,6 +143,9 @@ def blend_regions(
         mask = soft_mask
     else:
         raise ValueError("soft_mask must have shape (H, W) or (H, W, 1)")
+    if original.ndim == 2:
+        # Ảnh xám 2D: bỏ trục kênh của mask để broadcast đúng (H, W)
+        mask = mask[..., 0]
 
     if not np.isfinite(soft_mask).all():
         raise ValueError("soft_mask must contain only finite values")

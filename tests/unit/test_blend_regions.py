@@ -179,3 +179,20 @@ def test_invalid_mask_values_are_rejected(value: float) -> None:
     mask[0, 0] = value
     with pytest.raises(ValueError):
         blend_regions(image, image, mask)
+
+
+@pytest.mark.parametrize("shape", [(4, 5), (4, 5, 1)])
+def test_grayscale_images_are_blended(shape: tuple[int, ...]) -> None:
+    original = np.zeros(shape, dtype=np.uint8)
+    processed = np.full(shape, 200, dtype=np.uint8)
+    mask = np.zeros((4, 5), dtype=np.float32)
+    mask[:2] = 1.0
+    mask[2] = 0.5
+
+    actual = blend_regions(original, processed, mask)
+
+    assert actual.shape == shape
+    flat = actual.reshape(4, 5)
+    assert np.all(flat[:2] == 200)
+    assert np.all(flat[2] == 100)
+    assert np.all(flat[3] == 0)
