@@ -26,6 +26,7 @@ from src.analyzer_evaluator.analyzer import (
 )
 
 from .executor import resolve_region_mask
+from .imaging import PREVIEW_MAX_SIDE, downscale
 from .knowledge import diagnose_from_metrics
 from .regions import canonical_region
 from .state import (
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 MAX_SUBJECTS = 4
 # Đo vùng trên ảnh thu nhỏ: thống kê độ sáng không cần độ phân giải gốc, và phát hiện
 # khuôn mặt / phân vùng trên ảnh nhỏ rẻ hơn nhiều (ADR-004, CPU-only)
-MEASURE_MAX_SIDE = 1024
+MEASURE_MAX_SIDE = PREVIEW_MAX_SIDE
 # Vùng tối hơn phần còn lại ít nhất chừng này mức xám (và bản thân tối) → ngược sáng
 BACKLIT_GAP = 40.0
 BACKLIT_MAX_MEAN = 100.0
@@ -86,7 +87,7 @@ Nhìn ảnh, đọc chỉ số kỹ thuật toàn cục và trả về bản ch�
 Lưu ý: chỉ số toàn cục là trung bình cả ảnh. Một vùng nhỏ (ví dụ khuôn mặt ngược sáng)
 có thể tối dù brightness_level toàn cục là "normal" → hãy nhìn ảnh và liệt kê vùng đó.
 Từ vòng 2 trở đi bạn nhận ẢNH GỐC và ẢNH HIỆN TẠI: chỉ chẩn đoán lỗi CÒN LẠI trên ẢNH HIỆN TẠI.
-Viết lighting, evidence, reason và summary bằng tiếng Việt.
+Viết lighting, evidence, reason và summary bằng tiếng Việt có dấu.
 """
 
 PERCEIVE_RESPONSE_SCHEMA: Dict[str, Any] = {
@@ -185,24 +186,13 @@ def compute_region_metrics(
     )
 
 
-def _downscale(image: np.ndarray, max_side: int = MEASURE_MAX_SIDE) -> np.ndarray:
-    """Thu nhỏ ảnh (giữ tỉ lệ) để cạnh dài không vượt max_side; ảnh nhỏ hơn giữ nguyên."""
-    height, width = image.shape[:2]
-    longest = max(height, width)
-    if longest <= max_side:
-        return image
-    scale = max_side / longest
-    size = (max(1, round(width * scale)), max(1, round(height * scale)))
-    return cv2.resize(image, size, interpolation=cv2.INTER_AREA)
-
-
 def measure_regions(image: np.ndarray, subjects: List[str]) -> Dict[str, RegionMetrics]:
     """
     Đo số liệu cho từng vùng qua Module 2, trên ảnh đã thu nhỏ về MEASURE_MAX_SIDE.
     Vùng không xác định được (không có khuôn mặt, backend ngữ nghĩa không khả dụng…)
     được bỏ qua, không làm hỏng giai đoạn Perceive.
     """
-    image = _downscale(image)
+    image = downscale(image, MEASURE_MAX_SIDE)
     measured: Dict[str, RegionMetrics] = {}
     for subject in subjects[:MAX_SUBJECTS]:
         try:

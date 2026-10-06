@@ -1,21 +1,26 @@
 """
 Các định tuyến API RESTful (API Routes).
-Cung cấp các endpoint: /diagnose, /process, /health.
+Cung cấp các endpoint: /diagnose, /process, /render, /health.
 """
 
 import base64
+import json
 from io import BytesIO
 
 import numpy as np
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from PIL import Image
+from pydantic import ValidationError
 
+from src.agent.executor import execute_plan
 from src.agent.graph import plan_treatment, run_pipeline
 from src.agent.perception import perceive
+from src.agent.planner import sanitize_actions
+from src.agent.state import RegionOperation, TreatmentPlan
 from src.analyzer_evaluator.analyzer import analyze_image
 
-from .schemas import DiagnoseResponse, ProcessResponse
+from .schemas import DiagnoseResponse, ProcessResponse, RenderResponse, VariantOut
 
 router = APIRouter(prefix="/api/v1")
 
@@ -65,6 +70,7 @@ async def process_image_endpoint(
     file: UploadFile = File(...),
     ground_truth: UploadFile = File(None),
     max_iterations: int = Form(3),
+    num_variants: int = Form(1),
 ):
     """Thực thi toàn bộ chu trình xử lý ảnh khép kín với LangGraph."""
     try:
@@ -85,6 +91,7 @@ async def process_image_endpoint(
             ground_truth=gt_img,
             is_synthetic=is_synthetic,
             max_iterations=max_iterations,
+            num_variants=num_variants,
         )
 
         history_serialized = [
@@ -104,6 +111,49 @@ async def process_image_endpoint(
             final_evaluation=result_state.get("evaluation_result", {}),
             history=history_serialized,
             intermediate_images_base64=intermediate_b64,
+            variants=[
+                VariantOut(
+                    **variant.model_dump(exclude={"image"}),
+                    preview_base64=_encode_image_to_base64(variant.image),
+                )
+                for variant in result_state.get("variants") or []
+            ],
+            recommended_variant=result_state.get("recommended_variant"),
+            variant_ranking_source=result_state.get("variant_ranking_source"),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _parse_actions(raw: str) -> list:
+    """Parse danh sách thao tác (JSON) của một phiên bản; lỗi định dạng → HTTP 422."""
+    try:
+        items = json.loads(raw)
+        if not isinstance(items, list):
+            raise ValueError("actions must be a JSON list")
+        return [RegionOperation.model_validate(item) for item in items]
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid actions: {exc}") from exc
+
+
+@router.post("/render", response_model=RenderResponse)
+async def render_variant_endpoint(file: UploadFile = File(...), actions: str = Form(...)):
+    """
+    Render một phiên bản đã chọn ở độ phân giải gốc: áp đúng danh sách thao tác của phiên bản
+    (trường `actions` trong /process) lên ảnh gốc. Thao tác được lọc và kẹp như planner nhưng
+    GIỮ NGUYÊN thứ tự, để kết quả khớp với ảnh preview người dùng đã chọn.
+    """
+    parsed = _parse_actions(actions)
+    try:
+        img = _read_image_file(await file.read())
+        applied = sanitize_actions(parsed)
+        plan = TreatmentPlan(reasoning="render", actions=applied)
+        rendered = await run_in_threadpool(execute_plan, img, plan)
+        return RenderResponse(
+            image_base64=_encode_image_to_base64(rendered),
+            width=int(rendered.shape[1]),
+            height=int(rendered.shape[0]),
+            applied_actions=applied,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

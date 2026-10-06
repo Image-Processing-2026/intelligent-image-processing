@@ -10,8 +10,10 @@ import gradio as gr
 import numpy as np
 from dotenv import load_dotenv
 
+from src.agent.executor import execute_plan
 from src.agent.graph import run_pipeline
-from src.agent.state import DiagnosisReport
+from src.agent.planner import sanitize_actions
+from src.agent.state import DiagnosisReport, RegionOperation, TreatmentPlan
 from src.analyzer_evaluator.analyzer import analyze_image
 
 _SEVERITY_LABELS = {0: "không đáng kể", 1: "nhẹ", 2: "rõ", 3: "nặng"}
@@ -82,7 +84,16 @@ def process_interface(
         is_synthetic=is_synthetic,
         max_iterations=int(max_iters),
     )
+    return _format_result(input_image, is_synthetic, max_iters, result_state)
 
+
+def _format_result(
+    input_image: np.ndarray,
+    is_synthetic: bool,
+    max_iters: int,
+    result_state: Dict[str, Any],
+) -> Tuple[Optional[np.ndarray], str, List[Tuple[np.ndarray, str]], str, str]:
+    """Định dạng trạng thái cuối của pipeline thành 5 đầu ra của tab Chẩn đoán & Lịch sử."""
     output_img = result_state.get("current_image")
     decision = result_state.get("decision", "UNKNOWN")
     iters = max(0, result_state.get("iteration", 1) - 1)
@@ -206,6 +217,87 @@ def process_interface(
     return output_img, status_md, gallery_images, reasoning_md, details_json
 
 
+VariantActions = Dict[str, List[Dict[str, Any]]]
+
+
+def _variant_outputs(
+    result_state: Dict[str, Any],
+) -> Tuple[List[Tuple[np.ndarray, str]], str, Any, VariantActions]:
+    """
+    Đầu ra phần "Chọn phiên bản": gallery preview, mô tả xếp hạng, radio chọn (mặc định là
+    phiên bản đề xuất) và phác đồ của từng phiên bản (giữ trong gr.State để render full-res).
+    """
+    variants = result_state.get("variants") or []
+    if not variants:
+        return [], "*Chỉ có một kết quả (số phiên bản = 1).*", gr.update(choices=[], value=None), {}
+
+    recommended = result_state.get("recommended_variant")
+    source = result_state.get("variant_ranking_source")
+    source_text = "VLM critic so sánh trực quan" if source == "critic" else "điểm Module 1"
+    gallery: List[Tuple[np.ndarray, str]] = []
+    lines = [f"**Xếp hạng theo:** {source_text}"]
+    for variant in variants:
+        star = " ⭐ đề xuất" if variant.id == recommended else ""
+        gallery.append((variant.image, f"#{variant.rank} {variant.label}{star}"))
+        note = f" — _{variant.critic_note}_" if variant.critic_note else ""
+        lines.append(
+            f"{variant.rank}. **{variant.label}**{star}: {variant.description} "
+            f"(điểm `{variant.quality_score}`){note}"
+        )
+    choices = [(variant.label, variant.id) for variant in variants]
+    actions = {
+        variant.id: [action.model_dump(mode="json") for action in variant.actions]
+        for variant in variants
+    }
+    return gallery, "\n".join(lines), gr.update(choices=choices, value=recommended), actions
+
+
+def process_with_variants(
+    input_image: Optional[np.ndarray],
+    ground_truth: Optional[np.ndarray],
+    max_iters: int,
+    num_variants: int,
+) -> Tuple[Any, ...]:
+    """
+    Chạy pipeline một lần, trả về 5 đầu ra của process_interface cộng 4 đầu ra của phần
+    chọn phiên bản (gallery, mô tả, radio, phác đồ).
+    """
+    if input_image is None:
+        empty = process_interface(None, None, max_iters)
+        return (*empty, [], "*Chưa có phiên bản.*", gr.update(choices=[], value=None), {})
+    is_synthetic = ground_truth is not None
+    result_state = run_pipeline(
+        image=input_image,
+        ground_truth=ground_truth,
+        is_synthetic=is_synthetic,
+        max_iterations=int(max_iters),
+        num_variants=int(num_variants),
+    )
+    return (
+        *_format_result(input_image, is_synthetic, max_iters, result_state),
+        *_variant_outputs(result_state),
+    )
+
+
+def render_chosen_variant(
+    input_image: Optional[np.ndarray],
+    choice: Optional[str],
+    variant_actions: Optional[VariantActions],
+) -> Tuple[Optional[np.ndarray], str]:
+    """
+    Render phiên bản đã chọn ở độ phân giải gốc: áp lại đúng phác đồ của phiên bản (giữ
+    nguyên thứ tự, đã kẹp tham số) lên ảnh đầu vào.
+    """
+    if input_image is None or not choice or not variant_actions or choice not in variant_actions:
+        return None, "⚠️ **Hãy chạy xử lý với số phiên bản > 1 rồi chọn một phiên bản.**"
+    actions = sanitize_actions(
+        [RegionOperation.model_validate(raw) for raw in variant_actions[choice]]
+    )
+    rendered = execute_plan(input_image, TreatmentPlan(reasoning=choice, actions=actions))
+    height, width = rendered.shape[:2]
+    return rendered, f"✅ Đã xuất phiên bản **{choice}** ở độ phân giải gốc ({width}×{height})."
+
+
 def create_app() -> gr.Blocks:
     """Tạo giao diện Gradio Blocks hoàn chỉnh."""
     with gr.Blocks(title="AI Image Doctor — Intelligent Image Processing") as demo:
@@ -234,6 +326,13 @@ def create_app() -> gr.Blocks:
                             step=1,
                             label="⚙️ Số vòng lặp tối đa (Max Iterations)",
                         )
+                        variants_slider = gr.Slider(
+                            minimum=1,
+                            maximum=3,
+                            value=3,
+                            step=1,
+                            label="🎨 Số phiên bản để chọn (1 = chỉ một kết quả)",
+                        )
                         btn_run = gr.Button(
                             "🚀 Khởi chạy Chẩn đoán & Xử lý",
                             variant="primary",
@@ -252,6 +351,16 @@ def create_app() -> gr.Blocks:
                             label="Trạng thái",
                         )
 
+                gr.Markdown("### 🎨 Chọn phiên bản (preview)")
+                variants_gallery = gr.Gallery(
+                    label="Các phiên bản", columns=3, height="auto", object_fit="contain"
+                )
+                variants_box = gr.Markdown(value="*Chưa có phiên bản.*")
+                with gr.Row():
+                    variant_choice = gr.Radio(label="Phiên bản muốn xuất", choices=[])
+                    btn_render = gr.Button("💾 Xuất phiên bản đã chọn (full-res)")
+                variant_actions = gr.State({})
+
             # ==================== TAB 2: Lịch sử Chi tiết ====================
             with gr.TabItem("📊 Lịch sử Chi tiết"):
                 gr.Markdown("### 🖼️ Timeline Ảnh qua Từng Vòng Lặp")
@@ -267,9 +376,24 @@ def create_app() -> gr.Blocks:
                     details_box = gr.Code(label="Chi tiết JSON", language="json")
 
         btn_run.click(
-            fn=process_interface,
-            inputs=[in_img, gt_img, max_iter_slider],
-            outputs=[out_img, status_box, gallery, reasoning_box, details_box],
+            fn=process_with_variants,
+            inputs=[in_img, gt_img, max_iter_slider, variants_slider],
+            outputs=[
+                out_img,
+                status_box,
+                gallery,
+                reasoning_box,
+                details_box,
+                variants_gallery,
+                variants_box,
+                variant_choice,
+                variant_actions,
+            ],
+        )
+        btn_render.click(
+            fn=render_chosen_variant,
+            inputs=[in_img, variant_choice, variant_actions],
+            outputs=[out_img, status_box],
         )
 
     return demo
