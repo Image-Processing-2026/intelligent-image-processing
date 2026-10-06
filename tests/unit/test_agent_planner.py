@@ -194,15 +194,15 @@ def test_diagnose_and_plan_vlm_prompt_includes_history(monkeypatch):
     mock_response.text = '{"iteration": 2, "reasoning": "Tinh chỉnh tiếp", "actions": []}'
     mock_model.generate_content.return_value = mock_response
 
-    with patch("google.generativeai.GenerativeModel", return_value=mock_model):
+    with patch("src.agent.vlm_diagnostician.genai") as mock_genai:
+        mock_genai.Client.return_value.models = mock_model
         img = np.ones((32, 32, 3), dtype=np.uint8) * 128
         metrics = {"noise_level": "medium"}
         plan = diagnose_and_plan(img, metrics, iteration=2, history=history)
 
         assert plan.iteration == 2
         mock_model.generate_content.assert_called_once()
-        call_args = mock_model.generate_content.call_args[0][0]
-        prompt_sent = call_args[0]
+        prompt_sent = mock_model.generate_content.call_args.kwargs["contents"][0]
         assert "--- PHẢN HỒI TỪ CÁC VÒNG TRƯỚC ---" in prompt_sent
         assert "Vòng 1" in prompt_sent
         assert "noise_variance: 50.00 → 30.00 (giảm 20.00)" in prompt_sent
@@ -242,6 +242,7 @@ def test_diagnose_and_plan_node_passes_history():
             metrics=state["technical_metrics"],
             iteration=2,
             history=state["history"],
+            original_image=state["original_image"],
         )
         assert res["treatment_plan"] is not None
 

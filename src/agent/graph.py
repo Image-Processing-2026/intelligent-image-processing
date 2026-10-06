@@ -57,6 +57,7 @@ def diagnose_and_plan_node(state: DoctorState) -> Dict[str, Any]:
         metrics=state["technical_metrics"],
         iteration=state["iteration"],
         history=state.get("history", []),
+        original_image=state.get("original_image"),
     )
     validated_plan = validate_and_sort_plan(plan)
     return {"treatment_plan": validated_plan}

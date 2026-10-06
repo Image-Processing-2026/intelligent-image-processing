@@ -67,6 +67,10 @@ class TreatmentPlan(BaseModel):
     actions: List[RegionOperation] = Field(
         default_factory=list, description="Danh sách các thao tác thực thi"
     )
+    # vlm: do Gemini lập; rule_based: không có API key; vlm_fallback: gọi Gemini lỗi → luật dự phòng
+    source: Literal["vlm", "rule_based", "vlm_fallback"] = Field(
+        default="vlm", description="Nguồn gốc kế hoạch điều trị"
+    )
 
 
 class HistoryItem(BaseModel):

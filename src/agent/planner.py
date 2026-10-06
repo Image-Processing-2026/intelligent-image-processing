@@ -142,12 +142,14 @@ def clamp_region_fields(fields: Mapping[str, Any]) -> Dict[str, Any]:
         if "allowed" in constraint:
             val = raw_val.strip().casefold() if isinstance(raw_val, str) else raw_val
             if val not in constraint["allowed"]:
-                logger.warning(
-                    "Invalid value '%s' for region.%s. Resetting to default '%s'.",
-                    raw_val,
-                    field,
-                    constraint["default"],
-                )
+                # Trường bị bỏ trống (None) là hợp lệ → gán default, không cảnh báo
+                if raw_val is not None:
+                    logger.warning(
+                        "Invalid value '%s' for region.%s. Resetting to default '%s'.",
+                        raw_val,
+                        field,
+                        constraint["default"],
+                    )
                 val = constraint["default"]
             clamped[field] = val
         elif raw_val is None:

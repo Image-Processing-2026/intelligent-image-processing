@@ -8,19 +8,27 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
+import cv2
 import numpy as np
 from PIL import Image
 from pydantic import ValidationError
 
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types as genai_types
 except ImportError:
     genai = None
+    genai_types = None
 
-from .planner import clamp_region_fields
+from .planner import ALLOWED_OPERATIONS, PARAMETER_BOUNDS, REGION_FIELD_BOUNDS, clamp_region_fields
 from .state import HistoryItem, RegionOperation, TreatmentPlan
 
 logger = logging.getLogger(__name__)
+
+# Model mặc định; ghi đè bằng biến môi trường GEMINI_MODEL
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
+# Cạnh dài tối đa của ảnh gửi VLM: đủ để chẩn đoán, giảm token và độ trễ
+VLM_MAX_SIDE = 1024
 
 SYSTEM_PROMPT = """
 Bạn là "AI Image Doctor" - một chuyên gia chẩn đoán và xử lý ảnh theo phương pháp kinh điển (Classical Image Processing).
@@ -42,8 +50,11 @@ Nhiệm vụ của bạn:
      Tùy chọn instance_selection in ['all', 'largest'] (mặc định 'all').
    - Tùy chọn feather_radius in [5, 50] (độ mềm viền mask, mặc định 15).
    - KHÔNG trả về bbox, binary_mask hay tọa độ pixel.
+6. Từ vòng 2 trở đi bạn nhận HAI ảnh: ẢNH GỐC (trước mọi xử lý) và ẢNH HIỆN TẠI (cần chẩn đoán).
+   So sánh hai ảnh để thấy các vòng trước đã thay đổi gì; chỉ lập kế hoạch cho ẢNH HIỆN TẠI.
+   Nếu ẢNH HIỆN TẠI đã đạt chất lượng tốt, trả về "actions": [] (không xử lý thêm).
 
-Trả về kết quả dưới định dạng JSON thuần túy theo cấu trúc:
+Viết "reasoning" bằng tiếng Việt. Trả về kết quả dưới định dạng JSON thuần túy theo cấu trúc:
 {
   "iteration": 1,
   "reasoning": "Giải thích lý do lựa chọn thuật toán và tham số...",
@@ -62,11 +73,71 @@ Trả về kết quả dưới định dạng JSON thuần túy theo cấu trúc
 """
 
 
+def _build_plan_response_schema() -> Dict[str, Any]:
+    """
+    Dựng JSON Schema cho structured output của Gemini từ chính bảng ràng buộc của planner,
+    để schema không bao giờ lệch khỏi toolbox (ALLOWED_OPERATIONS, PARAMETER_BOUNDS).
+    Schema chỉ định hướng VLM; planner vẫn kẹp lại mọi giá trị.
+    """
+    parameter_properties: Dict[str, Any] = {}
+    for bounds in PARAMETER_BOUNDS.values():
+        for name, constraint in bounds.items():
+            if "allowed" in constraint:
+                previous = parameter_properties.get(name, {}).get("enum", [])
+                merged = sorted(set(previous) | set(constraint["allowed"]))
+                parameter_properties[name] = {"type": "string", "enum": merged}
+            else:
+                parameter_properties[name] = {
+                    "type": "number",
+                    "minimum": constraint["min"],
+                    "maximum": constraint["max"],
+                }
+
+    def _enum(field: str) -> Dict[str, Any]:
+        allowed = [value for value in REGION_FIELD_BOUNDS[field]["allowed"] if value is not None]
+        return {"type": "string", "enum": allowed}
+
+    feather = REGION_FIELD_BOUNDS["feather_radius"]
+    action_schema = {
+        "type": "object",
+        "properties": {
+            "region_id": {"type": "string"},
+            "target_prompt": {"type": "string"},
+            "region_type": _enum("region_type"),
+            "quadrant": _enum("quadrant"),
+            "face_mode": _enum("face_mode"),
+            "instance_selection": {"type": "string", "enum": ["all", "largest"]},
+            "feather_radius": {
+                "type": "integer",
+                "minimum": feather["min"],
+                "maximum": feather["max"],
+            },
+            "detected_issue": {"type": "string"},
+            "operation": {"type": "string", "enum": sorted(ALLOWED_OPERATIONS)},
+            "parameters": {"type": "object", "properties": parameter_properties},
+        },
+        "required": ["region_id", "target_prompt", "detected_issue", "operation", "parameters"],
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "iteration": {"type": "integer"},
+            "reasoning": {"type": "string"},
+            "actions": {"type": "array", "items": action_schema},
+        },
+        "required": ["reasoning", "actions"],
+    }
+
+
+PLAN_RESPONSE_SCHEMA: Dict[str, Any] = _build_plan_response_schema()
+
+
 def _plan_from_vlm_json(data: Any, iteration: int) -> TreatmentPlan:
     """
     Dựng TreatmentPlan từ JSON của VLM, kẹp trường vùng trước khi validate.
     Mỗi action được dựng riêng: một action sai bị loại kèm cảnh báo,
     không làm rỗng cả kế hoạch (rỗng = SHIP âm thầm).
+    Nếu VLM đề xuất action nhưng tất cả đều sai → ValueError để gọi hàm chuyển sang rule-based.
     """
     if not isinstance(data, dict):
         raise ValueError("VLM response is not a JSON object")
@@ -79,17 +150,21 @@ def _plan_from_vlm_json(data: Any, iteration: int) -> TreatmentPlan:
         if not isinstance(raw_action, dict):
             logger.warning("Dropping VLM action %d: not a JSON object.", index)
             continue
+        fields = clamp_region_fields(raw_action)
+        # Structured output có thể trả null cho tham số không dùng → bỏ để planner gán default
+        if isinstance(fields.get("parameters"), dict):
+            fields["parameters"] = {
+                key: value for key, value in fields["parameters"].items() if value is not None
+            }
         try:
-            actions.append(RegionOperation(**clamp_region_fields(raw_action)))
+            actions.append(RegionOperation(**fields))
         except ValidationError as exc:
             logger.warning(
                 "Dropping invalid VLM action %d: %s", index, exc.errors(include_input=False)
             )
 
     if raw_actions and not actions:
-        logger.warning(
-            "All %d VLM actions were invalid; the plan is empty and will SHIP.", len(raw_actions)
-        )
+        raise ValueError(f"all {len(raw_actions)} VLM actions were invalid")
     reasoning = data.get("reasoning")
     return TreatmentPlan(
         iteration=iteration,
@@ -163,107 +238,157 @@ def _build_history_feedback(history: Optional[List[HistoryItem]]) -> str:
     return "\n".join(feedback_parts)
 
 
+def _full_image_action(issue: str, operation: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    """Dựng một action rule-based áp dụng trên toàn ảnh."""
+    return {
+        "region_id": "full_image",
+        "target_prompt": "full",
+        "region_type": "full",
+        "detected_issue": issue,
+        "operation": operation,
+        "parameters": parameters,
+    }
+
+
+def _rule_based_plan(
+    metrics: Dict[str, Any], iteration: int, source: str, reasoning: str
+) -> TreatmentPlan:
+    """
+    Kế hoạch dự phòng dựa trên ngưỡng phân loại của Module 1 (không cần mạng).
+    Dùng khi không có GEMINI_API_KEY hoặc khi lời gọi/parse Gemini thất bại,
+    để lỗi API không bị biến thành plan rỗng (= SHIP âm thầm).
+    """
+    noise_level = metrics.get("noise_level")
+    actions: List[Dict[str, Any]] = []
+
+    if noise_level in ("medium", "severe"):
+        actions.append(
+            _full_image_action("high_noise", "denoise", {"method": "bilateral", "strength": 1.0})
+        )
+
+    if metrics.get("brightness_level") == "underexposed":
+        actions.append(_full_image_action("underexposed", "gamma_correct", {"gamma": 1.3}))
+    elif metrics.get("brightness_level") == "overexposed":
+        actions.append(_full_image_action("overexposed", "gamma_correct", {"gamma": 0.8}))
+    elif metrics.get("contrast_level") == "low":
+        actions.append(_full_image_action("low_contrast", "clahe", {"clip_limit": 2.0}))
+
+    # Cố ý KHÔNG có luật sharpen/color_cast: đo trên data/real, sharpen làm giảm điểm chất lượng
+    # và ám ấm thường là chủ ý (hoàng hôn, đồ ăn). Cần hiểu ngữ cảnh → để VLM/KB quyết định.
+    for order, action in enumerate(actions, start=1):
+        action["order"] = order
+
+    return TreatmentPlan(
+        iteration=iteration,
+        reasoning=reasoning,
+        actions=[RegionOperation(**action) for action in actions],
+        source=source,
+    )
+
+
+def _to_vlm_image(image: np.ndarray) -> Image.Image:
+    """Thu nhỏ ảnh (giữ tỉ lệ) để cạnh dài không vượt VLM_MAX_SIDE rồi chuyển sang PIL."""
+    if image.ndim == 3 and image.shape[2] == 1:
+        image = image[:, :, 0]
+    height, width = image.shape[:2]
+    longest = max(height, width)
+    if longest > VLM_MAX_SIDE:
+        scale = VLM_MAX_SIDE / longest
+        size = (max(1, round(width * scale)), max(1, round(height * scale)))
+        image = cv2.resize(image, size, interpolation=cv2.INTER_AREA)
+    return Image.fromarray(np.clip(image, 0, 255).astype(np.uint8))
+
+
+def _build_contents(
+    image: np.ndarray,
+    metrics: Dict[str, Any],
+    iteration: int,
+    history: Optional[List[HistoryItem]],
+    original_image: Optional[np.ndarray],
+) -> List[Any]:
+    """
+    Dựng nội dung đa phương thức gửi Gemini: chỉ số kỹ thuật, phản hồi các vòng trước
+    và ảnh. Từ vòng 2, gửi kèm ảnh gốc để VLM so sánh trực quan trước/sau.
+    """
+    prompt = (
+        f"Chỉ số kỹ thuật hiện tại:\n{json.dumps(metrics, indent=2, default=str)}\n"
+        f"Vòng lặp: {iteration}"
+        f"{_build_history_feedback(history)}"
+    )
+    contents: List[Any] = [prompt]
+    if iteration > 1 and original_image is not None:
+        contents += [
+            "ẢNH GỐC (trước mọi xử lý):",
+            _to_vlm_image(original_image),
+            "ẢNH HIỆN TẠI (cần chẩn đoán):",
+        ]
+    contents.append(_to_vlm_image(image))
+    return contents
+
+
+def _parse_json_text(text: Optional[str]) -> Any:
+    """Parse JSON từ phản hồi VLM; vẫn chịu được khối ```json``` dù đã bật structured output."""
+    if not text:
+        raise ValueError("VLM response has no text")
+    text = text.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    return json.loads(text.strip())
+
+
 def diagnose_and_plan(
     image: np.ndarray,
     metrics: Dict[str, Any],
     iteration: int = 1,
     history: Optional[List[HistoryItem]] = None,
+    original_image: Optional[np.ndarray] = None,
 ) -> TreatmentPlan:
     """
     Gọi mô hình Gemini VLM để phân tích và tạo kế hoạch điều trị.
-    Có fallback rule-based nếu chưa cấu hình GEMINI_API_KEY.
+    - Không có GEMINI_API_KEY → kế hoạch rule-based (source="rule_based").
+    - Lỗi SDK/mạng/parse → kế hoạch rule-based (source="vlm_fallback"), không trả plan rỗng.
+    - VLM trả "actions": [] hợp lệ → plan rỗng thật sự (ảnh đã tốt).
     """
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        # Fallback kế hoạch dự phòng dựa trên phân tích luật tĩnh
-        actions = []
-        order = 1
-        if metrics.get("noise_level") in ["medium", "severe"]:
-            actions.append(
-                {
-                    "region_id": "full_image",
-                    "target_prompt": "full",
-                    "region_type": "full",
-                    "detected_issue": "high_noise",
-                    "operation": "denoise",
-                    "parameters": {"method": "bilateral", "strength": 1.0},
-                    "order": order,
-                }
-            )
-            order += 1
-
-        if metrics.get("brightness_level") == "underexposed":
-            actions.append(
-                {
-                    "region_id": "full_image",
-                    "target_prompt": "full",
-                    "region_type": "full",
-                    "detected_issue": "underexposed",
-                    "operation": "gamma_correct",
-                    "parameters": {"gamma": 1.3},
-                    "order": order,
-                }
-            )
-            order += 1
-        elif metrics.get("contrast_level") == "low":
-            actions.append(
-                {
-                    "region_id": "full_image",
-                    "target_prompt": "full",
-                    "region_type": "full",
-                    "detected_issue": "low_contrast",
-                    "operation": "clahe",
-                    "parameters": {"clip_limit": 2.0},
-                    "order": order,
-                }
-            )
-            order += 1
-
-        return TreatmentPlan(
-            iteration=iteration,
+        return _rule_based_plan(
+            metrics,
+            iteration,
+            source="rule_based",
             reasoning="Chế độ Fallback Rule-Based: Điều chỉnh dựa trên ngưỡng thống kê kỹ thuật.",
-            actions=actions,
-        )
-
-    if genai is None:
-        return TreatmentPlan(
-            iteration=iteration,
-            reasoning="Thư viện google-generativeai chưa được cài đặt, chuyển sang chế độ tự phục hồi.",
-            actions=[],
         )
 
     try:
-        genai.configure(api_key=api_key)
+        if genai is None or genai_types is None:
+            raise RuntimeError("google-genai is not installed")
 
-        # Cập nhật họ model Gemini 3.5 Flash-Lite theo cảnh báo deprecate 2.5
-        model = genai.GenerativeModel("gemini-3.5-flash-lite")
-
-        pil_img = Image.fromarray(image)
-        history_feedback = _build_history_feedback(history)
-        prompt = (
-            f"{SYSTEM_PROMPT}\n\n"
-            f"Chỉ số kỹ thuật hiện tại:\n{json.dumps(metrics, indent=2)}\n"
-            f"Vòng lặp: {iteration}"
-            f"{history_feedback}"
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
+            contents=_build_contents(image, metrics, iteration, history, original_image),
+            config=genai_types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                response_mime_type="application/json",
+                response_json_schema=PLAN_RESPONSE_SCHEMA,
+                # Không khai báo tool nào → tắt AFC để SDK không cảnh báo/không tự gọi hàm
+                automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(disable=True),
+            ),
         )
-        response = model.generate_content([prompt, pil_img])
-
-        # Trích xuất và phân tích chuỗi JSON trả về
-        text = response.text.strip()
-        if text.startswith("```json"):
-            text = text[7:]
-        elif text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        data = json.loads(text.strip())
-        return _plan_from_vlm_json(data, iteration)
+        return _plan_from_vlm_json(_parse_json_text(response.text), iteration)
 
     except Exception as exc:
-        # Fallback an toàn nếu có lỗi gọi mạng; ghi log để SHIP do lỗi không bị âm thầm
-        logger.warning("Gemini diagnosis failed (%s); returning an empty plan.", exc)
-        return TreatmentPlan(
-            iteration=iteration,
-            reasoning="Gặp sự cố khi gọi Gemini API, chuyển sang chế độ tự phục hồi.",
-            actions=[],
+        # Lỗi API không được biến thành plan rỗng (= SHIP âm thầm) → dùng luật dự phòng
+        logger.warning("Gemini diagnosis failed (%s); using the rule-based fallback plan.", exc)
+        return _rule_based_plan(
+            metrics,
+            iteration,
+            source="vlm_fallback",
+            reasoning=(
+                "Gọi Gemini thất bại, chuyển sang kế hoạch Rule-Based dựa trên ngưỡng "
+                "thống kê kỹ thuật."
+            ),
         )

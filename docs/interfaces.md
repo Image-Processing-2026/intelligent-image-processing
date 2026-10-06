@@ -85,6 +85,10 @@ class TreatmentPlan(BaseModel):
     iteration: int = 1
     reasoning: str = Field(..., description="VLM clinical reasoning for proposed treatments")
     actions: List[RegionOperationPlan] = Field(..., description="Ordered list of operations")
+    # "vlm": planned by Gemini; "rule_based": no GEMINI_API_KEY;
+    # "vlm_fallback": the Gemini call or parse failed, so the rule-based plan was used.
+    # An empty plan therefore only means "image already good" when source == "vlm".
+    source: Literal["vlm", "rule_based", "vlm_fallback"] = "vlm"
 
 
 # ---------------------------------------------------------
@@ -255,4 +259,24 @@ def run_doctor_pipeline(
 ) -> Dict[str, Any]:
     """Khởi chạy toàn bộ vòng lặp khép kín: Analyze -> Diagnose -> Plan -> Process -> Eval -> Decision."""
     ...
+
+
+# src/agent/vlm_diagnostician.py
+def diagnose_and_plan(
+    image: np.ndarray,
+    metrics: Dict[str, Any],
+    iteration: int = 1,
+    history: Optional[List[HistoryItem]] = None,
+    original_image: Optional[np.ndarray] = None,  # sent alongside `image` from iteration 2
+) -> TreatmentPlan:
+    """Gemini (google-genai, structured JSON output) or the rule-based fallback."""
+    ...
 ```
+
+**Decision rules (`graph.decide_node`), in order:**
+1. Degraded iteration → `STOP_BEST_EFFORT` and roll back to the previous image.
+2. Empty plan → `SHIP`.
+3. Synthetic: PSNR ≥ 28 dB and SSIM ≥ 0.88 → `SHIP`.
+   Real: `estimated_quality_score` ≥ `REAL_TARGET_SCORE` (85) → `SHIP`;
+   gain over the previous iteration < `REAL_MIN_GAIN` (1.0) → `STOP_BEST_EFFORT` (plateau).
+4. Otherwise `RE_PROCESS`, or `STOP_BEST_EFFORT` when `max_iterations` is reached.
