@@ -19,6 +19,15 @@ ALLOWED_OPERATIONS: Set[str] = {
     "color_correct",
 }
 
+# Thứ tự thực thi an toàn: khử nhiễu → phơi sáng → tương phản → làm nét → màu
+OPERATION_ORDER: Dict[str, int] = {
+    "denoise": 10,
+    "gamma_correct": 20,
+    "clahe": 30,
+    "sharpen": 40,
+    "color_correct": 50,
+}
+
 # Bảng ràng buộc tham số an toàn cho từng operation
 PARAMETER_BOUNDS: Dict[str, Dict[str, Any]] = {
     "denoise": {
@@ -226,14 +235,6 @@ def validate_and_sort_plan(plan: TreatmentPlan) -> TreatmentPlan:
     """
     valid_actions: List[RegionOperation] = []
 
-    priority_map = {
-        "denoise": 10,
-        "gamma_correct": 20,
-        "clahe": 30,
-        "sharpen": 40,
-        "color_correct": 50,
-    }
-
     for action in plan.actions:
         op_name = action.operation.lower().strip()
         if op_name in ALLOWED_OPERATIONS:
@@ -247,7 +248,7 @@ def validate_and_sort_plan(plan: TreatmentPlan) -> TreatmentPlan:
             for name, value in clamp_region_fields(region_fields).items():
                 setattr(action, name, value)
             # Gán lại độ ưu tiên mặc định nếu chưa được sắp xếp
-            calculated_priority = priority_map.get(op_name, 99)
+            calculated_priority = OPERATION_ORDER.get(op_name, 99)
             action.order = calculated_priority
             valid_actions.append(action)
 

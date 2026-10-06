@@ -133,6 +133,7 @@ class TreatmentPlan(BaseModel):
     # "vlm_fallback": the Gemini call or parse failed, so the rule-based plan was used.
     # An empty plan therefore only means "image already good" when source == "vlm".
     source: Literal["vlm", "rule_based", "vlm_fallback"] = "vlm"
+    knowledge: List[str] = []          # playbook card / principle ids behind the plan
 
 
 # ---------------------------------------------------------
@@ -344,13 +345,27 @@ def plan_treatment(
     """No defect with severity >= 1 → empty plan without a second VLM call. Otherwise
     diagnose_and_plan() → validate_and_sort_plan() → apply_preserve_guard()."""
     ...
+
+
+# src/agent/knowledge — Knowledge Base (playbook cards + principles), see its README.md
+def retrieve(diagnosis, metrics=None, kb=None, max_cards=4, max_principles=3) -> KnowledgeContext
+def format_context(context: KnowledgeContext) -> str      # 'TRI THỨC CHUYÊN MÔN' prompt block
+def plan_actions_from_knowledge(diagnosis, metrics, kb=None) -> (actions, card_ids)  # offline
+def diagnose_from_metrics(metrics, iteration=1, source="rule_based") -> DiagnosisReport
 ```
+
+The VLM plan schema has one `anyOf` variant per operation, each requiring exactly that
+operation's parameters. Parameters that belong to another operation are dropped.
+The rule-based plan (no API key, or Gemini failed) runs the recipes of the `auto_apply`
+playbook cards that match the diagnosis plus the defects implied by the Module 1 levels.
 
 Graph: `analyze → perceive → diagnose_and_plan → process → evaluate → decide`.
 `POST /api/v1/diagnose` returns `{technical_metrics, diagnosis, treatment_plan}`.
 
 **Decision rules (`graph.decide_node`), in order:**
 1. Degraded iteration → `STOP_BEST_EFFORT` and roll back to the previous image.
+   A non-empty plan that changed no pixels (every action skipped) → `STOP_BEST_EFFORT`
+   without rollback.
 2. Empty plan → `SHIP`.
 3. Synthetic: PSNR ≥ 28 dB and SSIM ≥ 0.88 → `SHIP`.
    Real: `estimated_quality_score` ≥ `REAL_TARGET_SCORE` (85) → `SHIP`;

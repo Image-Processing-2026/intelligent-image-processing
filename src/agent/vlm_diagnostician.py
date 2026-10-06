@@ -20,6 +20,12 @@ except ImportError:
     genai = None
     genai_types = None
 
+from .knowledge import (
+    diagnose_from_metrics,
+    format_context,
+    plan_actions_from_knowledge,
+    retrieve,
+)
 from .planner import ALLOWED_OPERATIONS, PARAMETER_BOUNDS, REGION_FIELD_BOUNDS, clamp_region_fields
 from .state import (
     DiagnosisReport,
@@ -64,6 +70,11 @@ Nhiệm vụ của bạn:
    cường độ tham số tỉ lệ với severity (1 nhẹ tay, 3 mạnh tay).
    Dùng region_metrics (số đo thật theo vùng) để chọn tham số cho từng vùng.
    TUYỆT ĐỐI giữ nguyên các đặc điểm trong "preserve"; thao tác vi phạm sẽ bị hệ thống loại bỏ.
+8. Nếu có TRI THỨC CHUYÊN MÔN: tham số trong playbook đã được hiệu chỉnh bằng đo đạc trên chính
+   toolbox này và đã chọn sẵn theo mức độ của ca hiện tại. Áp dụng ĐỦ các bước của công thức
+   phù hợp (ví dụ khử nhiễu VÀ nâng sáng) với đúng giá trị đã chọn; chỉ lệch khi thấy lý do cụ
+   thể trên ảnh và phải nêu lý do đó. Tuân thủ các mục "Tránh", và nêu id playbook đã dựa vào
+   trong reasoning (ví dụ: "[dark-region]").
 
 Viết "reasoning" bằng tiếng Việt. Trả về kết quả dưới định dạng JSON thuần túy theo cấu trúc:
 {
@@ -88,53 +99,56 @@ def _build_plan_response_schema() -> Dict[str, Any]:
     """
     Dựng JSON Schema cho structured output của Gemini từ chính bảng ràng buộc của planner,
     để schema không bao giờ lệch khỏi toolbox (ALLOWED_OPERATIONS, PARAMETER_BOUNDS).
+    Mỗi operation là một biến thể riêng (anyOf) với đúng tham số của nó, bắt buộc điền đủ:
+    schema phẳng gộp mọi tham số khiến VLM điền nhầm tên (ví dụ 'amount' thay cho 'strength').
     Schema chỉ định hướng VLM; planner vẫn kẹp lại mọi giá trị.
     """
-    parameter_properties: Dict[str, Any] = {}
-    for bounds in PARAMETER_BOUNDS.values():
-        for name, constraint in bounds.items():
-            if "allowed" in constraint:
-                previous = parameter_properties.get(name, {}).get("enum", [])
-                merged = sorted(set(previous) | set(constraint["allowed"]))
-                parameter_properties[name] = {"type": "string", "enum": merged}
-            else:
-                parameter_properties[name] = {
-                    "type": "number",
-                    "minimum": constraint["min"],
-                    "maximum": constraint["max"],
-                }
 
     def _enum(field: str) -> Dict[str, Any]:
         allowed = [value for value in REGION_FIELD_BOUNDS[field]["allowed"] if value is not None]
         return {"type": "string", "enum": allowed}
 
+    def _parameter_schema(constraint: Dict[str, Any]) -> Dict[str, Any]:
+        if "allowed" in constraint:
+            return {"type": "string", "enum": list(constraint["allowed"])}
+        return {"type": "number", "minimum": constraint["min"], "maximum": constraint["max"]}
+
     feather = REGION_FIELD_BOUNDS["feather_radius"]
-    action_schema = {
-        "type": "object",
-        "properties": {
-            "region_id": {"type": "string"},
-            "target_prompt": {"type": "string"},
-            "region_type": _enum("region_type"),
-            "quadrant": _enum("quadrant"),
-            "face_mode": _enum("face_mode"),
-            "instance_selection": {"type": "string", "enum": ["all", "largest"]},
-            "feather_radius": {
-                "type": "integer",
-                "minimum": feather["min"],
-                "maximum": feather["max"],
-            },
-            "detected_issue": {"type": "string"},
-            "operation": {"type": "string", "enum": sorted(ALLOWED_OPERATIONS)},
-            "parameters": {"type": "object", "properties": parameter_properties},
-        },
-        "required": ["region_id", "target_prompt", "detected_issue", "operation", "parameters"],
+    region_properties = {
+        "region_id": {"type": "string"},
+        "target_prompt": {"type": "string"},
+        "region_type": _enum("region_type"),
+        "quadrant": _enum("quadrant"),
+        "face_mode": _enum("face_mode"),
+        "instance_selection": {"type": "string", "enum": ["all", "largest"]},
+        "feather_radius": {"type": "integer", "minimum": feather["min"], "maximum": feather["max"]},
+        "detected_issue": {"type": "string"},
     }
+    variants = [
+        {
+            "type": "object",
+            "properties": {
+                **region_properties,
+                "operation": {"type": "string", "enum": [operation]},
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        name: _parameter_schema(constraint) for name, constraint in bounds.items()
+                    },
+                    "required": list(bounds),
+                },
+            },
+            "required": ["region_id", "target_prompt", "detected_issue", "operation", "parameters"],
+        }
+        for operation, bounds in sorted(PARAMETER_BOUNDS.items())
+        if operation in ALLOWED_OPERATIONS
+    ]
     return {
         "type": "object",
         "properties": {
             "iteration": {"type": "integer"},
             "reasoning": {"type": "string"},
-            "actions": {"type": "array", "items": action_schema},
+            "actions": {"type": "array", "items": {"anyOf": variants}},
         },
         "required": ["reasoning", "actions"],
     }
@@ -162,10 +176,14 @@ def _plan_from_vlm_json(data: Any, iteration: int) -> TreatmentPlan:
             logger.warning("Dropping VLM action %d: not a JSON object.", index)
             continue
         fields = clamp_region_fields(raw_action)
-        # Structured output có thể trả null cho tham số không dùng → bỏ để planner gán default
+        # Schema tham số là hợp của mọi operation: VLM có thể điền null hoặc tham số của
+        # operation khác (ví dụ gamma trong denoise) → chỉ giữ tham số thuộc operation này
         if isinstance(fields.get("parameters"), dict):
+            own = PARAMETER_BOUNDS.get(str(fields.get("operation", "")).strip().lower())
             fields["parameters"] = {
-                key: value for key, value in fields["parameters"].items() if value is not None
+                key: value
+                for key, value in fields["parameters"].items()
+                if value is not None and (own is None or key in own)
             }
         try:
             actions.append(RegionOperation(**fields))
@@ -255,62 +273,6 @@ def _build_history_feedback(history: Optional[List[HistoryItem]]) -> str:
     return "\n".join(feedback_parts)
 
 
-def _full_image_action(issue: str, operation: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-    """Dựng một action rule-based áp dụng trên toàn ảnh."""
-    return {
-        "region_id": "full_image",
-        "target_prompt": "full",
-        "region_type": "full",
-        "detected_issue": issue,
-        "operation": operation,
-        "parameters": parameters,
-    }
-
-
-def _region_action(
-    region: str, issue: str, operation: str, parameters: Dict[str, Any]
-) -> Dict[str, Any]:
-    """Dựng một action rule-based trên một vùng; executor tự suy ra loại vùng (D2)."""
-    return {
-        "region_id": region,
-        "target_prompt": region,
-        "region_type": None,
-        # Viền mềm rộng để vùng được chỉnh sáng hòa vào nền, không lộ quầng
-        "feather_radius": 30,
-        "detected_issue": issue,
-        "operation": operation,
-        "parameters": parameters,
-    }
-
-
-def _region_exposure_actions(
-    metrics: Dict[str, Any], diagnosis: Optional[DiagnosisReport]
-) -> List[Dict[str, Any]]:
-    """
-    Luật theo vùng: chỉnh sáng riêng một vùng (ví dụ khuôn mặt ngược sáng) khi độ sáng
-    toàn cục không cùng chiều lỗi, để không chỉnh sáng hai lần lên cùng một vùng.
-    """
-    if diagnosis is None:
-        return []
-    brightness_level = metrics.get("brightness_level")
-    actions: List[Dict[str, Any]] = []
-    for defect in diagnosis.actionable_defects:
-        if defect.region == "full":
-            continue
-        if defect.type in ("underexposed", "backlit_subject"):
-            if brightness_level == "underexposed":
-                continue
-            gamma = 1.6 if defect.severity >= 3 else 1.4
-            actions.append(
-                _region_action(defect.region, defect.type, "gamma_correct", {"gamma": gamma})
-            )
-        elif defect.type == "overexposed" and brightness_level != "overexposed":
-            actions.append(
-                _region_action(defect.region, defect.type, "gamma_correct", {"gamma": 0.8})
-            )
-    return actions
-
-
 def _rule_based_plan(
     metrics: Dict[str, Any],
     iteration: int,
@@ -319,38 +281,19 @@ def _rule_based_plan(
     diagnosis: Optional[DiagnosisReport] = None,
 ) -> TreatmentPlan:
     """
-    Kế hoạch dự phòng dựa trên ngưỡng phân loại của Module 1 (không cần mạng).
-    Dùng khi không có GEMINI_API_KEY hoặc khi lời gọi/parse Gemini thất bại,
-    để lỗi API không bị biến thành plan rỗng (= SHIP âm thầm).
-    Nếu có chẩn đoán, thêm luật chỉnh sáng theo vùng từ số đo thực tế.
+    Kế hoạch dự phòng không cần mạng: chạy công thức của các playbook card auto_apply khớp với
+    chẩn đoán (bổ sung lỗi từ chỉ số Module 1). Dùng khi không có GEMINI_API_KEY hoặc khi lời
+    gọi/parse Gemini thất bại, để lỗi API không bị biến thành plan rỗng (= SHIP âm thầm).
     """
-    noise_level = metrics.get("noise_level")
-    actions: List[Dict[str, Any]] = []
-
-    if noise_level in ("medium", "severe"):
-        actions.append(
-            _full_image_action("high_noise", "denoise", {"method": "bilateral", "strength": 1.0})
-        )
-
-    if metrics.get("brightness_level") == "underexposed":
-        actions.append(_full_image_action("underexposed", "gamma_correct", {"gamma": 1.3}))
-    elif metrics.get("brightness_level") == "overexposed":
-        actions.append(_full_image_action("overexposed", "gamma_correct", {"gamma": 0.8}))
-    elif metrics.get("contrast_level") == "low":
-        actions.append(_full_image_action("low_contrast", "clahe", {"clip_limit": 2.0}))
-
-    actions += _region_exposure_actions(metrics, diagnosis)
-
-    # Cố ý KHÔNG có luật sharpen/color_cast: đo trên data/real, sharpen làm giảm điểm chất lượng
-    # và ám ấm thường là chủ ý (hoàng hôn, đồ ăn). Cần hiểu ngữ cảnh → để VLM/KB quyết định.
-    for order, action in enumerate(actions, start=1):
-        action["order"] = order
-
+    actions, card_ids = plan_actions_from_knowledge(diagnosis, metrics)
+    if card_ids:
+        reasoning = f"{reasoning} Playbook: {', '.join(card_ids)}."
     return TreatmentPlan(
         iteration=iteration,
         reasoning=reasoning,
         actions=[RegionOperation(**action) for action in actions],
         source=source,
+        knowledge=card_ids,
     )
 
 
@@ -389,10 +332,11 @@ def _build_contents(
     history: Optional[List[HistoryItem]],
     original_image: Optional[np.ndarray],
     diagnosis: Optional[DiagnosisReport] = None,
+    knowledge_text: str = "",
 ) -> List[Any]:
     """
     Dựng nội dung đa phương thức gửi Gemini (giai đoạn Plan): chỉ số kỹ thuật,
-    chẩn đoán giai đoạn 1 (nếu có), phản hồi các vòng trước và ảnh.
+    chẩn đoán giai đoạn 1 (nếu có), tri thức truy xuất, phản hồi các vòng trước và ảnh.
     """
     prompt = f"Chỉ số kỹ thuật hiện tại:\n{json.dumps(metrics, indent=2, default=str)}\n"
     if diagnosis is not None:
@@ -401,6 +345,8 @@ def _build_contents(
             "CHẨN ĐOÁN (giai đoạn 1, kèm region_metrics đo thực tế theo vùng):\n"
             f"{json.dumps(diagnosis_json, indent=2, ensure_ascii=False)}\n"
         )
+    if knowledge_text:
+        prompt += f"{knowledge_text}\n"
     prompt += f"Vòng lặp: {iteration}{_build_history_feedback(history)}"
     return [prompt, *image_parts(image, iteration, original_image)]
 
@@ -469,9 +415,14 @@ def diagnose_and_plan(
         )
 
     try:
-        contents = _build_contents(image, metrics, iteration, history, original_image, diagnosis)
+        context = retrieve(diagnosis or diagnose_from_metrics(metrics, iteration), metrics)
+        contents = _build_contents(
+            image, metrics, iteration, history, original_image, diagnosis, format_context(context)
+        )
         data = call_gemini_json(api_key, SYSTEM_PROMPT, contents, PLAN_RESPONSE_SCHEMA)
-        return _plan_from_vlm_json(data, iteration)
+        plan = _plan_from_vlm_json(data, iteration)
+        plan.knowledge = context.ids
+        return plan
 
     except Exception as exc:
         # Lỗi API không được biến thành plan rỗng (= SHIP âm thầm) → dùng luật dự phòng

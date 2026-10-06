@@ -1,0 +1,150 @@
+# Playbook card — Phơi sáng và tương phản.
+# Tham số dạng {severity: giá trị}; mức không có khóa dùng mức thấp hơn gần nhất.
+# auto_apply: true → rule engine offline được tự áp dụng (không cần VLM).
+
+- id: global-underexposed
+  title: Ảnh thiếu sáng toàn cục
+  priority: 50
+  auto_apply: true
+  defects:
+    - {types: [underexposed], region: full, min_severity: 2}
+  blocked_by: [low_key, silhouette]
+  recipe:
+    - operation: gamma_correct
+      region: full
+      params: {gamma: {2: 1.3, 3: 1.5}}
+  avoid:
+    - "gamma > 1.8 trong một vòng: vùng tối bị kéo lên quá mức, nhiễu sensor lộ rõ; nâng từng bước qua nhiều vòng."
+    - "Ảnh vừa tối vừa nhiễu: khử nhiễu TRƯỚC khi nâng sáng, nếu không nhiễu bị khuếch đại cùng vùng tối."
+    - "Không dùng CLAHE cùng vòng với gamma mạnh: tương phản cục bộ bị đẩy hai lần, dễ lộ quầng."
+  rationale: >-
+    Gamma > 1 nâng vùng trung tính và vùng tối nhiều hơn vùng sáng, giữ nguyên điểm đen và
+    điểm trắng, nên làm sáng mà ít gây cháy highlight hơn tăng độ sáng tuyến tính.
+  tags: [exposure, brightness, gamma, midtones, dark, tối, thiếu sáng]
+  sources:
+    - "Gonzalez & Woods, Digital Image Processing (4th ed.), ch.3 — power-law (gamma) transformations"
+
+- id: global-overexposed
+  title: Ảnh dư sáng toàn cục
+  priority: 50
+  auto_apply: true
+  defects:
+    - {types: [overexposed], region: full, min_severity: 2}
+  blocked_by: [high_key]
+  recipe:
+    - operation: gamma_correct
+      region: full
+      params: {gamma: {2: 0.8, 3: 0.7}}
+  avoid:
+    - "Vùng đã cháy trắng (highlight_clip_ratio cao) không khôi phục được chi tiết: gamma chỉ làm xám đi vùng trắng, đừng kỳ vọng lấy lại kết cấu."
+    - "gamma < 0.6: vùng tối bị dìm, ảnh bết và mất chi tiết bóng."
+  rationale: >-
+    Gamma < 1 hạ vùng trung tính và vùng sáng, kéo ảnh về mức cân bằng; thông tin đã bị cắt
+    ở 255 thì không thuật toán điểm ảnh nào phục hồi được.
+  tags: [exposure, brightness, gamma, highlights, clipping, cháy sáng, dư sáng]
+  sources:
+    - "Gonzalez & Woods, Digital Image Processing (4th ed.), ch.3 — power-law (gamma) transformations"
+
+- id: low-contrast-flat
+  title: Ảnh bệt, tương phản thấp
+  priority: 40
+  auto_apply: true
+  defects:
+    - {types: [low_contrast], region: full, min_severity: 1}
+  unless:
+    - {types: [underexposed, overexposed], region: full, min_severity: 2}
+  blocked_by: [low_key, high_key, silhouette, soft_focus]
+  recipe:
+    - operation: clahe
+      region: full
+      params: {clip_limit: {1: 1.5, 2: 2.0, 3: 2.5}}
+  avoid:
+    - "clip_limit > 3.0: quầng sáng/tối quanh cạnh và khuếch đại nhiễu ở vùng phẳng (trời, tường)."
+    - "Ảnh nhiễu: khử nhiễu trước, CLAHE khuếch đại nhiễu ở vùng đồng nhất."
+    - "Sửa phơi sáng trước (gamma), xét lại tương phản ở vòng sau: ảnh thiếu sáng thường tự có tương phản thấp."
+  rationale: >-
+    CLAHE cân bằng histogram theo từng ô (8x8) trên kênh L của LAB nên tăng tương phản cục bộ
+    mà không lệch màu; clip_limit giới hạn độ dốc hàm ánh xạ để không khuếch đại nhiễu.
+  tags: [contrast, clahe, flat, histogram, haze, bệt, tương phản]
+  sources:
+    - "Zuiderveld, Contrast Limited Adaptive Histogram Equalization, Graphics Gems IV (1994)"
+
+- id: dark-region
+  title: Vùng/chủ thể tối do chênh sáng (ngược sáng, bóng đổ)
+  priority: 60
+  auto_apply: true
+  defects:
+    - {types: [backlit_subject, underexposed], region: region, min_severity: 2}
+  unless:
+    - {types: [underexposed], region: full, min_severity: 2}
+  blocked_by: [silhouette, low_key]
+  recipe:
+    - operation: gamma_correct
+      region: $defect
+      params: {gamma: {2: 1.4, 3: 1.6}}
+      feather_radius: 30
+  avoid:
+    - "gamma toàn ảnh để cứu chủ thể ngược sáng: nền vốn đúng sáng sẽ bị cháy."
+    - "feather_radius nhỏ (< 15) trên khuôn mặt: lộ viền/quầng quanh vùng đã chỉnh."
+    - "Nâng quá tay một lần: vùng mặt sáng hơn nền trông giả; nâng dần, để vòng sau đo lại."
+  rationale: >-
+    Khi chủ thể tối hơn hẳn phần còn lại, chỉnh theo vùng với mặt nạ mềm làm sáng chủ thể mà
+    giữ nguyên nền; viền mặt nạ rộng giúp vùng chuyển tiếp tự nhiên.
+  tags: [backlight, ngược sáng, face, portrait, subject, local, region, dodge, chênh sáng]
+  sources:
+    - "Ansel Adams, The Negative (Zone System) — đặt chủ thể vào đúng vùng sáng"
+    - "Gonzalez & Woods, Digital Image Processing (4th ed.), ch.3 — local enhancement"
+
+- id: bright-region
+  title: Vùng cháy sáng cục bộ (bầu trời, cửa sổ)
+  priority: 60
+  auto_apply: true
+  defects:
+    - {types: [overexposed], region: region, min_severity: 2}
+  unless:
+    - {types: [overexposed], region: full, min_severity: 2}
+  blocked_by: [high_key]
+  recipe:
+    - operation: gamma_correct
+      region: $defect
+      params: {gamma: {2: 0.8}}
+      feather_radius: 30
+  avoid:
+    - "Hạ sáng toàn ảnh để cứu bầu trời: chủ thể vốn đúng sáng bị tối theo."
+    - "Mặt nạ 'sky' heuristic là nửa trên khung hình: kiểm tra backend trong region_metrics, nếu là heuristic thì chỉnh nhẹ tay."
+  rationale: >-
+    Hạ gamma riêng vùng sáng giữ lại phần chi tiết chưa bị cắt; vùng đã chạm 255 chỉ chuyển
+    từ trắng sang xám nhạt.
+  tags: [sky, bầu trời, highlights, local, region, burn, cháy sáng]
+  sources:
+    - "Ansel Adams, The Negative (Zone System)"
+
+- id: low-light-noisy
+  title: Ảnh thiếu sáng kèm nhiễu (chụp đêm, ISO cao)
+  priority: 70
+  auto_apply: true
+  match: all
+  defects:
+    - {types: [underexposed], region: full, min_severity: 2}
+    - {types: [noise], region: full, min_severity: 2}
+  blocked_by: [film_grain]
+  recipe:
+    - operation: denoise
+      region: full
+      params: {method: bilateral, strength: {2: 1.5, 3: 2.0}}
+    - operation: gamma_correct
+      region: full
+      params: {gamma: {2: 1.3, 3: 1.4}}
+  avoid:
+    - "Nâng sáng trước khi khử nhiễu: nhiễu vùng tối bị khuếch đại rồi mới bị lọc, kết quả bệt."
+    - "Kéo ảnh đêm sáng như ban ngày (gamma > 1.5): mất không khí, nhiễu màu lộ rõ."
+    - "Không làm nét ảnh thiếu sáng nhiễu trong cùng vòng."
+    - "nlm với strength 1.0 (h=10) quá yếu cho nhiễu nặng: đo được SSIM còn thấp hơn bilateral 1.0; nếu dùng nlm thì strength >= 1.5."
+  rationale: >-
+    Nhiễu sensor tập trung ở vùng tối và lộ ra khi nâng sáng, nên phải khử mạnh trước khi nâng.
+    Đo trên ảnh mèo tối nhiễu có ảnh sạch tham chiếu: bilateral 2.0 và nlm 2.0 cùng đạt SSIM
+    0.514 (bilateral 1.0: 0.374, nlm 1.0: 0.262), nhưng bilateral nhanh hơn khoảng 100 lần.
+  tags: [night, đêm, low light, iso, noise, nlm, exposure]
+  sources:
+    - "Buades, Coll & Morel, A non-local algorithm for image denoising, CVPR 2005"
+    - "Đo nội bộ: data/real/e2e/test_chelsea_dark_noisy.jpg so với skimage chelsea (2026-10)"

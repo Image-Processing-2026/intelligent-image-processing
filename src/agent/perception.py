@@ -17,6 +17,7 @@ import numpy as np
 from pydantic import ValidationError
 
 from .executor import resolve_region_mask
+from .knowledge import diagnose_from_metrics
 from .state import (
     DEFECT_TYPES,
     PRESERVE_ASPECTS,
@@ -24,7 +25,6 @@ from .state import (
     Defect,
     DiagnosisReport,
     HistoryItem,
-    PlanSource,
     PreserveItem,
     RegionMetrics,
 )
@@ -282,53 +282,6 @@ def _normalize_region(raw: Any) -> str:
     return "full" if region in _FULL_REGIONS else region
 
 
-def _rule_based_report(
-    metrics: Dict[str, Any], iteration: int, source: PlanSource
-) -> DiagnosisReport:
-    """Chẩn đoán từ phân loại của Module 1 (không cần mạng); luôn đo thêm vùng khuôn mặt."""
-    defects: List[Defect] = []
-
-    def add(defect_type: str, severity: int, evidence: str) -> None:
-        defects.append(
-            Defect(type=defect_type, severity=severity, evidence=evidence, origin="rule")
-        )
-
-    noise_severity = {"low": 1, "medium": 2, "severe": 3}.get(metrics.get("noise_level", ""))
-    if noise_severity:
-        add("noise", noise_severity, f"noise_level={metrics['noise_level']}")
-
-    brightness = float(metrics.get("brightness_mean", 128.0))
-    if metrics.get("brightness_level") == "underexposed":
-        add("underexposed", 3 if brightness < 40 else 2, f"brightness_mean={brightness:.1f}")
-    elif metrics.get("brightness_level") == "overexposed":
-        add("overexposed", 3 if brightness > 215 else 2, f"brightness_mean={brightness:.1f}")
-
-    if metrics.get("contrast_level") == "low":
-        contrast = float(metrics.get("contrast_std", 40.0))
-        add("low_contrast", 2 if contrast < 25 else 1, f"contrast_std={contrast:.1f}")
-
-    blur_severity = {"mild_blur": 1, "severe_blur": 2}.get(metrics.get("blur_level", ""))
-    if blur_severity:
-        add("blur", blur_severity, f"blur_level={metrics['blur_level']}")
-
-    cast_type = {
-        "warm": "color_cast_warm",
-        "cool": "color_cast_cool",
-        "greenish": "color_cast_green",
-    }.get(metrics.get("color_cast") or "")
-    if cast_type:
-        add(cast_type, 1, f"color_cast={metrics['color_cast']}")
-
-    listed = ", ".join(f"{d.type} (mức {d.severity})" for d in defects) or "không có lỗi rõ rệt"
-    return DiagnosisReport(
-        iteration=iteration,
-        subjects=["face"],
-        defects=defects,
-        summary=f"Chẩn đoán Rule-Based từ chỉ số toàn cục: {listed}.",
-        source=source,
-    )
-
-
 def _report_from_vlm_json(data: Any, iteration: int) -> DiagnosisReport:
     """
     Dựng DiagnosisReport từ JSON của VLM. Mỗi defect/preserve được dựng riêng: phần tử
@@ -413,7 +366,7 @@ def perceive(
     """
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        report = _rule_based_report(metrics, iteration, source="rule_based")
+        report = diagnose_from_metrics(metrics, iteration, source="rule_based")
     else:
         try:
             prompt = (
@@ -425,7 +378,7 @@ def perceive(
             report = _report_from_vlm_json(data, iteration)
         except Exception as exc:
             logger.warning("Gemini perception failed (%s); using the rule-based diagnosis.", exc)
-            report = _rule_based_report(metrics, iteration, source="vlm_fallback")
+            report = diagnose_from_metrics(metrics, iteration, source="vlm_fallback")
 
     report.defects = _drop_preserved_defects(report)
     report.region_metrics = measure_regions(image, report.subjects)

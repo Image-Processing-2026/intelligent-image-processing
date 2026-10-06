@@ -12,13 +12,13 @@ import numpy as np
 import pytest
 
 from src.agent.graph import plan_treatment, run_pipeline
+from src.agent.knowledge import diagnose_from_metrics
 from src.agent.perception import (
     MAX_SUBJECTS,
     PERCEIVE_RESPONSE_SCHEMA,
     _drop_preserved_defects,
     _measured_defects,
     _report_from_vlm_json,
-    _rule_based_report,
     compute_region_metrics,
     perceive,
 )
@@ -225,7 +225,7 @@ class TestPreservedDefects:
 
 class TestRuleBasedReport:
     def test_defects_and_severities_from_metrics(self):
-        report = _rule_based_report(
+        report = diagnose_from_metrics(
             {
                 "noise_level": "severe",
                 "brightness_level": "underexposed",
@@ -252,7 +252,7 @@ class TestRuleBasedReport:
         assert report.source == "rule_based"
 
     def test_clean_metrics_have_no_defects(self):
-        report = _rule_based_report({"noise_level": "clean"}, 1, "rule_based")
+        report = diagnose_from_metrics({"noise_level": "clean"}, 1, "rule_based")
         assert report.defects == []
         assert "không có lỗi" in report.summary
 

@@ -512,13 +512,19 @@ class TestVLMRequest:
         from src.agent.planner import ALLOWED_OPERATIONS, PARAMETER_BOUNDS
         from src.agent.vlm_diagnostician import PLAN_RESPONSE_SCHEMA
 
-        action = PLAN_RESPONSE_SCHEMA["properties"]["actions"]["items"]["properties"]
-        assert set(action["operation"]["enum"]) == ALLOWED_OPERATIONS
-        params = action["parameters"]["properties"]
-        assert params["gamma"]["minimum"] == PARAMETER_BOUNDS["gamma_correct"]["gamma"]["min"]
-        assert params["gamma"]["maximum"] == PARAMETER_BOUNDS["gamma_correct"]["gamma"]["max"]
-        # method là hợp của enum denoise và sharpen
-        assert {"bilateral", "unsharp_mask"} <= set(params["method"]["enum"])
+        # Mỗi operation là một biến thể riêng, chỉ có đúng tham số của nó (bắt buộc điền)
+        variants = PLAN_RESPONSE_SCHEMA["properties"]["actions"]["items"]["anyOf"]
+        by_operation = {v["properties"]["operation"]["enum"][0]: v for v in variants}
+        assert set(by_operation) == ALLOWED_OPERATIONS
+        for operation, variant in by_operation.items():
+            params = variant["properties"]["parameters"]
+            assert set(params["properties"]) == set(PARAMETER_BOUNDS[operation])
+            assert set(params["required"]) == set(PARAMETER_BOUNDS[operation])
+        gamma = by_operation["gamma_correct"]["properties"]["parameters"]["properties"]["gamma"]
+        assert gamma["minimum"] == PARAMETER_BOUNDS["gamma_correct"]["gamma"]["min"]
+        assert gamma["maximum"] == PARAMETER_BOUNDS["gamma_correct"]["gamma"]["max"]
+        denoise = by_operation["denoise"]["properties"]["parameters"]["properties"]
+        assert "unsharp_mask" not in denoise["method"]["enum"]
 
     @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
     @patch("src.agent.vlm_diagnostician.genai")
@@ -659,3 +665,32 @@ class TestVLMEndToEnd:
         assert "intermediate_images" in result_state
         assert len(result_state["intermediate_images"]) >= 1
         assert result_state["decision"] in ["SHIP", "STOP_BEST_EFFORT"]
+
+
+class TestVLMParameterFiltering:
+    """Phase 2: schema tham số là hợp của mọi operation → bỏ tham số không thuộc operation."""
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_foreign_parameters_are_dropped(self, mock_genai):
+        response = _vlm_plan(
+            {
+                "region_id": "full",
+                "target_prompt": "full",
+                "detected_issue": "noise",
+                "operation": "denoise",
+                "parameters": {
+                    "method": "bilateral",
+                    "strength": 1.5,
+                    "gamma": 1.3,
+                    "clip_limit": 2.0,
+                    "temperature_shift": 0.0,
+                },
+            }
+        )
+        mock_genai.Client.return_value.models = _create_mock_model(response)
+
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        plan = diagnose_and_plan(img, {}, iteration=1)
+
+        assert plan.actions[0].parameters == {"method": "bilateral", "strength": 1.5}

@@ -166,6 +166,9 @@ class TreatmentPlan(BaseModel):
         default_factory=list, description="Danh sách các thao tác thực thi"
     )
     # vlm: do Gemini lập; rule_based: không có API key; vlm_fallback: gọi Gemini lỗi → luật dự phòng
+    knowledge: List[str] = Field(
+        default_factory=list, description="Id playbook card/nguyên lý đã dùng để lập kế hoạch"
+    )
     source: PlanSource = Field(default="vlm", description="Nguồn gốc kế hoạch điều trị")
 
 
