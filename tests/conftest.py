@@ -20,6 +20,15 @@ from tests.fixtures.synthetic_images import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _offline_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Đảm bảo test không bao giờ gọi Gemini thật: xóa GEMINI_API_KEY có thể đã được
+    nạp từ .env (ví dụ khi import src.api.main). Test cần key giả tự đặt bằng patch.dict.
+    """
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+
 @pytest.fixture
 def flat_gray_image() -> np.ndarray:
     """Ảnh RGB xám đồng nhất mức 128 — contrast=0, noise=0."""

@@ -11,7 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .routes import router
 
-load_dotenv()
+# utf-8-sig: .env lưu bằng Notepad/PowerShell 5.1 có BOM, làm tên khóa đầu tiên thành
+# '﻿GEMINI_API_KEY' và server âm thầm chạy rule-based
+load_dotenv(encoding="utf-8-sig")
 
 app = FastAPI(
     title="Intelligent Image Processing API",

@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import gradio as gr
 import numpy as np
+from dotenv import load_dotenv
 
 from src.agent.graph import run_pipeline
 from src.analyzer_evaluator.analyzer import analyze_image
@@ -223,5 +224,7 @@ def create_app() -> gr.Blocks:
 
 
 if __name__ == "__main__":
+    # Chỉ nạp .env khi chạy UI, không nạp khi test import module này
+    load_dotenv(encoding="utf-8-sig")
     app = create_app()
     app.launch(server_name="0.0.0.0", server_port=7860, theme=gr.themes.Soft())
