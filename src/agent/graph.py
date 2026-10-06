@@ -274,13 +274,31 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
     has_actions = bool(state.get("treatment_plan") and state["treatment_plan"].actions)
 
     # 0. Phát hiện suy thoái ở MỌI vòng (kể cả vòng cuối) trước khi xét giới hạn vòng lặp
-    degraded = has_actions and (
-        _is_degraded_synthetic(eval_result, history)
-        if is_syn
-        else _is_degraded_real(eval_result, history)
+    # Kế hoạch có thao tác nhưng không pixel nào đổi (mọi action bị executor bỏ qua, ví dụ
+    # không tìm thấy vùng): không phải suy thoái, nhưng lặp lại cũng vô ích → dừng, không rollback
+    previous_image = state.get("previous_image")
+    unchanged = (
+        has_actions
+        and previous_image is not None
+        and np.array_equal(state["current_image"], previous_image)
+    )
+    degraded = (
+        has_actions
+        and not unchanged
+        and (
+            _is_degraded_synthetic(eval_result, history)
+            if is_syn
+            else _is_degraded_real(eval_result, history)
+        )
     )
 
     if degraded:
+        decision = "STOP_BEST_EFFORT"
+
+    elif unchanged:
+        logger.warning(
+            "Iteration %d changed no pixels (every action was skipped); stopping.", iteration
+        )
         decision = "STOP_BEST_EFFORT"
 
     # 1. Kế hoạch rỗng → VLM cho rằng ảnh đã tốt
@@ -306,7 +324,6 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
     final_image = state["current_image"]
     rolled_back = False
     if degraded:
-        previous_image = state.get("previous_image")
         if previous_image is not None:
             final_image = previous_image
             rolled_back = True

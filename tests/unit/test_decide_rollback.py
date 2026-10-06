@@ -256,3 +256,14 @@ def test_synthetic_target_ignores_verification():
         _state(is_synthetic=True, eval_result={"psnr": 30.0, "ssim": 0.9}), severity=3
     )
     assert decide_node(state)["decision"] == "SHIP"
+
+
+def test_iteration_that_changed_no_pixels_stops_without_rollback(caplog):
+    """Mọi action bị bỏ qua (ảnh không đổi) → không phải suy thoái, dừng thay vì lặp vô ích."""
+    state = _state(is_synthetic=False, eval_result={"quality_improved": False})
+    state["current_image"] = PREVIOUS.copy()
+    with caplog.at_level(logging.WARNING, logger="src.agent.graph"):
+        res = decide_node(state)
+    assert res["decision"] == "STOP_BEST_EFFORT"
+    assert res["rolled_back"] is False
+    assert "changed no pixels" in caplog.text
