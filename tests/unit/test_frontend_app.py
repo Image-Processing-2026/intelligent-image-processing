@@ -97,3 +97,11 @@ def test_format_diagnosis_lists_defects_preserve_and_regions():
         assert "-120" in text
 
     assert format_diagnosis(None) == ""
+
+
+def test_reasoning_lists_playbook_knowledge():
+    """Phase 2: timeline hiển thị id tri thức (playbook) mà kế hoạch đã dựa vào."""
+    img = np.ones((32, 32, 3), dtype=np.uint8) * 30  # ảnh tối → card global-underexposed
+    _, _, _, reasoning, _ = process_interface(img, None, 1)
+    assert "Tri thức tham khảo" in reasoning
+    assert "global-underexposed" in reasoning

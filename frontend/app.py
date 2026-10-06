@@ -134,12 +134,16 @@ def process_interface(
 
         reasoning = ""
         actions: List[Any] = []
+        knowledge: List[str] = []
         if plan:
             reasoning = getattr(plan, "reasoning", "") or (
                 plan.get("reasoning", "") if isinstance(plan, dict) else ""
             )
             actions = getattr(plan, "actions", []) or (
                 plan.get("actions", []) if isinstance(plan, dict) else []
+            )
+            knowledge = getattr(plan, "knowledge", []) or (
+                plan.get("knowledge", []) if isinstance(plan, dict) else []
             )
 
         actions_text = []
@@ -167,7 +171,12 @@ def process_interface(
             f"#### 🔄 Vòng lặp {it} (Quyết định: `{item_decision}`)\n"
             + (f"{diagnosis_md}\n" if diagnosis_md else "")
             + f"- **Lập kế hoạch:** {reasoning}\n"
-            f"- **Phác đồ thực thi:**\n{actions_block}"
+            + (
+                f"- **Tri thức tham khảo:** {', '.join(f'`{k}`' for k in knowledge)}\n"
+                if knowledge
+                else ""
+            )
+            + f"- **Phác đồ thực thi:**\n{actions_block}"
         )
 
     reasoning_md = (
