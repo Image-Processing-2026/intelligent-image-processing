@@ -26,7 +26,7 @@ from src.analyzer_evaluator.reference_eval import evaluate_reference
 
 from .executor import execute_plan
 from .perception import perceive
-from .planner import apply_preserve_guard, validate_and_sort_plan
+from .planner import action_region, apply_preserve_guard, validate_and_sort_plan
 from .state import DiagnosisReport, DoctorState, HistoryItem, TreatmentPlan
 from .vlm_diagnostician import diagnose_and_plan
 
@@ -226,11 +226,22 @@ def _decide_real(eval_result: Dict[str, Any], history: List[HistoryItem]) -> str
     return "RE_PROCESS"
 
 
-def _needs_verification(diagnosis: Optional[DiagnosisReport]) -> bool:
-    """True nếu vòng này xử lý lỗi severity >= VERIFY_SEVERITY → cần Perceive lại để xác nhận."""
-    if diagnosis is None:
+def _needs_verification(
+    diagnosis: Optional[DiagnosisReport], plan: Optional[TreatmentPlan]
+) -> bool:
+    """
+    True nếu kế hoạch vòng này đã tác động lên một lỗi severity >= VERIFY_SEVERITY
+    (action trên đúng vùng của lỗi, hoặc trên toàn ảnh) → cần Perceive lại để xác nhận.
+    Lỗi không có action nào nhắm tới (ví dụ ám xanh lá mà toolbox không sửa được) không
+    chặn SHIP, vì chẩn đoán lại cũng không đổi được gì.
+    """
+    if diagnosis is None or plan is None:
         return False
-    return any(defect.severity >= VERIFY_SEVERITY for defect in diagnosis.defects)
+    touched = {action_region(action) for action in plan.actions}
+    return any(
+        defect.severity >= VERIFY_SEVERITY and ("full" in touched or defect.region in touched)
+        for defect in diagnosis.defects
+    )
 
 
 def _create_thumbnail(image: np.ndarray, max_size: int = 512) -> np.ndarray:
@@ -313,8 +324,14 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
             if is_syn
             else _decide_real(eval_result, history)
         )
-        # 3. Ảnh thực: SHIP theo điểm chỉ được chấp nhận khi chẩn đoán xác nhận lỗi rõ đã hết
-        if decision == "SHIP" and not is_syn and _needs_verification(state.get("diagnosis")):
+        # 3. Ảnh thực: SHIP theo điểm chỉ được chấp nhận khi chẩn đoán xác nhận lỗi rõ đã hết.
+        #    Vòng cuối không còn cơ hội xác nhận → giữ SHIP (đã đạt điểm mục tiêu)
+        if (
+            decision == "SHIP"
+            and not is_syn
+            and iteration < max_iters
+            and _needs_verification(state.get("diagnosis"), plan)
+        ):
             decision = "RE_PROCESS"
         # 4. Giới hạn cứng: hết vòng lặp mà chưa đạt → dừng nỗ lực tốt nhất
         if decision == "RE_PROCESS" and iteration >= max_iters:

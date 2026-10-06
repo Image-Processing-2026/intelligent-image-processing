@@ -241,13 +241,37 @@ def test_minor_defects_ship_on_target_score():
     assert decide_node(state)["decision"] == "SHIP"
 
 
-def test_verification_on_final_iteration_stops_best_effort():
+def test_target_reached_on_final_iteration_ships_without_verification():
+    """Vòng cuối không còn cơ hội xác nhận: đạt điểm mục tiêu thì vẫn SHIP."""
     eval_result = {"quality_improved": True, "estimated_quality_score": 95.0}
     state = _with_diagnosis(
         _state(is_synthetic=False, eval_result=eval_result, iteration=3, max_iterations=3),
         severity=3,
     )
-    assert decide_node(state)["decision"] == "STOP_BEST_EFFORT"
+    assert decide_node(state)["decision"] == "SHIP"
+
+
+def test_untouched_defect_does_not_block_ship():
+    """Lỗi không có action nào nhắm tới (ví dụ ám xanh lá) không đòi chẩn đoán lại."""
+    eval_result = {"quality_improved": True, "estimated_quality_score": 95.0}
+    state = _state(is_synthetic=False, eval_result=eval_result)
+    state["diagnosis"] = DiagnosisReport(
+        defects=[Defect(type="color_cast_green", region="sky", severity=3)]
+    )
+    state["treatment_plan"] = TreatmentPlan(
+        iteration=2,
+        reasoning="lift face",
+        actions=[
+            RegionOperation(
+                region_id="face",
+                target_prompt="khuôn mặt",
+                detected_issue="underexposed",
+                operation="gamma_correct",
+                parameters={"gamma": 1.3},
+            )
+        ],
+    )
+    assert decide_node(state)["decision"] == "SHIP"
 
 
 def test_synthetic_target_ignores_verification():
