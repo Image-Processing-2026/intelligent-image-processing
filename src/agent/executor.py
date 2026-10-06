@@ -144,6 +144,16 @@ def _resolve_action_region(
         # để instance_selection/instance_index có hiệu lực (test patch hàm đó trong controller).
         region = resolve_module_region(detection_image, request, _face_resolver=detect_faces)
     except (RegionBackendUnavailableError, RegionInferenceError) as exc:
+        # Chế độ khuôn mặt tinh chỉnh (oval cần model Face Landmarker) không khả dụng
+        # → hạ về bbox thay vì bỏ cả action (cùng tinh thần quyết định D1)
+        if kind == "face" and action.face_mode != "bbox":
+            logger.warning(
+                "Face mode '%s' unavailable for region '%s' (%s). Falling back to 'bbox'.",
+                action.face_mode,
+                action.region_id,
+                exc,
+            )
+            return _resolve_action_region(image, action.model_copy(update={"face_mode": "bbox"}))
         quadrant = _heuristic_quadrant(action.target_prompt) if kind == "semantic" else None
         if quadrant is None:
             logger.warning(

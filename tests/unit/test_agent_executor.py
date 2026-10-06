@@ -500,3 +500,40 @@ def test_infer_region_kind(target, region_type, expected):
         operation="denoise",
     )
     assert _infer_region_kind(action) == expected
+
+
+def test_oval_face_falls_back_to_bbox_when_landmarker_is_missing(caplog):
+    """Thiếu model Face Landmarker (oval) → hạ về bbox thay vì bỏ cả action."""
+    from src.region_engine.face_landmarker import FaceLandmarkerUnavailableError
+
+    img = np.ones((64, 64, 3), dtype=np.uint8) * 60
+    plan = TreatmentPlan(
+        iteration=1,
+        reasoning="Lift face",
+        actions=[
+            RegionOperation(
+                region_id="face",
+                target_prompt="face",
+                region_type="face",
+                face_mode="oval",
+                detected_issue="underexposed",
+                operation="gamma_correct",
+                parameters={"gamma": 1.5},
+            )
+        ],
+    )
+    face_mask = np.zeros((64, 64), dtype=np.float32)
+    face_mask[16:48, 16:48] = 1.0
+    with (
+        patch(
+            "src.region_engine.controller.detect_face_ovals",
+            side_effect=FaceLandmarkerUnavailableError("model missing"),
+        ),
+        patch("src.agent.executor.detect_faces", return_value=[face_mask]) as fake_faces,
+        caplog.at_level("WARNING", logger="src.agent.executor"),
+    ):
+        result = execute_plan(img, plan)
+
+    fake_faces.assert_called_once()
+    assert not np.array_equal(result, img)
+    assert "Falling back to 'bbox'" in caplog.text
