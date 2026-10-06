@@ -43,6 +43,7 @@ class BM25:
     """Okapi BM25 cho tập tài liệu nhỏ."""
 
     def __init__(self, documents: Sequence[List[str]], k1: float = 1.5, b: float = 0.75) -> None:
+        """Lập chỉ mục tần suất từ và IDF cho tập tài liệu đã tách từ."""
         self.k1 = k1
         self.b = b
         self.frequencies = [Counter(document) for document in documents]
@@ -58,6 +59,7 @@ class BM25:
         }
 
     def scores(self, query: Iterable[str]) -> List[float]:
+        """Điểm BM25 của từng tài liệu cho một truy vấn."""
         terms = set(query)
         results: List[float] = []
         for frequencies, length in zip(self.frequencies, self.lengths):
@@ -72,6 +74,7 @@ class BM25:
 
 
 def _normalized(scores: List[float]) -> List[float]:
+    """Chuẩn hóa điểm về [0, 1] theo điểm cao nhất (toàn 0 nếu không có điểm dương)."""
     top = max(scores, default=0.0)
     return [score / top if top > 0 else 0.0 for score in scores]
 
@@ -97,10 +100,12 @@ class KnowledgeContext:
 
     @property
     def ids(self) -> List[str]:
+        """id của các card và nguyên lý đã truy xuất, theo thứ tự xếp hạng."""
         return [match.card.id for match in self.cards] + [p.id for p in self.principles]
 
 
 def _region_matches(selector: str, region: str) -> bool:
+    """Bộ chọn vùng (full/region/any/tên vùng) có khớp vùng của lỗi không."""
     if selector == "any":
         return True
     if selector == "full":
@@ -111,6 +116,7 @@ def _region_matches(selector: str, region: str) -> bool:
 
 
 def _matching_defects(condition: DefectCondition, defects: Sequence[Defect]) -> List[Defect]:
+    """Các lỗi khớp loại, vùng và severity tối thiểu của một điều kiện."""
     return [
         defect
         for defect in defects
@@ -121,6 +127,7 @@ def _matching_defects(condition: DefectCondition, defects: Sequence[Defect]) -> 
 
 
 def _metric_ok(value: Any, operator: str, expected: Any) -> bool:
+    """Giá trị chỉ số có thỏa một toán tử (in/lt/le/gt/ge) không; thiếu → False."""
     if value is None:
         return False
     if operator == "in":
@@ -138,6 +145,7 @@ def _metric_ok(value: Any, operator: str, expected: Any) -> bool:
 
 
 def _metrics_ok(card: PlaybookCard, metrics: Dict[str, Any]) -> bool:
+    """Mọi điều kiện chỉ số toàn cục của card đều thỏa."""
     return all(
         _metric_ok(metrics.get(name), operator, expected)
         for name, condition in card.metrics.items()
@@ -169,6 +177,7 @@ def _blocked(card: PlaybookCard, diagnosis: DiagnosisReport, regions: Set[str]) 
 
 
 def _card_text(card: PlaybookCard) -> List[str]:
+    """Token văn bản của card dùng cho BM25."""
     parts = [card.id, card.title, card.rationale, *card.tags, *card.avoid, *card.scenes]
     parts += [defect_type for condition in card.defects for defect_type in condition.types]
     parts += [step.operation for step in card.recipe]
@@ -176,6 +185,7 @@ def _card_text(card: PlaybookCard) -> List[str]:
 
 
 def _query_tokens(diagnosis: DiagnosisReport) -> List[str]:
+    """Token truy vấn dựng từ chẩn đoán (cảnh, ánh sáng, lỗi, preserve)."""
     parts = [diagnosis.scene_type, diagnosis.lighting, diagnosis.summary]
     for defect in diagnosis.defects:
         parts += [defect.type, defect.region, defect.evidence]

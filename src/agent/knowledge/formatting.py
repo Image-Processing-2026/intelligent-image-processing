@@ -12,6 +12,7 @@ from .retriever import CardMatch, KnowledgeContext
 
 
 def _range_hint(spec: ParamSpec) -> str:
+    """Gợi ý bảng giá trị theo mức độ, ví dụ ' [mức 2→1.4, mức 3→1.6]'."""
     if not isinstance(spec, dict) or len(spec) < 2:
         return ""
     steps = ", ".join(f"mức {severity}→{value}" for severity, value in sorted(spec.items()))
@@ -19,6 +20,7 @@ def _range_hint(spec: ParamSpec) -> str:
 
 
 def _describe_step(step: RecipeStep, match: CardMatch) -> List[str]:
+    """Mô tả một bước công thức với tham số đã chọn cho từng vùng áp dụng."""
     lines: List[str] = []
     for region, severity, _ in step_targets(step, match):
         params = ", ".join(

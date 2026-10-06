@@ -37,6 +37,7 @@ def _metric_defects(metrics: Dict[str, Any]) -> List[Defect]:
     defects: List[Defect] = []
 
     def add(defect_type: str, severity: int, evidence: str) -> None:
+        """Thêm một lỗi toàn ảnh suy ra từ chỉ số Module 1."""
         defects.append(
             Defect(type=defect_type, severity=severity, evidence=evidence, origin="rule")
         )
@@ -89,6 +90,7 @@ def param_value(spec: ParamSpec, severity: int) -> ParamValue:
 
 
 def _action(step: RecipeStep, region: str, severity: int, issue: str) -> Dict[str, Any]:
+    """Dựng action dạng dict (cho RegionOperation) từ một bước công thức tại một vùng."""
     params = {name: param_value(spec, severity) for name, spec in step.params.items()}
     action: Dict[str, Any] = {
         "region_id": "full_image" if region == "full" else region,

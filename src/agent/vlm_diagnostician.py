@@ -105,10 +105,12 @@ def _build_plan_response_schema() -> Dict[str, Any]:
     """
 
     def _enum(field: str) -> Dict[str, Any]:
+        """Schema enum cho một trường vùng, từ REGION_FIELD_BOUNDS (bỏ giá trị None)."""
         allowed = [value for value in REGION_FIELD_BOUNDS[field]["allowed"] if value is not None]
         return {"type": "string", "enum": allowed}
 
     def _parameter_schema(constraint: Dict[str, Any]) -> Dict[str, Any]:
+        """Schema JSON cho một tham số: enum hoặc số trong [min, max]."""
         if "allowed" in constraint:
             return {"type": "string", "enum": list(constraint["allowed"])}
         return {"type": "number", "minimum": constraint["min"], "maximum": constraint["max"]}

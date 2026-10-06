@@ -33,6 +33,7 @@ class DefectCondition(BaseModel):
     @field_validator("types")
     @classmethod
     def _known_types(cls, types: List[str]) -> List[str]:
+        """Loại lỗi phải thuộc từ vựng chẩn đoán DEFECT_TYPES."""
         unknown = sorted(set(types) - set(DEFECT_TYPES))
         if unknown:
             raise ValueError(f"unknown defect types {unknown}")
@@ -41,6 +42,7 @@ class DefectCondition(BaseModel):
     @field_validator("region")
     @classmethod
     def _normalize_region(cls, region: str) -> str:
+        """Chuẩn hóa bộ chọn vùng về chữ thường, bỏ khoảng trắng."""
         return region.strip().casefold()
 
 
@@ -55,6 +57,7 @@ class RecipeStep(BaseModel):
 
     @model_validator(mode="after")
     def _within_toolbox(self) -> "RecipeStep":
+        """Operation thuộc toolbox; tham số đúng tên, khóa severity 0..3, trong biên."""
         if self.operation not in ALLOWED_OPERATIONS:
             raise ValueError(f"operation '{self.operation}' is not in the toolbox")
         bounds = PARAMETER_BOUNDS[self.operation]
@@ -106,6 +109,7 @@ class PlaybookCard(BaseModel):
 
     @model_validator(mode="after")
     def _consistent(self) -> "PlaybookCard":
+        """Kiểm tra từ vựng (cảnh, preserve), toán tử chỉ số và tính truy xuất được."""
         unknown_scenes = sorted(set(self.scenes) - set(SCENE_TYPES))
         if unknown_scenes:
             raise ValueError(f"unknown scenes {unknown_scenes}")
@@ -143,6 +147,7 @@ class KnowledgeBase(BaseModel):
 
     @model_validator(mode="after")
     def _unique_ids(self) -> "KnowledgeBase":
+        """id card và id nguyên lý không được trùng."""
         for kind, ids in (
             ("card", [card.id for card in self.cards]),
             ("principle", [principle.id for principle in self.principles]),

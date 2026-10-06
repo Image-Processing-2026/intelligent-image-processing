@@ -50,6 +50,7 @@ def _slugify(text: str) -> str:
 
 
 def _split_list(value: str) -> List[str]:
+    """Tách danh sách phân cách bằng dấu phẩy, bỏ phần tử rỗng."""
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
