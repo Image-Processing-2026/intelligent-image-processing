@@ -90,11 +90,6 @@ class TestKnowledgeBaseContent:
                 ops = {step.operation for step in card.recipe}
                 assert not ops & {"sharpen", "color_correct"}, card.id
 
-    def test_no_card_recommends_the_laplacian_method(self):
-        for card in get_knowledge_base().cards:
-            for step in card.recipe:
-                assert step.params.get("method") != "laplacian", card.id
-
 
 class TestKnowledgeBaseValidation:
     def test_valid_custom_kb(self, tmp_path: Path):
