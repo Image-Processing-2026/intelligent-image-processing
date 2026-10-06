@@ -24,9 +24,13 @@ def _raw_sharpen(
         return np.clip(sharpened, 0, 255).astype(np.uint8)
 
     elif method == "laplacian":
-        # Kernel vi phân Laplacian 3x3
-        kernel = np.array([[0, -1, 0], [-1, 4 + amount, -1], [0, -1, 0]], dtype=np.float32)
-        sharpened = cv2.filter2D(image, -1, kernel)
+        # I_sharp = I - amount * ∇²I: kernel = đơn vị + amount * (-Laplacian 3x3).
+        # Tổng hệ số bằng 1 nên vùng phẳng giữ nguyên độ sáng; chỉ cạnh được tăng tương phản.
+        kernel = np.array(
+            [[0, -amount, 0], [-amount, 1 + 4 * amount, -amount], [0, -amount, 0]],
+            dtype=np.float32,
+        )
+        sharpened = cv2.filter2D(image.astype(np.float32), -1, kernel)
         return np.clip(sharpened, 0, 255).astype(np.uint8)
 
     return image
