@@ -7,6 +7,7 @@ import logging
 import math
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
+from .regions import canonical_region
 from .state import PreserveItem, RegionOperation, TreatmentPlan
 
 logger = logging.getLogger(__name__)
@@ -275,8 +276,6 @@ PRESERVE_RULES: Dict[str, List[_PreserveRule]] = {
     "film_grain": [("denoise", None, None, None)],
     "soft_focus": [("sharpen", None, None, None)],
 }
-# Aspect về kết cấu: preserve trên toàn ảnh áp dụng cho mọi vùng
-_TEXTURE_ASPECTS = frozenset(("film_grain", "soft_focus"))
 # Giá trị không tác dụng của từng operation có tham số trung hòa được
 _NEUTRAL_PARAMETERS: Dict[str, Dict[str, float]] = {
     "gamma_correct": {"gamma": 1.0},
@@ -284,24 +283,20 @@ _NEUTRAL_PARAMETERS: Dict[str, Dict[str, float]] = {
 }
 
 
-def _action_region(action: RegionOperation) -> str:
-    """Tên vùng của action để so với preserve; vùng toàn ảnh → 'full'."""
-    # Import muộn: executor kéo theo Module 2/3, planner cần nhẹ khi import
-    from .executor import _infer_region_kind
-
-    if _infer_region_kind(action) == "full":
-        return "full"
-    return action.target_prompt.strip().casefold()
+def action_region(action: RegionOperation) -> str:
+    """Tên vùng chuẩn hóa của action ('full', 'face' hoặc tên vùng) để so với chẩn đoán."""
+    if action.region_type in ("full", "face"):
+        return action.region_type
+    return canonical_region(action.target_prompt)
 
 
-def _in_scope(action_region: str, item: PreserveItem) -> bool:
+def _in_scope(region: str, item: PreserveItem) -> bool:
     """
-    Preserve toàn ảnh áp dụng cho action toàn ảnh (và mọi vùng nếu là aspect kết cấu);
+    Preserve toàn ảnh áp dụng cho mọi action (cùng quy ước với perception và retriever);
     preserve một vùng áp dụng cho action trên vùng đó và action toàn ảnh (vì cũng tác động lên nó).
     """
-    if item.region == "full":
-        return action_region == "full" or item.aspect in _TEXTURE_ASPECTS
-    return action_region in (item.region, "full")
+    preserved_region = canonical_region(item.region)
+    return preserved_region == "full" or region in (preserved_region, "full")
 
 
 def _is_neutral(action: RegionOperation) -> bool:
@@ -327,7 +322,7 @@ def apply_preserve_guard(plan: TreatmentPlan, preserve: Sequence[PreserveItem]) 
     kept: List[RegionOperation] = []
     notes: List[str] = []
     for action in plan.actions:
-        region = _action_region(action)
+        region = action_region(action)
         dropped = False
         for item in preserve:
             if not _in_scope(region, item):

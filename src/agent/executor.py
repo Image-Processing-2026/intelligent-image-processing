@@ -21,13 +21,11 @@ from src.region_engine.controller import (
 from src.region_engine.controller import resolve_region as resolve_module_region
 from src.region_engine.face_detector import detect_faces
 
+from .regions import FACE_TARGETS, FULL_TARGETS, SPATIAL_TARGETS
 from .state import RegionOperation, TreatmentPlan
 
 logger = logging.getLogger(__name__)
 
-_FACE_TARGETS = frozenset(("face", "faces", "khuôn mặt", "khuôn mặt người"))
-_FULL_TARGETS = frozenset(("full", "all", "toàn", "toàn bộ", "full_image"))
-_SPATIAL_TARGETS = frozenset(("top", "bottom", "left", "right", "center", "giữa"))
 
 # Heuristic dự phòng (quyết định D1): chỉ dùng khi backend ngữ nghĩa không khả dụng
 # hoặc suy luận lỗi. Từ khóa không khớp → bỏ qua action, KHÔNG xử lý toàn ảnh.
@@ -73,11 +71,11 @@ def _infer_region_kind(action: RegionOperation) -> str:
     target = action.target_prompt.strip().casefold()
     kind = action.region_type
     if kind is None or kind == "semantic":
-        if target in _FACE_TARGETS:
+        if target in FACE_TARGETS:
             return "face"
-        if target in _FULL_TARGETS:
+        if target in FULL_TARGETS:
             return "full"
-        if target in _SPATIAL_TARGETS:
+        if target in SPATIAL_TARGETS:
             return "spatial"
         return "semantic"
     return kind

@@ -16,8 +16,18 @@ import cv2
 import numpy as np
 from pydantic import ValidationError
 
+from src.analyzer_evaluator.analyzer import (
+    _BRIGHTNESS_HIGH,
+    _BRIGHTNESS_LOW,
+    _HIGHLIGHT_CLIP_RATIO_THRESH,
+    _HIGHLIGHT_CLIP_THRESH,
+    _SHADOW_CLIP_RATIO_THRESH,
+    _SHADOW_CLIP_THRESH,
+)
+
 from .executor import resolve_region_mask
 from .knowledge import diagnose_from_metrics
+from .regions import canonical_region
 from .state import (
     DEFECT_TYPES,
     PRESERVE_ASPECTS,
@@ -33,18 +43,14 @@ from .vlm_diagnostician import _build_history_feedback, call_gemini_json, image_
 logger = logging.getLogger(__name__)
 
 MAX_SUBJECTS = 4
-# Đồng bộ với ngưỡng phân loại độ sáng của Module 1 (analyzer._BRIGHTNESS_LOW/_HIGH)
-BRIGHTNESS_LOW = 70.0
-BRIGHTNESS_HIGH = 185.0
-HIGHLIGHT_CLIP_LEVEL = 250
-SHADOW_CLIP_LEVEL = 5
+# Đo vùng trên ảnh thu nhỏ: thống kê độ sáng không cần độ phân giải gốc, và phát hiện
+# khuôn mặt / phân vùng trên ảnh nhỏ rẻ hơn nhiều (ADR-004, CPU-only)
+MEASURE_MAX_SIDE = 1024
 # Vùng tối hơn phần còn lại ít nhất chừng này mức xám (và bản thân tối) → ngược sáng
 BACKLIT_GAP = 40.0
 BACKLIT_MAX_MEAN = 100.0
 # Phần còn lại nhỏ hơn tỉ lệ này → không so sánh vùng với phần còn lại
 MIN_REST_RATIO = 0.05
-
-_FULL_REGIONS = frozenset(("", "full", "all", "full_image", "toàn", "toàn bộ"))
 # Preserve làm cho vùng tối/sáng là chủ ý → không tự thêm lỗi phơi sáng đo được
 _DARK_PRESERVES = frozenset(("low_key", "silhouette"))
 _BRIGHT_PRESERVES = frozenset(("high_key",))
@@ -134,9 +140,9 @@ def _luma(image: np.ndarray) -> np.ndarray:
 
 def _brightness_level(mean: float) -> str:
     """Phân loại phơi sáng theo cùng ngưỡng với Module 1."""
-    if mean < BRIGHTNESS_LOW:
+    if mean < _BRIGHTNESS_LOW:
         return "underexposed"
-    if mean > BRIGHTNESS_HIGH:
+    if mean > _BRIGHTNESS_HIGH:
         return "overexposed"
     return "normal"
 
@@ -157,8 +163,8 @@ def compute_region_metrics(
     luma = _luma(image)
     mean = float((weights * luma).sum() / total)
     std = math.sqrt(float((weights * (luma - mean) ** 2).sum() / total))
-    highlight = float((weights * (luma >= HIGHLIGHT_CLIP_LEVEL)).sum() / total)
-    shadow = float((weights * (luma <= SHADOW_CLIP_LEVEL)).sum() / total)
+    highlight = float((weights * (luma >= _HIGHLIGHT_CLIP_THRESH)).sum() / total)
+    shadow = float((weights * (luma <= _SHADOW_CLIP_THRESH)).sum() / total)
 
     rest = 1.0 - weights
     rest_total = float(rest.sum())
@@ -179,11 +185,24 @@ def compute_region_metrics(
     )
 
 
+def _downscale(image: np.ndarray, max_side: int = MEASURE_MAX_SIDE) -> np.ndarray:
+    """Thu nhỏ ảnh (giữ tỉ lệ) để cạnh dài không vượt max_side; ảnh nhỏ hơn giữ nguyên."""
+    height, width = image.shape[:2]
+    longest = max(height, width)
+    if longest <= max_side:
+        return image
+    scale = max_side / longest
+    size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    return cv2.resize(image, size, interpolation=cv2.INTER_AREA)
+
+
 def measure_regions(image: np.ndarray, subjects: List[str]) -> Dict[str, RegionMetrics]:
     """
-    Đo số liệu cho từng vùng qua Module 2. Vùng không xác định được (không có khuôn mặt,
-    backend ngữ nghĩa không khả dụng…) được bỏ qua, không làm hỏng giai đoạn Perceive.
+    Đo số liệu cho từng vùng qua Module 2, trên ảnh đã thu nhỏ về MEASURE_MAX_SIDE.
+    Vùng không xác định được (không có khuôn mặt, backend ngữ nghĩa không khả dụng…)
+    được bỏ qua, không làm hỏng giai đoạn Perceive.
     """
+    image = _downscale(image)
     measured: Dict[str, RegionMetrics] = {}
     for subject in subjects[:MAX_SUBJECTS]:
         try:
@@ -201,7 +220,9 @@ def measure_regions(image: np.ndarray, subjects: List[str]) -> Dict[str, RegionM
 
 def _preserved_aspects(report: DiagnosisReport, region: str) -> set[str]:
     """Các aspect cần giữ áp dụng cho một vùng (kể cả preserve trên toàn ảnh)."""
-    return {item.aspect for item in report.preserve if item.region in (region, "full")}
+    return {
+        item.aspect for item in report.preserve if canonical_region(item.region) in (region, "full")
+    }
 
 
 def _drop_preserved_defects(report: DiagnosisReport) -> List[Defect]:
@@ -230,6 +251,9 @@ def _measured_defects(report: DiagnosisReport) -> List[Defect]:
     """
     Suy ra lỗi phơi sáng theo vùng từ số đo thực tế mà chẩn đoán chưa nêu,
     trừ khi vùng đó tối/sáng là chủ ý (preserve).
+    Chỉ khuôn mặt có mức sáng "đúng" tuyệt đối (da ở vùng trung tính). Vùng khác có thể tối
+    hoặc sáng tự nhiên (trời, tuyết, mèo đen) nên cần bằng chứng: tối hơn hẳn phần còn lại
+    (ngược sáng), hoặc bệt đen / cháy trắng thật theo ngưỡng clipping của Module 1.
     """
     existing = {(defect.region, defect.type) for defect in report.defects}
     added: List[Defect] = []
@@ -237,11 +261,18 @@ def _measured_defects(report: DiagnosisReport) -> List[Defect]:
         preserved = _preserved_aspects(report, region)
         mean = measured.brightness_mean
         gap = measured.brightness_vs_rest
+        is_face = region == "face"
         is_backlit = gap is not None and gap <= -BACKLIT_GAP and mean < BACKLIT_MAX_MEAN
+        is_dark = (
+            is_backlit
+            or (is_face and measured.brightness_level == "underexposed")
+            or measured.shadow_clip_ratio >= _SHADOW_CLIP_RATIO_THRESH
+        )
+        is_bright = (
+            is_face and measured.brightness_level == "overexposed"
+        ) or measured.highlight_clip_ratio >= _HIGHLIGHT_CLIP_RATIO_THRESH
 
-        if (measured.brightness_level == "underexposed" or is_backlit) and not (
-            preserved & _DARK_PRESERVES
-        ):
+        if is_dark and not (preserved & _DARK_PRESERVES):
             if (region, "underexposed") in existing or (region, "backlit_subject") in existing:
                 continue
             defect_type = "backlit_subject" if is_backlit else "underexposed"
@@ -255,7 +286,7 @@ def _measured_defects(report: DiagnosisReport) -> List[Defect]:
                     origin="measured",
                 )
             )
-        elif measured.brightness_level == "overexposed" and not (preserved & _BRIGHT_PRESERVES):
+        elif is_bright and not (preserved & _BRIGHT_PRESERVES):
             if (region, "overexposed") in existing:
                 continue
             added.append(
@@ -277,15 +308,15 @@ def _measured_defects(report: DiagnosisReport) -> List[Defect]:
 # Chẩn đoán: VLM hoặc luật dự phòng
 # ---------------------------------------------------------
 def _normalize_region(raw: Any) -> str:
-    """Chuẩn hóa tên vùng; rỗng hoặc từ đồng nghĩa toàn ảnh → 'full'."""
-    region = raw.strip().casefold() if isinstance(raw, str) else ""
-    return "full" if region in _FULL_REGIONS else region
+    """Chuẩn hóa tên vùng theo từ vựng chung (rỗng/toàn ảnh → 'full', khuôn mặt → 'face')."""
+    return canonical_region(raw)
 
 
 def _report_from_vlm_json(data: Any, iteration: int) -> DiagnosisReport:
     """
     Dựng DiagnosisReport từ JSON của VLM. Mỗi defect/preserve được dựng riêng: phần tử
-    sai bị loại kèm cảnh báo. Thiếu danh sách defects → ValueError để chuyển sang luật.
+    sai bị loại kèm cảnh báo. Thiếu danh sách defects, hoặc mọi defect đều sai → ValueError
+    để chuyển sang chẩn đoán bằng luật.
     """
     if not isinstance(data, dict):
         raise ValueError("VLM diagnosis is not a JSON object")
@@ -310,6 +341,10 @@ def _report_from_vlm_json(data: Any, iteration: int) -> DiagnosisReport:
             )
         except (ValidationError, ValueError, TypeError) as exc:
             logger.warning("Dropping invalid VLM defect %d: %s", index, exc)
+
+    # Mọi lỗi đều sai → chẩn đoán rỗng sẽ bị hiểu là "ảnh tốt" (SHIP âm thầm): chuyển sang luật
+    if raw_defects and not defects:
+        raise ValueError(f"all {len(raw_defects)} VLM defects were invalid")
 
     preserve: List[PreserveItem] = []
     raw_preserve = data.get("preserve")

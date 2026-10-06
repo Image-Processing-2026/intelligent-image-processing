@@ -183,6 +183,21 @@ class TestMeasuredDefects:
         [defect] = _measured_defects(report)
         assert (defect.type, defect.region) == ("overexposed", "sky")
 
+    def test_naturally_bright_or_dark_regions_are_not_defects(self):
+        """Trời sáng, mèo đen: không phải lỗi nếu không cháy/bệt và không phải khuôn mặt."""
+        report = DiagnosisReport(
+            region_metrics={
+                "sky": _region_metrics("sky", 205, 60),  # sáng nhưng không cháy
+                "cat": _region_metrics("cat", 50, -10),  # tối nhưng không chênh sáng
+            }
+        )
+        assert _measured_defects(report) == []
+
+    def test_crushed_shadows_in_any_region_are_defects(self):
+        crushed = _region_metrics("cat", 30, -10).model_copy(update={"shadow_clip_ratio": 0.4})
+        [defect] = _measured_defects(DiagnosisReport(region_metrics={"cat": crushed}))
+        assert (defect.type, defect.region) == ("underexposed", "cat")
+
     def test_high_key_preserve_skips_bright_region(self):
         report = DiagnosisReport(
             preserve=[PreserveItem(aspect="high_key")],
@@ -299,6 +314,23 @@ class TestReportFromVlmJson:
         report = _report_from_vlm_json(data, iteration=1)
         assert report.subjects == ["face", "sky", "dog", "car"][:MAX_SUBJECTS]
 
+    def test_all_invalid_defects_raise(self):
+        """Mọi lỗi đều sai → không được thành chẩn đoán rỗng (= SHIP âm thầm)."""
+        with pytest.raises(ValueError, match="all 2 VLM defects were invalid"):
+            _report_from_vlm_json(
+                {"defects": [{"type": "haze"}, {"type": "noise", "severity": "x"}]}, 1
+            )
+
+    def test_empty_defect_list_is_a_clean_diagnosis(self):
+        assert _report_from_vlm_json({"defects": [], "preserve": []}, 1).defects == []
+
+    def test_region_synonyms_are_normalized(self):
+        report = _report_from_vlm_json(
+            {"defects": [{"type": "underexposed", "region": "Khuôn mặt", "severity": 2}]}, 1
+        )
+        assert report.defects[0].region == "face"
+        assert report.subjects == ["face"]
+
     @pytest.mark.parametrize("data", [[], {"preserve": []}, {"defects": "none"}])
     def test_missing_defects_list_raises(self, data: Any):
         with pytest.raises(ValueError):
@@ -411,7 +443,8 @@ class TestPreserveGuard:
         guarded = apply_preserve_guard(plan, [PreserveItem(aspect="film_grain")])
         assert [a.operation for a in guarded.actions] == ["gamma_correct"]
 
-    def test_low_key_blocks_global_lift_but_allows_face(self):
+    def test_full_image_preserve_covers_every_region(self):
+        """Preserve toàn ảnh áp dụng cho mọi vùng (cùng quy ước với perception, retriever)."""
         plan = _plan(
             _action("gamma_correct", gamma=1.4),
             _action("clahe", clip_limit=2.0),
@@ -420,9 +453,18 @@ class TestPreserveGuard:
         )
         guarded = apply_preserve_guard(plan, [PreserveItem(aspect="low_key")])
         assert [(a.target_prompt, a.parameters["gamma"]) for a in guarded.actions] == [
-            ("face", 1.4),
             ("full", 0.9),
         ]
+
+    def test_region_synonyms_are_guarded(self):
+        """'khuôn mặt' và 'face' là cùng một vùng với preserve guard (như với executor)."""
+        plan = _plan(
+            _action("sharpen", target="khuôn mặt", method="unsharp_mask", amount=1.0),
+            _action("sharpen", target="faces", method="unsharp_mask", amount=1.0),
+            _action("sharpen", target="person", method="unsharp_mask", amount=1.0),
+        )
+        guarded = apply_preserve_guard(plan, [PreserveItem(aspect="soft_focus", region="face")])
+        assert [a.target_prompt for a in guarded.actions] == ["person"]
 
     def test_region_preserve_also_guards_full_image_actions(self):
         plan = _plan(
@@ -529,3 +571,21 @@ class TestPipelineWithPerception:
         assert "face" in first.diagnosis.region_metrics
         operations: List[tuple] = [(a.operation, a.target_prompt) for a in first.plan.actions]
         assert ("gamma_correct", "face") in operations
+
+
+def test_regions_are_measured_on_a_downscaled_image():
+    """Đo vùng (và phát hiện khuôn mặt) chạy trên ảnh ≤ MEASURE_MAX_SIDE, không phải ảnh gốc."""
+    from src.agent.perception import MEASURE_MAX_SIDE, measure_regions
+
+    seen = []
+
+    def resolve(image: np.ndarray, target_prompt: str, feather_radius: int = 15):
+        seen.append(image.shape)
+        return True, np.ones(image.shape[:2], dtype=np.float32), "test"
+
+    big = np.full((1500, 3000, 3), 100, dtype=np.uint8)
+    with patch("src.agent.perception.resolve_region_mask", side_effect=resolve):
+        measured = measure_regions(big, ["face"])
+
+    assert seen == [(MEASURE_MAX_SIDE // 2, MEASURE_MAX_SIDE, 3)]
+    assert measured["face"].brightness_mean == pytest.approx(100)
