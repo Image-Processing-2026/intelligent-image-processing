@@ -36,6 +36,10 @@ PSNR_THRESHOLD = 28.0  # dB — Chất lượng phục hồi chấp nhận đư�
 SSIM_THRESHOLD = 0.88  # Tương đồng cấu trúc chấp nhận được
 PSNR_DEGRADATION = 1.5  # dB — Ngưỡng suy thoái cho phép giữa 2 vòng
 
+# Ngưỡng chất lượng cho quyết định dừng (ảnh thực, điểm heuristic No-Reference 0–100)
+REAL_TARGET_SCORE = 85.0  # Đạt mức này → SHIP, tránh xử lý quá tay
+REAL_MIN_GAIN = 1.0  # Điểm tăng ít hơn mức này so với vòng trước → đã bão hòa, dừng
+
 
 # ---------------------------------------------------------
 # Các Node thực thi trong đồ thị LangGraph
@@ -146,9 +150,27 @@ def _decide_synthetic(eval_result: Dict[str, Any], history: List[HistoryItem]) -
 
 
 def _decide_real(eval_result: Dict[str, Any], history: List[HistoryItem]) -> str:
-    """Logic quyết định dành cho ảnh thực không có Ground-Truth."""
+    """
+    Logic quyết định dành cho ảnh thực không có Ground-Truth.
+    - Suy thoái → STOP_BEST_EFFORT (decide_node sẽ rollback).
+    - Điểm chất lượng đạt REAL_TARGET_SCORE → SHIP.
+    - Điểm tăng chưa tới REAL_MIN_GAIN so với vòng trước → bão hòa, STOP_BEST_EFFORT.
+    - Còn lại → RE_PROCESS.
+    """
     if _is_degraded_real(eval_result, history):
         return "STOP_BEST_EFFORT"
+
+    score = eval_result.get("estimated_quality_score")
+    if score is None:
+        return "RE_PROCESS"
+    score = float(score)
+    if score >= REAL_TARGET_SCORE:
+        return "SHIP"
+
+    if history:
+        prev_score = (history[-1].eval_score or {}).get("estimated_quality_score")
+        if prev_score is not None and score - float(prev_score) < REAL_MIN_GAIN:
+            return "STOP_BEST_EFFORT"
 
     # Chưa đạt, còn dư vòng → tiếp tục
     return "RE_PROCESS"
@@ -203,19 +225,21 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
     if degraded:
         decision = "STOP_BEST_EFFORT"
 
-    # 1. Giới hạn cứng: Hết vòng lặp → dừng nỗ lực tốt nhất (giữ ảnh hiện tại)
-    elif iteration >= max_iters:
-        decision = "STOP_BEST_EFFORT"
-
-    # 2. Kế hoạch rỗng → VLM cho rằng ảnh đã tốt
+    # 1. Kế hoạch rỗng → VLM cho rằng ảnh đã tốt
     elif not has_actions:
         decision = "SHIP"
 
-    # 3. Phân nhánh Synthetic vs Real
-    elif is_syn:
-        decision = _decide_synthetic(eval_result, history)
     else:
-        decision = _decide_real(eval_result, history)
+        # 2. Phân nhánh Synthetic vs Real (xét trước giới hạn vòng để vòng cuối đạt
+        #    mục tiêu vẫn được báo SHIP)
+        decision = (
+            _decide_synthetic(eval_result, history)
+            if is_syn
+            else _decide_real(eval_result, history)
+        )
+        # 3. Giới hạn cứng: hết vòng lặp mà chưa đạt → dừng nỗ lực tốt nhất
+        if decision == "RE_PROCESS" and iteration >= max_iters:
+            decision = "STOP_BEST_EFFORT"
 
     # Rollback: trả về ảnh trước vòng xử lý này nếu vòng này làm chất lượng xấu đi
     final_image = state["current_image"]

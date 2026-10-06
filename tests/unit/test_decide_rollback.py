@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from src.agent.graph import PSNR_DEGRADATION, decide_node
+from src.agent.graph import PSNR_DEGRADATION, REAL_MIN_GAIN, REAL_TARGET_SCORE, decide_node
 from src.agent.state import DoctorState, HistoryItem, RegionOperation, TreatmentPlan
 
 CURRENT = np.full((16, 16, 3), 200, dtype=np.uint8)
@@ -142,3 +142,68 @@ def test_max_iterations_without_degradation_keeps_current():
     assert res_real["decision"] == "STOP_BEST_EFFORT"
     assert np.array_equal(res_real["current_image"], CURRENT)
     assert res_real["rolled_back"] is False
+
+
+# ---------------------------------------------------------
+# Phase 0: tiêu chí SHIP / bão hòa cho ảnh thực và thứ tự xét giới hạn vòng
+# ---------------------------------------------------------
+def test_real_image_ships_when_target_score_reached():
+    """Ảnh thực đạt REAL_TARGET_SCORE → SHIP sớm, không xử lý thêm."""
+    eval_result = {"quality_improved": True, "estimated_quality_score": REAL_TARGET_SCORE}
+    res = decide_node(_state(is_synthetic=False, eval_result=eval_result, iteration=1))
+    assert res["decision"] == "SHIP"
+    assert res["rolled_back"] is False
+
+
+def test_real_image_stops_when_gain_plateaus():
+    """Điểm tăng chưa tới REAL_MIN_GAIN → bão hòa: STOP_BEST_EFFORT, giữ ảnh hiện tại."""
+    history = _history({"estimated_quality_score": 70.0})
+    eval_result = {
+        "quality_improved": True,
+        "estimated_quality_score": 70.0 + REAL_MIN_GAIN / 2,
+    }
+    res = decide_node(_state(is_synthetic=False, eval_result=eval_result, history=history))
+    assert res["decision"] == "STOP_BEST_EFFORT"
+    assert np.array_equal(res["current_image"], CURRENT)
+    assert res["rolled_back"] is False
+
+
+def test_real_image_continues_on_meaningful_gain():
+    history = _history({"estimated_quality_score": 70.0})
+    eval_result = {
+        "quality_improved": True,
+        "estimated_quality_score": 70.0 + REAL_MIN_GAIN + 1.0,
+    }
+    res = decide_node(_state(is_synthetic=False, eval_result=eval_result, history=history))
+    assert res["decision"] == "RE_PROCESS"
+
+
+def test_target_reached_on_final_iteration_ships():
+    """Vòng cuối đạt mục tiêu → SHIP (trước đây bị báo STOP_BEST_EFFORT do xét giới hạn trước)."""
+    syn = _state(
+        is_synthetic=True,
+        eval_result={"psnr": 30.0, "ssim": 0.9},
+        iteration=3,
+        max_iterations=3,
+    )
+    assert decide_node(syn)["decision"] == "SHIP"
+
+    real = _state(
+        is_synthetic=False,
+        eval_result={"quality_improved": True, "estimated_quality_score": 90.0},
+        iteration=3,
+        max_iterations=3,
+    )
+    assert decide_node(real)["decision"] == "SHIP"
+
+
+def test_empty_plan_on_final_iteration_ships():
+    """Vòng cuối VLM trả plan rỗng (ảnh đã tốt) → SHIP, không phải STOP_BEST_EFFORT."""
+    state = _state(
+        is_synthetic=False,
+        eval_result={"estimated_quality_score": 60.0},
+        iteration=3,
+        max_iterations=3,
+    )
+    state["treatment_plan"] = TreatmentPlan(iteration=3, reasoning="good", actions=[])
+    assert decide_node(state)["decision"] == "SHIP"

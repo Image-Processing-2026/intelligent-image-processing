@@ -875,9 +875,9 @@ def test_decide_real_stop_on_quality_improved_false():
 
 
 def test_decide_real_continue_when_quality_improved_true():
-    """[INT-03] Khi quality_improved=True và điểm số tốt → RE_PROCESS."""
+    """[INT-03] Khi quality_improved=True và điểm chưa đạt mục tiêu → RE_PROCESS."""
     eval_result = {
-        "estimated_quality_score": 85.0,
+        "estimated_quality_score": 70.0,
         "quality_improved": True,
     }
     assert _decide_real(eval_result, []) == "RE_PROCESS"
