@@ -46,6 +46,50 @@ class TechnicalMetrics(BaseModel):
 
 
 # ---------------------------------------------------------
+# Module 4: Diagnosis Schema (Perceive stage, src/agent/state.py)
+# ---------------------------------------------------------
+class Defect(BaseModel):
+    type: Literal[DEFECT_TYPES]        # underexposed, overexposed, backlit_subject, low_contrast,
+                                       # noise, blur, color_cast_{warm,cool,green},
+                                       # oversaturated, undersaturated
+    region: str = "full"               # "full" or a subject target_prompt
+    severity: int                      # 0 negligible … 3 severe
+    evidence: str = ""
+    origin: Literal["vlm", "rule", "measured"] = "vlm"
+
+
+class PreserveItem(BaseModel):
+    aspect: Literal[PRESERVE_ASPECTS]  # warm_tone, cool_tone, low_key, high_key, silhouette,
+                                       # film_grain, soft_focus, muted_colors, vivid_colors
+    region: str = "full"
+    reason: str = ""
+
+
+class RegionMetrics(BaseModel):        # soft-mask weighted luma stats of one region
+    region: str
+    backend: str                       # Module 2 resolver that produced the mask
+    area_ratio: float
+    brightness_mean: float
+    brightness_std: float
+    brightness_level: Literal["underexposed", "normal", "overexposed"]
+    highlight_clip_ratio: float
+    shadow_clip_ratio: float
+    brightness_vs_rest: Optional[float]  # region mean minus rest-of-image mean
+
+
+class DiagnosisReport(BaseModel):
+    iteration: int = 1
+    scene_type: Literal[SCENE_TYPES] = "other"
+    lighting: str = ""
+    subjects: List[str]                # regions measured individually (max 4)
+    defects: List[Defect]
+    preserve: List[PreserveItem]       # intentional style; enforced by planner.apply_preserve_guard
+    summary: str = ""
+    region_metrics: Dict[str, RegionMetrics]
+    source: Literal["vlm", "rule_based", "vlm_fallback"] = "vlm"
+
+
+# ---------------------------------------------------------
 # Module 4: Agent Plan Schema (Emitted by VLM / Orchestrator)
 # ---------------------------------------------------------
 class RegionOperationPlan(BaseModel):
@@ -268,10 +312,42 @@ def diagnose_and_plan(
     iteration: int = 1,
     history: Optional[List[HistoryItem]] = None,
     original_image: Optional[np.ndarray] = None,  # sent alongside `image` from iteration 2
+    diagnosis: Optional[DiagnosisReport] = None,
 ) -> TreatmentPlan:
-    """Gemini (google-genai, structured JSON output) or the rule-based fallback."""
+    """Stage 2 (Plan): Gemini (google-genai, structured JSON output) or rule-based fallback."""
+    ...
+
+
+# src/agent/perception.py — stage 1 (Perceive)
+def perceive(
+    image: np.ndarray,
+    metrics: Dict[str, Any],
+    iteration: int = 1,
+    history: Optional[List[HistoryItem]] = None,
+    original_image: Optional[np.ndarray] = None,
+) -> DiagnosisReport:
+    """Gemini diagnosis (or rule-based) → per-region measurement through Module 2 masks →
+    defects inferred from measurements (e.g. backlit face) → defects that conflict with
+    `preserve` dropped."""
+    ...
+
+
+# src/agent/graph.py — used by the graph node and POST /api/v1/diagnose
+def plan_treatment(
+    image: np.ndarray,
+    metrics: Dict[str, Any],
+    diagnosis: Optional[DiagnosisReport],
+    iteration: int = 1,
+    history: Optional[List[HistoryItem]] = None,
+    original_image: Optional[np.ndarray] = None,
+) -> TreatmentPlan:
+    """No defect with severity >= 1 → empty plan without a second VLM call. Otherwise
+    diagnose_and_plan() → validate_and_sort_plan() → apply_preserve_guard()."""
     ...
 ```
+
+Graph: `analyze → perceive → diagnose_and_plan → process → evaluate → decide`.
+`POST /api/v1/diagnose` returns `{technical_metrics, diagnosis, treatment_plan}`.
 
 **Decision rules (`graph.decide_node`), in order:**
 1. Degraded iteration → `STOP_BEST_EFFORT` and roll back to the previous image.

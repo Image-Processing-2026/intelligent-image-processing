@@ -243,6 +243,7 @@ def test_diagnose_and_plan_node_passes_history():
             iteration=2,
             history=state["history"],
             original_image=state["original_image"],
+            diagnosis=None,
         )
         assert res["treatment_plan"] is not None
 

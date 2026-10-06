@@ -135,6 +135,42 @@ def _create_mock_model(response_text: str):
     return mock_model
 
 
+DARK_DEFECT = {"type": "underexposed", "region": "full", "severity": 2, "evidence": "tối"}
+
+
+def _diagnosis_json(*defects: dict, preserve: tuple = (), subjects: tuple = ()) -> str:
+    """Phản hồi JSON giai đoạn Perceive."""
+    return json.dumps(
+        {
+            "scene_type": "other",
+            "lighting": "",
+            "subjects": list(subjects),
+            "defects": list(defects),
+            "preserve": list(preserve),
+            "summary": "Tóm tắt chẩn đoán.",
+        }
+    )
+
+
+def _route_gemini(mock_genai: MagicMock, perceive: list, plan: list) -> MagicMock:
+    """
+    Mock `client.models` trả phản hồi theo giai đoạn (Perceive hay Plan),
+    nhận diện qua schema trong config; mỗi giai đoạn tiêu thụ hàng đợi riêng.
+    """
+    from src.agent.perception import PERCEIVE_RESPONSE_SCHEMA
+
+    queues = {"perceive": list(perceive), "plan": list(plan)}
+
+    def generate_content(*, model: str, contents: list, config: object) -> MagicMock:
+        is_perceive = config.response_json_schema == PERCEIVE_RESPONSE_SCHEMA
+        return MagicMock(text=queues["perceive" if is_perceive else "plan"].pop(0))
+
+    models = MagicMock()
+    models.generate_content.side_effect = generate_content
+    mock_genai.Client.return_value.models = models
+    return models
+
+
 # ============================================================
 # Test Cases
 # ============================================================
@@ -341,10 +377,11 @@ class TestVLMRegionFields:
                 "parameters": {"gamma": 1.5},
             }
         )
-        empty = json.dumps({"iteration": 2, "reasoning": "Ảnh đã tốt", "actions": []})
-        mock_model = MagicMock()
-        mock_model.generate_content.side_effect = [MagicMock(text=bad), MagicMock(text=empty)]
-        mock_genai.Client.return_value.models = mock_model
+        _route_gemini(
+            mock_genai,
+            perceive=[_diagnosis_json(DARK_DEFECT), _diagnosis_json()],
+            plan=[bad],
+        )
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 60
         result_state = run_pipeline(image=img, max_iterations=2)
@@ -606,14 +643,12 @@ class TestVLMEndToEnd:
     @patch("src.agent.vlm_diagnostician.genai")
     def test_pipeline_with_mock_vlm(self, mock_genai):
         """Chạy run_pipeline với mock VLM sinh plan hợp lệ."""
-        # Vòng 1 trả về valid response, vòng 2 trả về plan rỗng (đã tốt)
-        empty_response = json.dumps({"iteration": 2, "reasoning": "Ảnh đã tốt", "actions": []})
-        mock_response_1 = MagicMock(text=MOCK_VALID_RESPONSE)
-        mock_response_2 = MagicMock(text=empty_response)
-
-        mock_model = MagicMock()
-        mock_model.generate_content.side_effect = [mock_response_1, mock_response_2]
-        mock_genai.Client.return_value.models = mock_model
+        # Vòng 1: chẩn đoán có lỗi → plan hợp lệ; vòng 2: chẩn đoán sạch → plan rỗng (đã tốt)
+        _route_gemini(
+            mock_genai,
+            perceive=[_diagnosis_json(DARK_DEFECT), _diagnosis_json()],
+            plan=[MOCK_VALID_RESPONSE],
+        )
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 128
         result_state = run_pipeline(image=img, max_iterations=2)

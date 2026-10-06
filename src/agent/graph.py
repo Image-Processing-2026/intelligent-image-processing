@@ -25,8 +25,9 @@ from src.analyzer_evaluator.no_reference_eval import evaluate_no_reference
 from src.analyzer_evaluator.reference_eval import evaluate_reference
 
 from .executor import execute_plan
-from .planner import validate_and_sort_plan
-from .state import DoctorState, HistoryItem, TreatmentPlan
+from .perception import perceive
+from .planner import apply_preserve_guard, validate_and_sort_plan
+from .state import DiagnosisReport, DoctorState, HistoryItem, TreatmentPlan
 from .vlm_diagnostician import diagnose_and_plan
 
 logger = logging.getLogger(__name__)
@@ -50,17 +51,62 @@ def analyze_node(state: DoctorState) -> Dict[str, Any]:
     return {"technical_metrics": metrics.model_dump()}
 
 
-def diagnose_and_plan_node(state: DoctorState) -> Dict[str, Any]:
-    """Node 2 & 3: Gọi VLM chẩn đoán bệnh và tạo kế hoạch điều trị."""
-    plan = diagnose_and_plan(
+def perceive_node(state: DoctorState) -> Dict[str, Any]:
+    """Node 2: Giai đoạn Perceive — chẩn đoán cảnh, lỗi theo vùng và điều cần giữ."""
+    diagnosis = perceive(
         image=state["current_image"],
         metrics=state["technical_metrics"],
         iteration=state["iteration"],
         history=state.get("history", []),
         original_image=state.get("original_image"),
     )
+    return {"diagnosis": diagnosis}
+
+
+def plan_treatment(
+    image: np.ndarray,
+    metrics: Dict[str, Any],
+    diagnosis: Optional[DiagnosisReport],
+    iteration: int = 1,
+    history: Optional[List[HistoryItem]] = None,
+    original_image: Optional[np.ndarray] = None,
+) -> TreatmentPlan:
+    """
+    Giai đoạn Plan: lập kế hoạch từ chẩn đoán, chuẩn hóa và áp preserve guard.
+    Chẩn đoán không còn lỗi nào (severity >= 1) → plan rỗng, không gọi VLM lần hai.
+    """
+    if diagnosis is not None and not diagnosis.actionable_defects:
+        return TreatmentPlan(
+            iteration=iteration,
+            reasoning=f"Chẩn đoán không còn lỗi cần xử lý. {diagnosis.summary}".strip(),
+            actions=[],
+            source=diagnosis.source,
+        )
+    plan = diagnose_and_plan(
+        image=image,
+        metrics=metrics,
+        iteration=iteration,
+        history=history,
+        original_image=original_image,
+        diagnosis=diagnosis,
+    )
     validated_plan = validate_and_sort_plan(plan)
-    return {"treatment_plan": validated_plan}
+    if diagnosis is not None:
+        validated_plan = apply_preserve_guard(validated_plan, diagnosis.preserve)
+    return validated_plan
+
+
+def diagnose_and_plan_node(state: DoctorState) -> Dict[str, Any]:
+    """Node 3: Lập kế hoạch điều trị từ chẩn đoán của giai đoạn Perceive."""
+    plan = plan_treatment(
+        image=state["current_image"],
+        metrics=state["technical_metrics"],
+        diagnosis=state.get("diagnosis"),
+        iteration=state["iteration"],
+        history=state.get("history", []),
+        original_image=state.get("original_image"),
+    )
+    return {"treatment_plan": plan}
 
 
 def process_node(state: DoctorState) -> Dict[str, Any]:
@@ -211,6 +257,7 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
         metrics_after=metrics_after,
         eval_score=eval_result,
         decision="PENDING",  # sẽ cập nhật bên dưới
+        diagnosis=state.get("diagnosis"),
     )
 
     # ====== LOGIC RA QUYẾT ĐỊNH ======
@@ -295,6 +342,7 @@ def build_doctor_graph():
     workflow = StateGraph(DoctorState)
 
     workflow.add_node("analyze", analyze_node)
+    workflow.add_node("perceive", perceive_node)
     workflow.add_node("diagnose_and_plan", diagnose_and_plan_node)
     workflow.add_node("process", process_node)
     workflow.add_node("evaluate", evaluate_node)
@@ -302,7 +350,8 @@ def build_doctor_graph():
 
     workflow.set_entry_point("analyze")
 
-    workflow.add_edge("analyze", "diagnose_and_plan")
+    workflow.add_edge("analyze", "perceive")
+    workflow.add_edge("perceive", "diagnose_and_plan")
     workflow.add_edge("diagnose_and_plan", "process")
     workflow.add_edge("process", "evaluate")
     workflow.add_edge("evaluate", "decide")
@@ -331,6 +380,7 @@ def run_pipeline(
         "iteration": 1,
         "max_iterations": max_iterations,
         "technical_metrics": {},
+        "diagnosis": None,
         "treatment_plan": None,
         "evaluation_result": {},
         "history": [],

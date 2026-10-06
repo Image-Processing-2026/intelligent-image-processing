@@ -5,9 +5,9 @@ Kiểm tra tính hợp lệ của kế hoạch điều trị (Plan Validator).
 
 import logging
 import math
-from typing import Any, Dict, List, Mapping, Optional, Set
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
-from .state import RegionOperation, TreatmentPlan
+from .state import PreserveItem, RegionOperation, TreatmentPlan
 
 logger = logging.getLogger(__name__)
 
@@ -254,4 +254,105 @@ def validate_and_sort_plan(plan: TreatmentPlan) -> TreatmentPlan:
     # Sắp xếp danh sách hành động theo thứ tự an toàn
     valid_actions.sort(key=lambda x: x.order)
     plan.actions = valid_actions
+    return plan
+
+
+# ---------------------------------------------------------
+# Preserve guard: giữ các đặc điểm thẩm mỹ có chủ ý (giai đoạn Perceive)
+# ---------------------------------------------------------
+# (operation, tham số, điều kiện vi phạm, giá trị trung hòa); tham số None → bỏ cả action
+_PreserveRule = Tuple[str, Optional[str], Optional[Callable[[float], bool]], Optional[float]]
+
+PRESERVE_RULES: Dict[str, List[_PreserveRule]] = {
+    "warm_tone": [("color_correct", "temperature_shift", lambda v: v < 0, 0.0)],
+    "cool_tone": [("color_correct", "temperature_shift", lambda v: v > 0, 0.0)],
+    "muted_colors": [("color_correct", "saturation_scale", lambda v: v > 1, 1.0)],
+    "vivid_colors": [("color_correct", "saturation_scale", lambda v: v < 1, 1.0)],
+    "low_key": [("gamma_correct", "gamma", lambda v: v > 1, 1.0), ("clahe", None, None, None)],
+    "high_key": [("gamma_correct", "gamma", lambda v: v < 1, 1.0)],
+    "silhouette": [("gamma_correct", "gamma", lambda v: v > 1, 1.0), ("clahe", None, None, None)],
+    "film_grain": [("denoise", None, None, None)],
+    "soft_focus": [("sharpen", None, None, None)],
+}
+# Aspect về kết cấu: preserve trên toàn ảnh áp dụng cho mọi vùng
+_TEXTURE_ASPECTS = frozenset(("film_grain", "soft_focus"))
+# Giá trị không tác dụng của từng operation có tham số trung hòa được
+_NEUTRAL_PARAMETERS: Dict[str, Dict[str, float]] = {
+    "gamma_correct": {"gamma": 1.0},
+    "color_correct": {"saturation_scale": 1.0, "temperature_shift": 0.0},
+}
+
+
+def _action_region(action: RegionOperation) -> str:
+    """Tên vùng của action để so với preserve; vùng toàn ảnh → 'full'."""
+    # Import muộn: executor kéo theo Module 2/3, planner cần nhẹ khi import
+    from .executor import _infer_region_kind
+
+    if _infer_region_kind(action) == "full":
+        return "full"
+    return action.target_prompt.strip().casefold()
+
+
+def _in_scope(action_region: str, item: PreserveItem) -> bool:
+    """
+    Preserve toàn ảnh áp dụng cho action toàn ảnh (và mọi vùng nếu là aspect kết cấu);
+    preserve một vùng áp dụng cho action trên vùng đó và action toàn ảnh (vì cũng tác động lên nó).
+    """
+    if item.region == "full":
+        return action_region == "full" or item.aspect in _TEXTURE_ASPECTS
+    return action_region in (item.region, "full")
+
+
+def _is_neutral(action: RegionOperation) -> bool:
+    """True nếu mọi tham số tác dụng của action đều ở giá trị trung hòa (action vô hiệu)."""
+    neutral = _NEUTRAL_PARAMETERS.get(action.operation)
+    if neutral is None:
+        return False
+    return all(
+        abs(float(action.parameters.get(name, value)) - value) < 1e-6
+        for name, value in neutral.items()
+    )
+
+
+def apply_preserve_guard(plan: TreatmentPlan, preserve: Sequence[PreserveItem]) -> TreatmentPlan:
+    """
+    Chặn tất định các thao tác phá vỡ đặc điểm cần giữ: trung hòa tham số vi phạm
+    (ví dụ temperature_shift < 0 khi giữ warm_tone) hoặc bỏ cả action (ví dụ denoise khi
+    giữ film_grain). Action trở thành vô hiệu sau khi trung hòa cũng bị bỏ.
+    """
+    if not preserve:
+        return plan
+
+    kept: List[RegionOperation] = []
+    notes: List[str] = []
+    for action in plan.actions:
+        region = _action_region(action)
+        dropped = False
+        for item in preserve:
+            if not _in_scope(region, item):
+                continue
+            for operation, parameter, violates, neutral in PRESERVE_RULES[item.aspect]:
+                if operation != action.operation:
+                    continue
+                if parameter is None:
+                    dropped = True
+                    notes.append(f"bỏ {action.operation} trên '{region}' để giữ {item.aspect}")
+                    continue
+                value = action.parameters.get(parameter)
+                if value is not None and violates is not None and violates(float(value)):
+                    action.parameters[parameter] = neutral
+                    notes.append(
+                        f"đặt {action.operation}.{parameter}={neutral} trên '{region}' "
+                        f"để giữ {item.aspect}"
+                    )
+        if not dropped and _is_neutral(action):
+            dropped = True
+        if dropped:
+            logger.warning("Preserve guard removed '%s' on region '%s'.", action.operation, region)
+            continue
+        kept.append(action)
+
+    plan.actions = kept
+    if notes:
+        plan.reasoning = f"{plan.reasoning}\n[Giữ chủ ý thẩm mỹ] " + "; ".join(notes) + "."
     return plan
