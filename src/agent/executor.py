@@ -21,13 +21,11 @@ from src.region_engine.controller import (
 from src.region_engine.controller import resolve_region as resolve_module_region
 from src.region_engine.face_detector import detect_faces
 
+from .regions import FACE_TARGETS, FULL_TARGETS, SPATIAL_TARGETS
 from .state import RegionOperation, TreatmentPlan
 
 logger = logging.getLogger(__name__)
 
-_FACE_TARGETS = frozenset(("face", "faces", "khuôn mặt", "khuôn mặt người"))
-_FULL_TARGETS = frozenset(("full", "all", "toàn", "toàn bộ", "full_image"))
-_SPATIAL_TARGETS = frozenset(("top", "bottom", "left", "right", "center", "giữa"))
 
 # Heuristic dự phòng (quyết định D1): chỉ dùng khi backend ngữ nghĩa không khả dụng
 # hoặc suy luận lỗi. Từ khóa không khớp → bỏ qua action, KHÔNG xử lý toàn ảnh.
@@ -73,11 +71,11 @@ def _infer_region_kind(action: RegionOperation) -> str:
     target = action.target_prompt.strip().casefold()
     kind = action.region_type
     if kind is None or kind == "semantic":
-        if target in _FACE_TARGETS:
+        if target in FACE_TARGETS:
             return "face"
-        if target in _FULL_TARGETS:
+        if target in FULL_TARGETS:
             return "full"
-        if target in _SPATIAL_TARGETS:
+        if target in SPATIAL_TARGETS:
             return "spatial"
         return "semantic"
     return kind
@@ -122,18 +120,19 @@ def _as_rgb_for_detection(image: np.ndarray) -> np.ndarray:
     return image
 
 
-def _resolve_action_mask(
+def _resolve_action_region(
     image: np.ndarray, action: RegionOperation
-) -> tuple[bool, Optional[np.ndarray]]:
+) -> tuple[bool, Optional[np.ndarray], Optional[str]]:
     """
     Tạo mặt nạ vùng cho một action thông qua Module 2 controller.
 
     Returns:
-        (proceed, mask): proceed=False → bỏ qua action; mask=None → xử lý toàn ảnh.
+        (proceed, mask, backend): proceed=False → bỏ qua action; mask=None → xử lý toàn ảnh;
+        backend là bộ phân giải đã tạo mask (ví dụ 'heuristic' theo D1).
     """
     kind = _infer_region_kind(action)
     if kind == "full":
-        return True, None
+        return True, None, "geometry"
 
     detection_image = _as_rgb_for_detection(image)
     request = _request_for_action(action, kind)
@@ -143,6 +142,16 @@ def _resolve_action_mask(
         # để instance_selection/instance_index có hiệu lực (test patch hàm đó trong controller).
         region = resolve_module_region(detection_image, request, _face_resolver=detect_faces)
     except (RegionBackendUnavailableError, RegionInferenceError) as exc:
+        # Chế độ khuôn mặt tinh chỉnh (oval cần model Face Landmarker) không khả dụng
+        # → hạ về bbox thay vì bỏ cả action (cùng tinh thần quyết định D1)
+        if kind == "face" and action.face_mode != "bbox":
+            logger.warning(
+                "Face mode '%s' unavailable for region '%s' (%s). Falling back to 'bbox'.",
+                action.face_mode,
+                action.region_id,
+                exc,
+            )
+            return _resolve_action_region(image, action.model_copy(update={"face_mode": "bbox"}))
         quadrant = _heuristic_quadrant(action.target_prompt) if kind == "semantic" else None
         if quadrant is None:
             logger.warning(
@@ -152,7 +161,7 @@ def _resolve_action_mask(
                 exc,
                 action.operation,
             )
-            return False, None
+            return False, None, None
         logger.warning(
             "Semantic backend failed for region '%s' (%s). Using heuristic '%s' quadrant.",
             action.region_id,
@@ -172,7 +181,7 @@ def _resolve_action_mask(
             exc,
             action.operation,
         )
-        return False, None
+        return False, None, None
 
     if region.is_empty or not _validate_mask(region.mask, image.shape):
         logger.warning(
@@ -181,18 +190,43 @@ def _resolve_action_mask(
             kind,
             action.operation,
         )
-        return False, None
+        return False, None, None
 
-    logger.info(
-        "Region '%s' (%s) resolved by backend '%s'.",
-        action.region_id,
-        kind,
-        region.metadata.get("backend", "unknown"),
-    )
+    backend = str(region.metadata.get("backend", "unknown"))
+    logger.info("Region '%s' (%s) resolved by backend '%s'.", action.region_id, kind, backend)
     # Module 3 hiểu mask=None là toàn ảnh; giữ tối ưu này cho vùng 'full'.
     if region.metadata.get("kind") == "full":
-        return True, None
-    return True, region.mask
+        return True, None, backend
+    return True, region.mask, backend
+
+
+def _resolve_action_mask(
+    image: np.ndarray, action: RegionOperation
+) -> tuple[bool, Optional[np.ndarray]]:
+    """(proceed, mask) của _resolve_action_region, dùng khi thực thi kế hoạch."""
+    proceed, mask, _ = _resolve_action_region(image, action)
+    return proceed, mask
+
+
+def resolve_region_mask(
+    image: np.ndarray, target_prompt: str, feather_radius: int = 15
+) -> tuple[bool, Optional[np.ndarray], Optional[str]]:
+    """
+    Tạo mặt nạ cho một vùng theo tên (dùng để đo số liệu theo vùng ở giai đoạn Perceive).
+    Đi cùng đường phân giải với execute_plan (face/full/quadrant/semantic, heuristic D1).
+
+    Returns:
+        (found, mask, backend): found=False → không xác định được vùng; mask=None → toàn ảnh.
+    """
+    probe = RegionOperation(
+        region_id=target_prompt,
+        target_prompt=target_prompt,
+        feather_radius=feather_radius,
+        # Hai trường bắt buộc của RegionOperation; chỉ xuất hiện trong log, không thực thi
+        detected_issue="region_measurement",
+        operation="measure",
+    )
+    return _resolve_action_region(image, probe)
 
 
 def execute_plan(image: np.ndarray, plan: TreatmentPlan) -> np.ndarray:

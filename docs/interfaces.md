@@ -46,6 +46,50 @@ class TechnicalMetrics(BaseModel):
 
 
 # ---------------------------------------------------------
+# Module 4: Diagnosis Schema (Perceive stage, src/agent/state.py)
+# ---------------------------------------------------------
+class Defect(BaseModel):
+    type: Literal[DEFECT_TYPES]        # underexposed, overexposed, backlit_subject, low_contrast,
+                                       # noise, blur, color_cast_{warm,cool,green},
+                                       # oversaturated, undersaturated
+    region: str = "full"               # "full" or a subject target_prompt
+    severity: int                      # 0 negligible … 3 severe
+    evidence: str = ""
+    origin: Literal["vlm", "rule", "measured"] = "vlm"
+
+
+class PreserveItem(BaseModel):
+    aspect: Literal[PRESERVE_ASPECTS]  # warm_tone, cool_tone, low_key, high_key, silhouette,
+                                       # film_grain, soft_focus, muted_colors, vivid_colors
+    region: str = "full"
+    reason: str = ""
+
+
+class RegionMetrics(BaseModel):        # soft-mask weighted luma stats of one region
+    region: str
+    backend: str                       # Module 2 resolver that produced the mask
+    area_ratio: float
+    brightness_mean: float
+    brightness_std: float
+    brightness_level: Literal["underexposed", "normal", "overexposed"]
+    highlight_clip_ratio: float
+    shadow_clip_ratio: float
+    brightness_vs_rest: Optional[float]  # region mean minus rest-of-image mean
+
+
+class DiagnosisReport(BaseModel):
+    iteration: int = 1
+    scene_type: Literal[SCENE_TYPES] = "other"
+    lighting: str = ""
+    subjects: List[str]                # regions measured individually (max 4)
+    defects: List[Defect]
+    preserve: List[PreserveItem]       # intentional style; enforced by planner.apply_preserve_guard
+    summary: str = ""
+    region_metrics: Dict[str, RegionMetrics]
+    source: Literal["vlm", "rule_based", "vlm_fallback"] = "vlm"
+
+
+# ---------------------------------------------------------
 # Module 4: Agent Plan Schema (Emitted by VLM / Orchestrator)
 # ---------------------------------------------------------
 class RegionOperationPlan(BaseModel):
@@ -85,6 +129,11 @@ class TreatmentPlan(BaseModel):
     iteration: int = 1
     reasoning: str = Field(..., description="VLM clinical reasoning for proposed treatments")
     actions: List[RegionOperationPlan] = Field(..., description="Ordered list of operations")
+    # "vlm": planned by Gemini; "rule_based": no GEMINI_API_KEY;
+    # "vlm_fallback": the Gemini call or parse failed, so the rule-based plan was used.
+    # An empty plan therefore only means "image already good" when source == "vlm".
+    source: Literal["vlm", "rule_based", "vlm_fallback"] = "vlm"
+    knowledge: List[str] = []          # playbook card / principle ids behind the plan
 
 
 # ---------------------------------------------------------
@@ -255,4 +304,73 @@ def run_doctor_pipeline(
 ) -> Dict[str, Any]:
     """Khởi chạy toàn bộ vòng lặp khép kín: Analyze -> Diagnose -> Plan -> Process -> Eval -> Decision."""
     ...
+
+
+# src/agent/vlm_diagnostician.py
+def diagnose_and_plan(
+    image: np.ndarray,
+    metrics: Dict[str, Any],
+    iteration: int = 1,
+    history: Optional[List[HistoryItem]] = None,
+    original_image: Optional[np.ndarray] = None,  # sent alongside `image` from iteration 2
+    diagnosis: Optional[DiagnosisReport] = None,
+) -> TreatmentPlan:
+    """Stage 2 (Plan): Gemini (google-genai, structured JSON output) or rule-based fallback."""
+    ...
+
+
+# src/agent/perception.py — stage 1 (Perceive)
+def perceive(
+    image: np.ndarray,
+    metrics: Dict[str, Any],
+    iteration: int = 1,
+    history: Optional[List[HistoryItem]] = None,
+    original_image: Optional[np.ndarray] = None,
+) -> DiagnosisReport:
+    """Gemini diagnosis (or rule-based) → per-region measurement through Module 2 masks →
+    defects inferred from measurements (e.g. backlit face) → defects that conflict with
+    `preserve` dropped."""
+    ...
+
+
+# src/agent/graph.py — used by the graph node and POST /api/v1/diagnose
+def plan_treatment(
+    image: np.ndarray,
+    metrics: Dict[str, Any],
+    diagnosis: Optional[DiagnosisReport],
+    iteration: int = 1,
+    history: Optional[List[HistoryItem]] = None,
+    original_image: Optional[np.ndarray] = None,
+) -> TreatmentPlan:
+    """No defect with severity >= 1 → empty plan without a second VLM call. Otherwise
+    diagnose_and_plan() → validate_and_sort_plan() → apply_preserve_guard()."""
+    ...
+
+
+# src/agent/knowledge — Knowledge Base (playbook cards + principles), see its README.md
+def retrieve(diagnosis, metrics=None, kb=None, max_cards=4, max_principles=3) -> KnowledgeContext
+def format_context(context: KnowledgeContext) -> str      # 'TRI THỨC CHUYÊN MÔN' prompt block
+def plan_actions_from_knowledge(diagnosis, metrics, kb=None) -> (actions, card_ids)  # offline
+def diagnose_from_metrics(metrics, iteration=1, source="rule_based") -> DiagnosisReport
 ```
+
+The VLM plan schema has one `anyOf` variant per operation, each requiring exactly that
+operation's parameters. Parameters that belong to another operation are dropped.
+The rule-based plan (no API key, or Gemini failed) runs the recipes of the `auto_apply`
+playbook cards that match the diagnosis plus the defects implied by the Module 1 levels.
+
+Graph: `analyze → perceive → diagnose_and_plan → process → evaluate → decide`.
+`POST /api/v1/diagnose` returns `{technical_metrics, diagnosis, treatment_plan}`.
+
+**Decision rules (`graph.decide_node`), in order:**
+1. Degraded iteration → `STOP_BEST_EFFORT` and roll back to the previous image.
+   A non-empty plan that changed no pixels (every action skipped) → `STOP_BEST_EFFORT`
+   without rollback.
+2. Empty plan → `SHIP`.
+3. Synthetic: PSNR ≥ 28 dB and SSIM ≥ 0.88 → `SHIP`.
+   Real: `estimated_quality_score` ≥ `REAL_TARGET_SCORE` (85) → `SHIP`;
+   gain over the previous iteration < `REAL_MIN_GAIN` (1.0) → `STOP_BEST_EFFORT` (plateau).
+4. Real images only: a score-based `SHIP` becomes `RE_PROCESS` when this iteration's plan acted
+   on a defect with severity ≥ `VERIFY_SEVERITY` (2), meaning an action on its region or on the
+   full image, and iterations remain. The next Perceive then confirms the fix.
+5. Otherwise `RE_PROCESS`, or `STOP_BEST_EFFORT` when `max_iterations` is reached.

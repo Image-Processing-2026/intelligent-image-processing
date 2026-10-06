@@ -8,11 +8,11 @@ from io import BytesIO
 
 import numpy as np
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from PIL import Image
 
-from src.agent.graph import run_pipeline
-from src.agent.planner import validate_and_sort_plan
-from src.agent.vlm_diagnostician import diagnose_and_plan
+from src.agent.graph import plan_treatment, run_pipeline
+from src.agent.perception import perceive
 from src.analyzer_evaluator.analyzer import analyze_image
 
 from .schemas import DiagnoseResponse, ProcessResponse
@@ -40,16 +40,22 @@ def health_check():
     return {"status": "ok", "service": "intelligent-image-processing"}
 
 
+def _diagnose(img: np.ndarray) -> DiagnoseResponse:
+    """Chỉ số kỹ thuật → chẩn đoán (Perceive) → kế hoạch điều trị, không xử lý ảnh."""
+    metrics = analyze_image(img).model_dump()
+    diagnosis = perceive(img, metrics, iteration=1)
+    plan = plan_treatment(img, metrics, diagnosis, iteration=1)
+    return DiagnoseResponse(technical_metrics=metrics, diagnosis=diagnosis, treatment_plan=plan)
+
+
 @router.post("/diagnose", response_model=DiagnoseResponse)
 async def diagnose_image_endpoint(file: UploadFile = File(...)):
-    """Chỉ phân tích chỉ số kỹ thuật và chẩn đoán kế hoạch điều trị."""
+    """Phân tích chỉ số kỹ thuật, chẩn đoán (Perceive) và lập kế hoạch điều trị, không xử lý ảnh."""
     try:
         content = await file.read()
         img = _read_image_file(content)
-        metrics = analyze_image(img).model_dump()
-        plan = diagnose_and_plan(img, metrics, iteration=1)
-        validated_plan = validate_and_sort_plan(plan)
-        return DiagnoseResponse(technical_metrics=metrics, treatment_plan=validated_plan)
+        # Hai lời gọi Gemini + phát hiện khuôn mặt là blocking: chạy ngoài event loop
+        return await run_in_threadpool(_diagnose, img)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -72,9 +78,13 @@ async def process_image_endpoint(
             gt_img = _read_image_file(gt_content)
             is_synthetic = True
 
-        # Chạy quy trình LangGraph
-        result_state = run_pipeline(
-            image=img, ground_truth=gt_img, is_synthetic=is_synthetic, max_iterations=max_iterations
+        # Chạy quy trình LangGraph (blocking: nhiều lời gọi Gemini và xử lý CPU) ngoài event loop
+        result_state = await run_in_threadpool(
+            run_pipeline,
+            image=img,
+            ground_truth=gt_img,
+            is_synthetic=is_synthetic,
+            max_iterations=max_iterations,
         )
 
         history_serialized = [

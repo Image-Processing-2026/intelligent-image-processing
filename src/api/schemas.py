@@ -2,11 +2,11 @@
 Mô hình dữ liệu Request & Response cho REST API (API Schemas).
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from src.agent.state import TreatmentPlan
+from src.agent.state import DiagnosisReport, TreatmentPlan
 
 
 class DiagnoseRequest(BaseModel):
@@ -19,6 +19,7 @@ class DiagnoseResponse(BaseModel):
     """Kết quả chẩn đoán và đề xuất điều trị."""
 
     technical_metrics: Dict[str, Any]
+    diagnosis: Optional[DiagnosisReport] = None
     treatment_plan: TreatmentPlan
 
 

@@ -1,0 +1,94 @@
+# Playbook card — Nhiễu và độ nét.
+
+- id: noise-reduction
+  title: Khử nhiễu toàn ảnh
+  priority: 50
+  auto_apply: true
+  defects:
+    - {types: [noise], region: full, min_severity: 2}
+  blocked_by: [film_grain]
+  recipe:
+    - operation: denoise
+      region: full
+      params: {method: bilateral, strength: {2: 1.0, 3: 1.5}}
+  avoid:
+    - "strength cao (> 1.5): da và bề mặt bị bệt như sáp, mất chi tiết nhỏ."
+    - "Nhiễu muối tiêu (chấm trắng/đen rời rạc): dùng method median, bilateral gần như không tác dụng."
+    - "nlm chỉ đáng dùng với strength >= 1.5 và chạy chậm hơn bilateral khoảng 100 lần; ở mức 1.0 nó gần như không khử được nhiễu nặng."
+    - "Hạt film/grain là chủ ý thì không khử."
+  rationale: >-
+    Bilateral làm mượt theo cả khoảng cách không gian lẫn chênh lệch màu nên giữ được cạnh;
+    luôn khử nhiễu trước các bước làm sáng, tăng tương phản và làm nét vì chúng khuếch đại nhiễu.
+  tags: [noise, nhiễu, denoise, bilateral, median, nlm, grain]
+  sources:
+    - "Tomasi & Manduchi, Bilateral Filtering for Gray and Color Images, ICCV 1998"
+    - "Gonzalez & Woods, Digital Image Processing (4th ed.), ch.5 — noise models and restoration"
+
+- id: skin-noise
+  title: Nhiễu trên da mặt (chân dung)
+  priority: 55
+  auto_apply: false
+  scenes: [portrait, group]
+  defects:
+    - {types: [noise], region: region, min_severity: 1}
+  blocked_by: [film_grain]
+  recipe:
+    - operation: denoise
+      region: $defect
+      params: {method: bilateral, strength: {1: 0.6, 2: 0.8, 3: 1.0}}
+      feather_radius: 25
+  avoid:
+    - "Làm mịn da quá tay (strength > 1.0): mặt như nhựa, mất lỗ chân lông và nếp tự nhiên."
+    - "Không khử nhiễu mạnh vùng mắt, tóc, lông mày: đây là nơi cần chi tiết."
+  rationale: >-
+    Khử nhiễu riêng vùng da bằng mặt nạ mềm làm mịn bề mặt mà không làm bệt nền hay quần áo.
+  tags: [skin, da, face, portrait, noise, smoothing]
+  sources:
+    - "Tomasi & Manduchi, Bilateral Filtering for Gray and Color Images, ICCV 1998"
+
+- id: mild-blur-sharpen
+  title: Ảnh hơi mềm/thiếu nét
+  priority: 40
+  auto_apply: false
+  defects:
+    - {types: [blur], region: any, min_severity: 1}
+  unless:
+    - {types: [noise], region: full, min_severity: 2}
+  blocked_by: [soft_focus]
+  recipe:
+    - operation: sharpen
+      region: $defect
+      params: {method: unsharp_mask, amount: {1: 0.5, 2: 0.8, 3: 1.0}}
+  avoid:
+    - "Chỉ dùng method unsharp_mask: bản laplacian hiện tại nhân độ sáng ảnh với amount (amount 0.5 làm ảnh tối đi một nửa)."
+    - "amount > 1.2: viền sáng (halo) quanh cạnh, ảnh trông gắt và giả."
+    - "Ảnh còn nhiễu: làm nét khuếch đại nhiễu; khử nhiễu trước hoặc bỏ qua làm nét."
+    - "Làm nét mạnh da mặt: lộ khuyết điểm; với chân dung chỉ làm nét nhẹ (≤ 0.6)."
+    - "Đo trên ảnh thật, làm nét toàn ảnh thường làm giảm điểm chất lượng: chỉ dùng khi ảnh mềm thấy rõ."
+  rationale: >-
+    Unsharp mask cộng lại phần chênh giữa ảnh và bản làm mờ của nó (sigma 2), tăng tương phản
+    tại cạnh; nó tăng độ nét cảm nhận chứ không khôi phục chi tiết đã mất.
+  tags: [blur, mờ, sharpen, unsharp, nét, detail, halo]
+  sources:
+    - "Gonzalez & Woods, Digital Image Processing (4th ed.), ch.3 — unsharp masking and highboost filtering"
+
+- id: severe-blur-limits
+  title: Mờ nặng (rung tay, lệch nét) — giới hạn của xử lý kinh điển
+  priority: 45
+  auto_apply: false
+  defects:
+    - {types: [blur], region: any, min_severity: 3}
+  blocked_by: [soft_focus]
+  recipe:
+    - operation: sharpen
+      region: $defect
+      params: {method: unsharp_mask, amount: 0.8}
+  avoid:
+    - "Cố bù mờ chuyển động/lệch nét bằng amount cao: chỉ thu được halo và nhiễu, không thu lại chi tiết."
+    - "Toolbox không có giải chập (deconvolution); đừng hứa phục hồi ảnh mờ nặng."
+  rationale: >-
+    Mờ do rung hoặc lệch nét là tích chập với một hàm trải điểm; đảo ngược cần giải chập, nằm
+    ngoài toolbox 5 công cụ. Làm nét nhẹ chỉ cải thiện cảm nhận ở mức hạn chế.
+  tags: [motion blur, defocus, rung tay, lệch nét, deconvolution, giới hạn]
+  sources:
+    - "Gonzalez & Woods, Digital Image Processing (4th ed.), ch.5 — degradation function and deconvolution"

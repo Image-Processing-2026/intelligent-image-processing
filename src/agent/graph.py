@@ -25,8 +25,9 @@ from src.analyzer_evaluator.no_reference_eval import evaluate_no_reference
 from src.analyzer_evaluator.reference_eval import evaluate_reference
 
 from .executor import execute_plan
-from .planner import validate_and_sort_plan
-from .state import DoctorState, HistoryItem, TreatmentPlan
+from .perception import perceive
+from .planner import action_region, apply_preserve_guard, validate_and_sort_plan
+from .state import DiagnosisReport, DoctorState, HistoryItem, TreatmentPlan
 from .vlm_diagnostician import diagnose_and_plan
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,13 @@ logger = logging.getLogger(__name__)
 PSNR_THRESHOLD = 28.0  # dB — Chất lượng phục hồi chấp nhận được
 SSIM_THRESHOLD = 0.88  # Tương đồng cấu trúc chấp nhận được
 PSNR_DEGRADATION = 1.5  # dB — Ngưỡng suy thoái cho phép giữa 2 vòng
+
+# Ngưỡng chất lượng cho quyết định dừng (ảnh thực, điểm heuristic No-Reference 0–100)
+REAL_TARGET_SCORE = 85.0  # Đạt mức này → SHIP, tránh xử lý quá tay
+REAL_MIN_GAIN = 1.0  # Điểm tăng ít hơn mức này so với vòng trước → đã bão hòa, dừng
+# Vòng vừa xử lý lỗi từ mức này trở lên → chưa SHIP theo điểm toàn cục, chẩn đoán lại để xác nhận
+# (điểm toàn cục gần như không phản ánh lỗi trên vùng nhỏ như khuôn mặt ngược sáng)
+VERIFY_SEVERITY = 2
 
 
 # ---------------------------------------------------------
@@ -46,16 +54,62 @@ def analyze_node(state: DoctorState) -> Dict[str, Any]:
     return {"technical_metrics": metrics.model_dump()}
 
 
-def diagnose_and_plan_node(state: DoctorState) -> Dict[str, Any]:
-    """Node 2 & 3: Gọi VLM chẩn đoán bệnh và tạo kế hoạch điều trị."""
-    plan = diagnose_and_plan(
+def perceive_node(state: DoctorState) -> Dict[str, Any]:
+    """Node 2: Giai đoạn Perceive — chẩn đoán cảnh, lỗi theo vùng và điều cần giữ."""
+    diagnosis = perceive(
         image=state["current_image"],
         metrics=state["technical_metrics"],
         iteration=state["iteration"],
         history=state.get("history", []),
+        original_image=state.get("original_image"),
+    )
+    return {"diagnosis": diagnosis}
+
+
+def plan_treatment(
+    image: np.ndarray,
+    metrics: Dict[str, Any],
+    diagnosis: Optional[DiagnosisReport],
+    iteration: int = 1,
+    history: Optional[List[HistoryItem]] = None,
+    original_image: Optional[np.ndarray] = None,
+) -> TreatmentPlan:
+    """
+    Giai đoạn Plan: lập kế hoạch từ chẩn đoán, chuẩn hóa và áp preserve guard.
+    Chẩn đoán không còn lỗi nào (severity >= 1) → plan rỗng, không gọi VLM lần hai.
+    """
+    if diagnosis is not None and not diagnosis.actionable_defects:
+        return TreatmentPlan(
+            iteration=iteration,
+            reasoning=f"Chẩn đoán không còn lỗi cần xử lý. {diagnosis.summary}".strip(),
+            actions=[],
+            source=diagnosis.source,
+        )
+    plan = diagnose_and_plan(
+        image=image,
+        metrics=metrics,
+        iteration=iteration,
+        history=history,
+        original_image=original_image,
+        diagnosis=diagnosis,
     )
     validated_plan = validate_and_sort_plan(plan)
-    return {"treatment_plan": validated_plan}
+    if diagnosis is not None:
+        validated_plan = apply_preserve_guard(validated_plan, diagnosis.preserve)
+    return validated_plan
+
+
+def diagnose_and_plan_node(state: DoctorState) -> Dict[str, Any]:
+    """Node 3: Lập kế hoạch điều trị từ chẩn đoán của giai đoạn Perceive."""
+    plan = plan_treatment(
+        image=state["current_image"],
+        metrics=state["technical_metrics"],
+        diagnosis=state.get("diagnosis"),
+        iteration=state["iteration"],
+        history=state.get("history", []),
+        original_image=state.get("original_image"),
+    )
+    return {"treatment_plan": plan}
 
 
 def process_node(state: DoctorState) -> Dict[str, Any]:
@@ -146,12 +200,48 @@ def _decide_synthetic(eval_result: Dict[str, Any], history: List[HistoryItem]) -
 
 
 def _decide_real(eval_result: Dict[str, Any], history: List[HistoryItem]) -> str:
-    """Logic quyết định dành cho ảnh thực không có Ground-Truth."""
+    """
+    Logic quyết định dành cho ảnh thực không có Ground-Truth.
+    - Suy thoái → STOP_BEST_EFFORT (decide_node sẽ rollback).
+    - Điểm chất lượng đạt REAL_TARGET_SCORE → SHIP.
+    - Điểm tăng chưa tới REAL_MIN_GAIN so với vòng trước → bão hòa, STOP_BEST_EFFORT.
+    - Còn lại → RE_PROCESS.
+    """
     if _is_degraded_real(eval_result, history):
         return "STOP_BEST_EFFORT"
 
+    score = eval_result.get("estimated_quality_score")
+    if score is None:
+        return "RE_PROCESS"
+    score = float(score)
+    if score >= REAL_TARGET_SCORE:
+        return "SHIP"
+
+    if history:
+        prev_score = (history[-1].eval_score or {}).get("estimated_quality_score")
+        if prev_score is not None and score - float(prev_score) < REAL_MIN_GAIN:
+            return "STOP_BEST_EFFORT"
+
     # Chưa đạt, còn dư vòng → tiếp tục
     return "RE_PROCESS"
+
+
+def _needs_verification(
+    diagnosis: Optional[DiagnosisReport], plan: Optional[TreatmentPlan]
+) -> bool:
+    """
+    True nếu kế hoạch vòng này đã tác động lên một lỗi severity >= VERIFY_SEVERITY
+    (action trên đúng vùng của lỗi, hoặc trên toàn ảnh) → cần Perceive lại để xác nhận.
+    Lỗi không có action nào nhắm tới (ví dụ ám xanh lá mà toolbox không sửa được) không
+    chặn SHIP, vì chẩn đoán lại cũng không đổi được gì.
+    """
+    if diagnosis is None or plan is None:
+        return False
+    touched = {action_region(action) for action in plan.actions}
+    return any(
+        defect.severity >= VERIFY_SEVERITY and ("full" in touched or defect.region in touched)
+        for defect in diagnosis.defects
+    )
 
 
 def _create_thumbnail(image: np.ndarray, max_size: int = 512) -> np.ndarray:
@@ -188,40 +278,69 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
         metrics_after=metrics_after,
         eval_score=eval_result,
         decision="PENDING",  # sẽ cập nhật bên dưới
+        diagnosis=state.get("diagnosis"),
     )
 
     # ====== LOGIC RA QUYẾT ĐỊNH ======
     has_actions = bool(state.get("treatment_plan") and state["treatment_plan"].actions)
 
     # 0. Phát hiện suy thoái ở MỌI vòng (kể cả vòng cuối) trước khi xét giới hạn vòng lặp
-    degraded = has_actions and (
-        _is_degraded_synthetic(eval_result, history)
-        if is_syn
-        else _is_degraded_real(eval_result, history)
+    # Kế hoạch có thao tác nhưng không pixel nào đổi (mọi action bị executor bỏ qua, ví dụ
+    # không tìm thấy vùng): không phải suy thoái, nhưng lặp lại cũng vô ích → dừng, không rollback
+    previous_image = state.get("previous_image")
+    unchanged = (
+        has_actions
+        and previous_image is not None
+        and np.array_equal(state["current_image"], previous_image)
+    )
+    degraded = (
+        has_actions
+        and not unchanged
+        and (
+            _is_degraded_synthetic(eval_result, history)
+            if is_syn
+            else _is_degraded_real(eval_result, history)
+        )
     )
 
     if degraded:
         decision = "STOP_BEST_EFFORT"
 
-    # 1. Giới hạn cứng: Hết vòng lặp → dừng nỗ lực tốt nhất (giữ ảnh hiện tại)
-    elif iteration >= max_iters:
+    elif unchanged:
+        logger.warning(
+            "Iteration %d changed no pixels (every action was skipped); stopping.", iteration
+        )
         decision = "STOP_BEST_EFFORT"
 
-    # 2. Kế hoạch rỗng → VLM cho rằng ảnh đã tốt
+    # 1. Kế hoạch rỗng → VLM cho rằng ảnh đã tốt
     elif not has_actions:
         decision = "SHIP"
 
-    # 3. Phân nhánh Synthetic vs Real
-    elif is_syn:
-        decision = _decide_synthetic(eval_result, history)
     else:
-        decision = _decide_real(eval_result, history)
+        # 2. Phân nhánh Synthetic vs Real (xét trước giới hạn vòng để vòng cuối đạt
+        #    mục tiêu vẫn được báo SHIP)
+        decision = (
+            _decide_synthetic(eval_result, history)
+            if is_syn
+            else _decide_real(eval_result, history)
+        )
+        # 3. Ảnh thực: SHIP theo điểm chỉ được chấp nhận khi chẩn đoán xác nhận lỗi rõ đã hết.
+        #    Vòng cuối không còn cơ hội xác nhận → giữ SHIP (đã đạt điểm mục tiêu)
+        if (
+            decision == "SHIP"
+            and not is_syn
+            and iteration < max_iters
+            and _needs_verification(state.get("diagnosis"), plan)
+        ):
+            decision = "RE_PROCESS"
+        # 4. Giới hạn cứng: hết vòng lặp mà chưa đạt → dừng nỗ lực tốt nhất
+        if decision == "RE_PROCESS" and iteration >= max_iters:
+            decision = "STOP_BEST_EFFORT"
 
     # Rollback: trả về ảnh trước vòng xử lý này nếu vòng này làm chất lượng xấu đi
     final_image = state["current_image"]
     rolled_back = False
     if degraded:
-        previous_image = state.get("previous_image")
         if previous_image is not None:
             final_image = previous_image
             rolled_back = True
@@ -270,6 +389,7 @@ def build_doctor_graph():
     workflow = StateGraph(DoctorState)
 
     workflow.add_node("analyze", analyze_node)
+    workflow.add_node("perceive", perceive_node)
     workflow.add_node("diagnose_and_plan", diagnose_and_plan_node)
     workflow.add_node("process", process_node)
     workflow.add_node("evaluate", evaluate_node)
@@ -277,7 +397,8 @@ def build_doctor_graph():
 
     workflow.set_entry_point("analyze")
 
-    workflow.add_edge("analyze", "diagnose_and_plan")
+    workflow.add_edge("analyze", "perceive")
+    workflow.add_edge("perceive", "diagnose_and_plan")
     workflow.add_edge("diagnose_and_plan", "process")
     workflow.add_edge("process", "evaluate")
     workflow.add_edge("evaluate", "decide")
@@ -306,6 +427,7 @@ def run_pipeline(
         "iteration": 1,
         "max_iterations": max_iterations,
         "technical_metrics": {},
+        "diagnosis": None,
         "treatment_plan": None,
         "evaluation_result": {},
         "history": [],

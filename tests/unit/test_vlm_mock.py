@@ -127,12 +127,48 @@ def mock_gemini_response_unknown_op():
 
 
 def _create_mock_model(response_text: str):
-    """Tạo mock GenerativeModel trả về response text cố định."""
+    """Tạo mock `client.models` (google-genai) trả về response text cố định."""
     mock_response = MagicMock()
     mock_response.text = response_text
     mock_model = MagicMock()
     mock_model.generate_content.return_value = mock_response
     return mock_model
+
+
+DARK_DEFECT = {"type": "underexposed", "region": "full", "severity": 2, "evidence": "tối"}
+
+
+def _diagnosis_json(*defects: dict, preserve: tuple = (), subjects: tuple = ()) -> str:
+    """Phản hồi JSON giai đoạn Perceive."""
+    return json.dumps(
+        {
+            "scene_type": "other",
+            "lighting": "",
+            "subjects": list(subjects),
+            "defects": list(defects),
+            "preserve": list(preserve),
+            "summary": "Tóm tắt chẩn đoán.",
+        }
+    )
+
+
+def _route_gemini(mock_genai: MagicMock, perceive: list, plan: list) -> MagicMock:
+    """
+    Mock `client.models` trả phản hồi theo giai đoạn (Perceive hay Plan),
+    nhận diện qua schema trong config; mỗi giai đoạn tiêu thụ hàng đợi riêng.
+    """
+    from src.agent.perception import PERCEIVE_RESPONSE_SCHEMA
+
+    queues = {"perceive": list(perceive), "plan": list(plan)}
+
+    def generate_content(*, model: str, contents: list, config: object) -> MagicMock:
+        is_perceive = config.response_json_schema == PERCEIVE_RESPONSE_SCHEMA
+        return MagicMock(text=queues["perceive" if is_perceive else "plan"].pop(0))
+
+    models = MagicMock()
+    models.generate_content.side_effect = generate_content
+    mock_genai.Client.return_value.models = models
+    return models
 
 
 # ============================================================
@@ -146,7 +182,7 @@ class TestVLMValidResponse:
     @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
     @patch("src.agent.vlm_diagnostician.genai")
     def test_valid_json_parsed_correctly(self, mock_genai, mock_gemini_response_valid):
-        mock_genai.GenerativeModel.return_value = _create_mock_model(mock_gemini_response_valid)
+        mock_genai.Client.return_value.models = _create_mock_model(mock_gemini_response_valid)
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 128
         plan = diagnose_and_plan(img, {"noise_level": "medium"}, iteration=1)
@@ -161,7 +197,7 @@ class TestVLMValidResponse:
     @patch("src.agent.vlm_diagnostician.genai")
     def test_json_with_markdown_fences(self, mock_genai):
         """VLM bọc JSON trong ```json ... ``` → parser phải strip được."""
-        mock_genai.GenerativeModel.return_value = _create_mock_model(MOCK_JSON_WITH_MARKDOWN)
+        mock_genai.Client.return_value.models = _create_mock_model(MOCK_JSON_WITH_MARKDOWN)
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 128
         plan = diagnose_and_plan(img, {}, iteration=1)
@@ -173,9 +209,7 @@ class TestVLMValidResponse:
     @patch("src.agent.vlm_diagnostician.genai")
     def test_json_with_plain_fences(self, mock_genai):
         """VLM bọc JSON trong ``` ... ``` (không ghi 'json') → parser vẫn strip được."""
-        mock_genai.GenerativeModel.return_value = _create_mock_model(
-            MOCK_JSON_WITH_MARKDOWN_NO_LANG
-        )
+        mock_genai.Client.return_value.models = _create_mock_model(MOCK_JSON_WITH_MARKDOWN_NO_LANG)
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 128
         plan = diagnose_and_plan(img, {}, iteration=1)
@@ -190,7 +224,7 @@ class TestVLMExtremeParams:
     @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
     @patch("src.agent.vlm_diagnostician.genai")
     def test_extreme_params_clamped(self, mock_genai, mock_gemini_response_extreme_params):
-        mock_genai.GenerativeModel.return_value = _create_mock_model(
+        mock_genai.Client.return_value.models = _create_mock_model(
             mock_gemini_response_extreme_params
         )
 
@@ -213,9 +247,7 @@ class TestVLMUnknownOperation:
     @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
     @patch("src.agent.vlm_diagnostician.genai")
     def test_unknown_op_removed(self, mock_genai, mock_gemini_response_unknown_op):
-        mock_genai.GenerativeModel.return_value = _create_mock_model(
-            mock_gemini_response_unknown_op
-        )
+        mock_genai.Client.return_value.models = _create_mock_model(mock_gemini_response_unknown_op)
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 128
         plan = diagnose_and_plan(img, {}, iteration=1)
@@ -260,7 +292,7 @@ class TestVLMRegionFields:
                 binary_mask=[[1, 0]],
             )
         )
-        mock_genai.GenerativeModel.return_value = _create_mock_model(response)
+        mock_genai.Client.return_value.models = _create_mock_model(response)
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 128
         plan = validate_and_sort_plan(diagnose_and_plan(img, {}, iteration=1))
@@ -288,7 +320,7 @@ class TestVLMRegionFields:
                 merge_policy="mean",
             )
         )
-        mock_genai.GenerativeModel.return_value = _create_mock_model(response)
+        mock_genai.Client.return_value.models = _create_mock_model(response)
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 128
         plan = diagnose_and_plan(img, {}, iteration=1)
@@ -307,7 +339,7 @@ class TestVLMRegionFields:
         broken = _region_action()
         del broken["operation"]
         response = _vlm_plan(broken, "not an object", _region_action(target_prompt="face"))
-        mock_genai.GenerativeModel.return_value = _create_mock_model(response)
+        mock_genai.Client.return_value.models = _create_mock_model(response)
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 128
         plan = diagnose_and_plan(img, {}, iteration=1)
@@ -322,7 +354,7 @@ class TestVLMRegionFields:
         from src.agent.executor import _infer_region_kind
 
         response = _vlm_plan(_region_action(target_prompt="face"), _region_action())
-        mock_genai.GenerativeModel.return_value = _create_mock_model(response)
+        mock_genai.Client.return_value.models = _create_mock_model(response)
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 128
         plan = validate_and_sort_plan(diagnose_and_plan(img, {}, iteration=1))
@@ -345,10 +377,11 @@ class TestVLMRegionFields:
                 "parameters": {"gamma": 1.5},
             }
         )
-        empty = json.dumps({"iteration": 2, "reasoning": "Ảnh đã tốt", "actions": []})
-        mock_model = MagicMock()
-        mock_model.generate_content.side_effect = [MagicMock(text=bad), MagicMock(text=empty)]
-        mock_genai.GenerativeModel.return_value = mock_model
+        _route_gemini(
+            mock_genai,
+            perceive=[_diagnosis_json(DARK_DEFECT), _diagnosis_json()],
+            plan=[bad],
+        )
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 60
         result_state = run_pipeline(image=img, max_iterations=2)
@@ -364,17 +397,211 @@ class TestVLMInvalidJSON:
     @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
     @patch("src.agent.vlm_diagnostician.genai")
     def test_invalid_json_falls_back_safely(self, mock_genai, mock_gemini_response_invalid_json):
-        mock_genai.GenerativeModel.return_value = _create_mock_model(
+        mock_genai.Client.return_value.models = _create_mock_model(
             mock_gemini_response_invalid_json
         )
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 128
         plan = diagnose_and_plan(img, {}, iteration=1)
 
-        # Phải fallback an toàn, không crash
+        # Phải fallback an toàn, không crash; metric rỗng → luật không sinh action
         assert isinstance(plan, TreatmentPlan)
-        # Fallback exception handler trả về plan rỗng
+        assert plan.source == "vlm_fallback"
         assert len(plan.actions) == 0
+
+
+NOISY_DARK_METRICS = {"noise_level": "severe", "brightness_level": "underexposed"}
+
+
+class TestVLMFailureFallsBackToRules:
+    """Phase 0: lỗi Gemini không được biến thành plan rỗng (= SHIP âm thầm)."""
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_invalid_json_uses_rule_plan(self, mock_genai):
+        mock_genai.Client.return_value.models = _create_mock_model(MOCK_INVALID_JSON)
+
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        plan = diagnose_and_plan(img, NOISY_DARK_METRICS, iteration=1)
+
+        assert plan.source == "vlm_fallback"
+        assert [a.operation for a in plan.actions] == ["denoise", "gamma_correct"]
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_api_exception_uses_rule_plan(self, mock_genai):
+        mock_genai.Client.return_value.models.generate_content.side_effect = RuntimeError(
+            "503 UNAVAILABLE"
+        )
+
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        plan = diagnose_and_plan(img, NOISY_DARK_METRICS, iteration=1)
+
+        assert plan.source == "vlm_fallback"
+        assert len(plan.actions) == 2
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_empty_response_text_uses_rule_plan(self, mock_genai):
+        """Phản hồi bị chặn (safety) có text=None → không được coi là 'ảnh đã tốt'."""
+        mock_genai.Client.return_value.models = _create_mock_model(None)
+
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        plan = diagnose_and_plan(img, NOISY_DARK_METRICS, iteration=1)
+
+        assert plan.source == "vlm_fallback"
+        assert len(plan.actions) == 2
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_all_invalid_actions_use_rule_plan(self, mock_genai):
+        response = _vlm_plan({"operation": "denoise"}, "not an object")
+        mock_genai.Client.return_value.models = _create_mock_model(response)
+
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        plan = diagnose_and_plan(img, NOISY_DARK_METRICS, iteration=1)
+
+        assert plan.source == "vlm_fallback"
+        assert len(plan.actions) == 2
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai", None)
+    def test_missing_sdk_uses_rule_plan(self):
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        plan = diagnose_and_plan(img, NOISY_DARK_METRICS, iteration=1)
+
+        assert plan.source == "vlm_fallback"
+        assert len(plan.actions) == 2
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_valid_empty_plan_is_kept_empty(self, mock_genai):
+        """VLM trả actions=[] hợp lệ → plan rỗng thật sự (ảnh đã tốt), không dùng luật."""
+        empty = json.dumps({"iteration": 1, "reasoning": "Ảnh đã tốt", "actions": []})
+        mock_genai.Client.return_value.models = _create_mock_model(empty)
+
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        plan = diagnose_and_plan(img, NOISY_DARK_METRICS, iteration=1)
+
+        assert plan.source == "vlm"
+        assert plan.actions == []
+
+
+class TestVLMRequest:
+    """Phase 0: structured output, thu nhỏ ảnh và gửi kèm ảnh gốc từ vòng 2."""
+
+    @staticmethod
+    def _call_kwargs(mock_genai: MagicMock) -> dict:
+        return mock_genai.Client.return_value.models.generate_content.call_args.kwargs
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_structured_output_config(self, mock_genai):
+        from src.agent.vlm_diagnostician import PLAN_RESPONSE_SCHEMA, SYSTEM_PROMPT
+
+        mock_genai.Client.return_value.models = _create_mock_model(MOCK_VALID_RESPONSE)
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        diagnose_and_plan(img, {}, iteration=1)
+
+        config = self._call_kwargs(mock_genai)["config"]
+        assert config.response_mime_type == "application/json"
+        assert config.response_json_schema == PLAN_RESPONSE_SCHEMA
+        assert config.system_instruction == SYSTEM_PROMPT
+
+    def test_response_schema_matches_toolbox(self):
+        from src.agent.planner import ALLOWED_OPERATIONS, PARAMETER_BOUNDS
+        from src.agent.vlm_diagnostician import PLAN_RESPONSE_SCHEMA
+
+        # Mỗi operation là một biến thể riêng, chỉ có đúng tham số của nó (bắt buộc điền)
+        variants = PLAN_RESPONSE_SCHEMA["properties"]["actions"]["items"]["anyOf"]
+        by_operation = {v["properties"]["operation"]["enum"][0]: v for v in variants}
+        assert set(by_operation) == ALLOWED_OPERATIONS
+        for operation, variant in by_operation.items():
+            params = variant["properties"]["parameters"]
+            assert set(params["properties"]) == set(PARAMETER_BOUNDS[operation])
+            assert set(params["required"]) == set(PARAMETER_BOUNDS[operation])
+        gamma = by_operation["gamma_correct"]["properties"]["parameters"]["properties"]["gamma"]
+        assert gamma["minimum"] == PARAMETER_BOUNDS["gamma_correct"]["gamma"]["min"]
+        assert gamma["maximum"] == PARAMETER_BOUNDS["gamma_correct"]["gamma"]["max"]
+        denoise = by_operation["denoise"]["properties"]["parameters"]["properties"]
+        assert "unsharp_mask" not in denoise["method"]["enum"]
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_null_parameters_are_dropped(self, mock_genai):
+        response = _vlm_plan(_region_action(parameters={"gamma": 0.8, "strength": None}))
+        mock_genai.Client.return_value.models = _create_mock_model(response)
+
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        plan = diagnose_and_plan(img, {}, iteration=1)
+
+        assert plan.actions[0].parameters == {"gamma": 0.8}
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_large_image_is_downscaled(self, mock_genai):
+        from src.agent.vlm_diagnostician import VLM_MAX_SIDE
+
+        mock_genai.Client.return_value.models = _create_mock_model(MOCK_VALID_RESPONSE)
+        img = np.zeros((1500, 3000, 3), dtype=np.uint8)
+        diagnose_and_plan(img, {}, iteration=1)
+
+        contents = self._call_kwargs(mock_genai)["contents"]
+        sent = contents[-1]
+        assert sent.size == (VLM_MAX_SIDE, VLM_MAX_SIDE // 2)
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_first_iteration_sends_only_current_image(self, mock_genai):
+        mock_genai.Client.return_value.models = _create_mock_model(MOCK_VALID_RESPONSE)
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        diagnose_and_plan(img, {}, iteration=1, original_image=img)
+
+        contents = self._call_kwargs(mock_genai)["contents"]
+        assert len(contents) == 2  # prompt + ảnh hiện tại
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_later_iteration_sends_original_and_current(self, mock_genai):
+        mock_genai.Client.return_value.models = _create_mock_model(MOCK_VALID_RESPONSE)
+        original = np.zeros((64, 64, 3), dtype=np.uint8)
+        current = np.full((64, 64, 3), 200, dtype=np.uint8)
+        diagnose_and_plan(current, {}, iteration=2, original_image=original)
+
+        contents = self._call_kwargs(mock_genai)["contents"]
+        images = [c for c in contents if not isinstance(c, str)]
+        assert len(images) == 2
+        assert np.asarray(images[0]).max() == 0  # ảnh gốc trước
+        assert np.asarray(images[1]).min() == 200  # ảnh hiện tại cuối cùng
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_grayscale_image_is_accepted(self, mock_genai):
+        mock_genai.Client.return_value.models = _create_mock_model(MOCK_VALID_RESPONSE)
+        img = np.ones((64, 64, 1), dtype=np.uint8) * 128
+        plan = diagnose_and_plan(img, {}, iteration=1)
+
+        assert plan.source == "vlm"
+        assert self._call_kwargs(mock_genai)["contents"][-1].mode == "L"
+
+
+class TestRuleBasedPlan:
+    """Phase 0: luật dự phòng thêm overexposed; blur/ám màu cố ý để VLM quyết định."""
+
+    @staticmethod
+    def _ops(metrics: dict) -> list:
+        img = np.ones((32, 32, 3), dtype=np.uint8) * 128
+        return [(a.operation, a.parameters) for a in diagnose_and_plan(img, metrics).actions]
+
+    def test_overexposed_darkens(self):
+        assert self._ops({"brightness_level": "overexposed"}) == [("gamma_correct", {"gamma": 0.8})]
+
+    def test_blur_and_color_cast_are_left_to_the_vlm(self):
+        assert self._ops({"blur_level": "severe_blur", "color_cast": "warm"}) == []
+
+    def test_offline_plan_source(self):
+        img = np.ones((32, 32, 3), dtype=np.uint8) * 128
+        assert diagnose_and_plan(img, {}).source == "rule_based"
 
 
 class TestVLMFallbackRuleBased:
@@ -422,14 +649,12 @@ class TestVLMEndToEnd:
     @patch("src.agent.vlm_diagnostician.genai")
     def test_pipeline_with_mock_vlm(self, mock_genai):
         """Chạy run_pipeline với mock VLM sinh plan hợp lệ."""
-        # Vòng 1 trả về valid response, vòng 2 trả về plan rỗng (đã tốt)
-        empty_response = json.dumps({"iteration": 2, "reasoning": "Ảnh đã tốt", "actions": []})
-        mock_response_1 = MagicMock(text=MOCK_VALID_RESPONSE)
-        mock_response_2 = MagicMock(text=empty_response)
-
-        mock_model = MagicMock()
-        mock_model.generate_content.side_effect = [mock_response_1, mock_response_2]
-        mock_genai.GenerativeModel.return_value = mock_model
+        # Vòng 1: chẩn đoán có lỗi → plan hợp lệ; vòng 2: chẩn đoán sạch → plan rỗng (đã tốt)
+        _route_gemini(
+            mock_genai,
+            perceive=[_diagnosis_json(DARK_DEFECT), _diagnosis_json()],
+            plan=[MOCK_VALID_RESPONSE],
+        )
 
         img = np.ones((64, 64, 3), dtype=np.uint8) * 128
         result_state = run_pipeline(image=img, max_iterations=2)
@@ -440,3 +665,32 @@ class TestVLMEndToEnd:
         assert "intermediate_images" in result_state
         assert len(result_state["intermediate_images"]) >= 1
         assert result_state["decision"] in ["SHIP", "STOP_BEST_EFFORT"]
+
+
+class TestVLMParameterFiltering:
+    """Phase 2: schema tham số là hợp của mọi operation → bỏ tham số không thuộc operation."""
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_foreign_parameters_are_dropped(self, mock_genai):
+        response = _vlm_plan(
+            {
+                "region_id": "full",
+                "target_prompt": "full",
+                "detected_issue": "noise",
+                "operation": "denoise",
+                "parameters": {
+                    "method": "bilateral",
+                    "strength": 1.5,
+                    "gamma": 1.3,
+                    "clip_limit": 2.0,
+                    "temperature_shift": 0.0,
+                },
+            }
+        )
+        mock_genai.Client.return_value.models = _create_mock_model(response)
+
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        plan = diagnose_and_plan(img, {}, iteration=1)
+
+        assert plan.actions[0].parameters == {"method": "bilateral", "strength": 1.5}

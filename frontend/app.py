@@ -8,9 +8,47 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import gradio as gr
 import numpy as np
+from dotenv import load_dotenv
 
 from src.agent.graph import run_pipeline
+from src.agent.state import DiagnosisReport
 from src.analyzer_evaluator.analyzer import analyze_image
+
+_SEVERITY_LABELS = {0: "không đáng kể", 1: "nhẹ", 2: "rõ", 3: "nặng"}
+
+
+def format_diagnosis(diagnosis: Any) -> str:
+    """Định dạng chẩn đoán giai đoạn Perceive thành Markdown cho UI."""
+    if diagnosis is None:
+        return ""
+    if isinstance(diagnosis, dict):
+        diagnosis = DiagnosisReport.model_validate(diagnosis)
+
+    lighting = f" · ánh sáng: {diagnosis.lighting}" if diagnosis.lighting else ""
+    lines = [f"- **Cảnh:** `{diagnosis.scene_type}`{lighting} · nguồn: `{diagnosis.source}`"]
+    if diagnosis.summary:
+        lines.append(f"- **Chẩn đoán:** {diagnosis.summary}")
+    for defect in diagnosis.defects:
+        severity = _SEVERITY_LABELS.get(defect.severity, str(defect.severity))
+        evidence = f" — {defect.evidence}" if defect.evidence else ""
+        lines.append(
+            f"  - Lỗi **`{defect.type}`** ở `{defect.region}` "
+            f"({severity}, {defect.origin}){evidence}"
+        )
+    for item in diagnosis.preserve:
+        reason = f" — {item.reason}" if item.reason else ""
+        lines.append(f"  - Giữ **`{item.aspect}`** ở `{item.region}`{reason}")
+    for region, measured in diagnosis.region_metrics.items():
+        gap = (
+            f", lệch {measured.brightness_vs_rest:+.0f} so với phần còn lại"
+            if measured.brightness_vs_rest is not None
+            else ""
+        )
+        lines.append(
+            f"  - Đo vùng `{region}` ({measured.backend}): "
+            f"sáng {measured.brightness_mean:.0f}/255{gap}"
+        )
+    return "\n".join(lines)
 
 
 def process_interface(
@@ -96,12 +134,16 @@ def process_interface(
 
         reasoning = ""
         actions: List[Any] = []
+        knowledge: List[str] = []
         if plan:
             reasoning = getattr(plan, "reasoning", "") or (
                 plan.get("reasoning", "") if isinstance(plan, dict) else ""
             )
             actions = getattr(plan, "actions", []) or (
                 plan.get("actions", []) if isinstance(plan, dict) else []
+            )
+            knowledge = getattr(plan, "knowledge", []) or (
+                plan.get("knowledge", []) if isinstance(plan, dict) else []
             )
 
         actions_text = []
@@ -120,10 +162,21 @@ def process_interface(
 
         actions_block = "\n".join(actions_text) if actions_text else "  *(Không có thao tác)*"
 
+        diagnosis = getattr(item, "diagnosis", None) or (
+            item.get("diagnosis") if isinstance(item, dict) else None
+        )
+        diagnosis_md = format_diagnosis(diagnosis)
+
         reasoning_sections.append(
             f"#### 🔄 Vòng lặp {it} (Quyết định: `{item_decision}`)\n"
-            f"- **Chẩn đoán VLM:** {reasoning}\n"
-            f"- **Phác đồ thực thi:**\n{actions_block}"
+            + (f"{diagnosis_md}\n" if diagnosis_md else "")
+            + f"- **Lập kế hoạch:** {reasoning}\n"
+            + (
+                f"- **Tri thức tham khảo:** {', '.join(f'`{k}`' for k in knowledge)}\n"
+                if knowledge
+                else ""
+            )
+            + f"- **Phác đồ thực thi:**\n{actions_block}"
         )
 
     reasoning_md = (
@@ -223,5 +276,7 @@ def create_app() -> gr.Blocks:
 
 
 if __name__ == "__main__":
+    # Chỉ nạp .env khi chạy UI, không nạp khi test import module này
+    load_dotenv(encoding="utf-8-sig")
     app = create_app()
     app.launch(server_name="0.0.0.0", server_port=7860, theme=gr.themes.Soft())

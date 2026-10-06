@@ -53,6 +53,9 @@ def test_diagnose_endpoint():
     assert "treatment_plan" in data
     assert "brightness_mean" in data["technical_metrics"]
     assert "actions" in data["treatment_plan"]
+    # Phase 1: chẩn đoán có cấu trúc đi kèm kế hoạch
+    assert "defects" in data["diagnosis"]
+    assert "preserve" in data["diagnosis"]
 
 
 def test_process_endpoint_real_image():
