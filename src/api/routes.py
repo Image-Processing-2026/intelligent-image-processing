@@ -10,9 +10,8 @@ import numpy as np
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from PIL import Image
 
-from src.agent.graph import run_pipeline
-from src.agent.planner import validate_and_sort_plan
-from src.agent.vlm_diagnostician import diagnose_and_plan
+from src.agent.graph import plan_treatment, run_pipeline
+from src.agent.perception import perceive
 from src.analyzer_evaluator.analyzer import analyze_image
 
 from .schemas import DiagnoseResponse, ProcessResponse
@@ -42,14 +41,14 @@ def health_check():
 
 @router.post("/diagnose", response_model=DiagnoseResponse)
 async def diagnose_image_endpoint(file: UploadFile = File(...)):
-    """Chỉ phân tích chỉ số kỹ thuật và chẩn đoán kế hoạch điều trị."""
+    """Phân tích chỉ số kỹ thuật, chẩn đoán (Perceive) và lập kế hoạch điều trị, không xử lý ảnh."""
     try:
         content = await file.read()
         img = _read_image_file(content)
         metrics = analyze_image(img).model_dump()
-        plan = diagnose_and_plan(img, metrics, iteration=1)
-        validated_plan = validate_and_sort_plan(plan)
-        return DiagnoseResponse(technical_metrics=metrics, treatment_plan=validated_plan)
+        diagnosis = perceive(img, metrics, iteration=1)
+        plan = plan_treatment(img, metrics, diagnosis, iteration=1)
+        return DiagnoseResponse(technical_metrics=metrics, diagnosis=diagnosis, treatment_plan=plan)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

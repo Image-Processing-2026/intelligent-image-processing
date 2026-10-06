@@ -7,7 +7,7 @@ import json
 import gradio as gr
 import numpy as np
 
-from frontend.app import create_app, process_interface
+from frontend.app import create_app, format_diagnosis, process_interface
 
 
 def test_process_interface_none_input():
@@ -63,3 +63,37 @@ def test_create_app():
     """Kiểm tra hàm khởi tạo Gradio Blocks."""
     demo = create_app()
     assert isinstance(demo, gr.Blocks)
+
+
+def test_format_diagnosis_lists_defects_preserve_and_regions():
+    """Chẩn đoán Phase 1 hiển thị lỗi, điều cần giữ và số đo vùng; nhận cả dict (JSON)."""
+    from src.agent.state import Defect, DiagnosisReport, PreserveItem, RegionMetrics
+
+    diagnosis = DiagnosisReport(
+        scene_type="portrait",
+        lighting="ngược sáng",
+        summary="Mặt tối.",
+        defects=[Defect(type="backlit_subject", region="face", severity=2, origin="measured")],
+        preserve=[PreserveItem(aspect="warm_tone", reason="nắng chiều")],
+        region_metrics={
+            "face": RegionMetrics(
+                region="face",
+                backend="mediapipe",
+                area_ratio=0.1,
+                brightness_mean=55.0,
+                brightness_std=10.0,
+                brightness_level="underexposed",
+                highlight_clip_ratio=0.0,
+                shadow_clip_ratio=0.0,
+                brightness_vs_rest=-120.0,
+            )
+        },
+    )
+    for value in (diagnosis, diagnosis.model_dump()):
+        text = format_diagnosis(value)
+        assert "portrait" in text
+        assert "backlit_subject" in text
+        assert "warm_tone" in text
+        assert "-120" in text
+
+    assert format_diagnosis(None) == ""
