@@ -40,6 +40,9 @@ PSNR_DEGRADATION = 1.5  # dB — Ngưỡng suy thoái cho phép giữa 2 vòng
 # Ngưỡng chất lượng cho quyết định dừng (ảnh thực, điểm heuristic No-Reference 0–100)
 REAL_TARGET_SCORE = 85.0  # Đạt mức này → SHIP, tránh xử lý quá tay
 REAL_MIN_GAIN = 1.0  # Điểm tăng ít hơn mức này so với vòng trước → đã bão hòa, dừng
+# Vòng vừa xử lý lỗi từ mức này trở lên → chưa SHIP theo điểm toàn cục, chẩn đoán lại để xác nhận
+# (điểm toàn cục gần như không phản ánh lỗi trên vùng nhỏ như khuôn mặt ngược sáng)
+VERIFY_SEVERITY = 2
 
 
 # ---------------------------------------------------------
@@ -223,6 +226,13 @@ def _decide_real(eval_result: Dict[str, Any], history: List[HistoryItem]) -> str
     return "RE_PROCESS"
 
 
+def _needs_verification(diagnosis: Optional[DiagnosisReport]) -> bool:
+    """True nếu vòng này xử lý lỗi severity >= VERIFY_SEVERITY → cần Perceive lại để xác nhận."""
+    if diagnosis is None:
+        return False
+    return any(defect.severity >= VERIFY_SEVERITY for defect in diagnosis.defects)
+
+
 def _create_thumbnail(image: np.ndarray, max_size: int = 512) -> np.ndarray:
     """Resize ảnh xuống thumbnail để tiết kiệm bộ nhớ."""
     h, w = image.shape[:2]
@@ -285,7 +295,10 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
             if is_syn
             else _decide_real(eval_result, history)
         )
-        # 3. Giới hạn cứng: hết vòng lặp mà chưa đạt → dừng nỗ lực tốt nhất
+        # 3. Ảnh thực: SHIP theo điểm chỉ được chấp nhận khi chẩn đoán xác nhận lỗi rõ đã hết
+        if decision == "SHIP" and not is_syn and _needs_verification(state.get("diagnosis")):
+            decision = "RE_PROCESS"
+        # 4. Giới hạn cứng: hết vòng lặp mà chưa đạt → dừng nỗ lực tốt nhất
         if decision == "RE_PROCESS" and iteration >= max_iters:
             decision = "STOP_BEST_EFFORT"
 

@@ -355,4 +355,6 @@ Graph: `analyze → perceive → diagnose_and_plan → process → evaluate → 
 3. Synthetic: PSNR ≥ 28 dB and SSIM ≥ 0.88 → `SHIP`.
    Real: `estimated_quality_score` ≥ `REAL_TARGET_SCORE` (85) → `SHIP`;
    gain over the previous iteration < `REAL_MIN_GAIN` (1.0) → `STOP_BEST_EFFORT` (plateau).
-4. Otherwise `RE_PROCESS`, or `STOP_BEST_EFFORT` when `max_iterations` is reached.
+4. Real images only: a score-based `SHIP` becomes `RE_PROCESS` when this iteration's diagnosis
+   had a defect with severity ≥ `VERIFY_SEVERITY` (2), so the next Perceive confirms the fix.
+5. Otherwise `RE_PROCESS`, or `STOP_BEST_EFFORT` when `max_iterations` is reached.

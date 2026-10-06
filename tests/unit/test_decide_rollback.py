@@ -9,7 +9,14 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from src.agent.graph import PSNR_DEGRADATION, REAL_MIN_GAIN, REAL_TARGET_SCORE, decide_node
-from src.agent.state import DoctorState, HistoryItem, RegionOperation, TreatmentPlan
+from src.agent.state import (
+    Defect,
+    DiagnosisReport,
+    DoctorState,
+    HistoryItem,
+    RegionOperation,
+    TreatmentPlan,
+)
 
 CURRENT = np.full((16, 16, 3), 200, dtype=np.uint8)
 PREVIOUS = np.full((16, 16, 3), 100, dtype=np.uint8)
@@ -206,4 +213,46 @@ def test_empty_plan_on_final_iteration_ships():
         max_iterations=3,
     )
     state["treatment_plan"] = TreatmentPlan(iteration=3, reasoning="good", actions=[])
+    assert decide_node(state)["decision"] == "SHIP"
+
+
+# ---------------------------------------------------------
+# Phase 1: SHIP ảnh thực cần chẩn đoán xác nhận lỗi rõ (severity >= 2) đã hết
+# ---------------------------------------------------------
+def _with_diagnosis(state: DoctorState, severity: int) -> DoctorState:
+    state["diagnosis"] = DiagnosisReport(
+        defects=[Defect(type="backlit_subject", region="face", severity=severity)]
+    )
+    return state
+
+
+def test_target_score_after_major_defect_requires_verification():
+    """Điểm toàn cục đạt nhưng vòng này xử lý lỗi rõ → RE_PROCESS để Perceive lại."""
+    eval_result = {"quality_improved": True, "estimated_quality_score": 95.0}
+    state = _with_diagnosis(_state(is_synthetic=False, eval_result=eval_result), severity=2)
+    res = decide_node(state)
+    assert res["decision"] == "RE_PROCESS"
+    assert res["history"][-1].diagnosis.defects[0].type == "backlit_subject"
+
+
+def test_minor_defects_ship_on_target_score():
+    eval_result = {"quality_improved": True, "estimated_quality_score": 95.0}
+    state = _with_diagnosis(_state(is_synthetic=False, eval_result=eval_result), severity=1)
+    assert decide_node(state)["decision"] == "SHIP"
+
+
+def test_verification_on_final_iteration_stops_best_effort():
+    eval_result = {"quality_improved": True, "estimated_quality_score": 95.0}
+    state = _with_diagnosis(
+        _state(is_synthetic=False, eval_result=eval_result, iteration=3, max_iterations=3),
+        severity=3,
+    )
+    assert decide_node(state)["decision"] == "STOP_BEST_EFFORT"
+
+
+def test_synthetic_target_ignores_verification():
+    """Synthetic có ground truth: PSNR/SSIM là thước đo khách quan, không cần xác nhận lại."""
+    state = _with_diagnosis(
+        _state(is_synthetic=True, eval_result={"psnr": 30.0, "ssim": 0.9}), severity=3
+    )
     assert decide_node(state)["decision"] == "SHIP"
