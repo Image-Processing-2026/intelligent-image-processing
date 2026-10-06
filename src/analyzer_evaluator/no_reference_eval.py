@@ -61,6 +61,10 @@ _DELTA_SHARPNESS_SHARPEN_THRESHOLD = 20.0  # Cải thiện khi laplacian var tă
 _DELTA_NOISE_SHARPEN_MAX = 3.0  # Khi tăng nét, nhiễu không được tăng quá 3
 _DELTA_NOISE_DEGRADE_THRESHOLD = 10.0  # Thoái hóa rõ khi nhiễu tăng > 10
 _SHARPNESS_DROP_MAX_RATIO = 0.30  # Khi khử nhiễu, không được mất > 30% nét
+# Phương sai Laplacian của nhiễu trắng ≈ hệ số × σ̂² (σ̂: ước lượng Immerkær). Đo trên ảnh phẳng
+# có nhiễu Gauss σ = 5–20 (xám và màu): 12.4–12.7. Trên ảnh nhiều chi tiết và ít nhiễu, Immerkær
+# tính lẫn kết cấu nên phép trừ hơi quá tay; chỉ dùng cho phép kiểm mất nét khi khử nhiễu.
+_NOISE_LAPLACIAN_GAIN = 12.6
 
 
 # ---------------------------------------------------------------------------
@@ -215,6 +219,17 @@ def _compute_delta_metrics(curr: TechnicalMetrics, prev: TechnicalMetrics) -> di
     }
 
 
+def _signal_sharpness(metrics: TechnicalMetrics) -> float:
+    """
+    Độ nét đã trừ phần phương sai Laplacian do nhiễu gây ra (không âm).
+
+    Phương sai Laplacian tăng theo nhiễu: ảnh càng nhiễu càng "nét" theo chỉ số thô. Khử nhiễu
+    vì thế luôn làm chỉ số thô giảm mạnh dù chi tiết thật được giữ nguyên.
+    """
+    noise_part = _NOISE_LAPLACIAN_GAIN * metrics.noise_variance**2
+    return max(metrics.sharpness_laplacian_var - noise_part, 0.0)
+
+
 def _determine_quality_improved(
     curr: TechnicalMetrics,
     prev: TechnicalMetrics,
@@ -228,7 +243,8 @@ def _determine_quality_improved(
        - Nhiễu tăng đột biến > 10.0 → Thoái hóa.
        - Xuất hiện highlight clipping mới (cháy sáng) → Thoái hóa.
     2. Mục tiêu khử nhiễu đạt khi:
-       - Δ_noise < -1.5 VÀ độ sụt sharpness < 30%.
+       - Δ_noise < -1.5 VÀ độ sụt sharpness < 30% (sharpness đã trừ phần do nhiễu,
+         xem _signal_sharpness).
     3. Mục tiêu tăng nét đạt khi:
        - Δ_sharpness > 20 VÀ Δ_noise < 3.0.
     4. Mục tiêu tăng sáng đạt khi:
@@ -269,9 +285,9 @@ def _determine_quality_improved(
 
     # --- Kiểm tra từng mục tiêu cải thiện ---
     # Mục tiêu 1: Khử nhiễu thành công
-    sharpness_drop_ratio = (prev.sharpness_laplacian_var - curr.sharpness_laplacian_var) / max(
-        prev.sharpness_laplacian_var, 1.0
-    )
+    # So độ nét đã trừ phần do nhiễu: nhiễu thổi phồng phương sai Laplacian
+    prev_signal = _signal_sharpness(prev)
+    sharpness_drop_ratio = (prev_signal - _signal_sharpness(curr)) / max(prev_signal, 1.0)
     denoise_improved = (
         delta_noise < _DELTA_NOISE_DENOISE_THRESHOLD
         and sharpness_drop_ratio < _SHARPNESS_DROP_MAX_RATIO
