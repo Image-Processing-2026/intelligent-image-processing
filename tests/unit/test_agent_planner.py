@@ -237,15 +237,14 @@ def test_diagnose_and_plan_node_passes_history():
     with patch("src.agent.graph.diagnose_and_plan") as mock_diag:
         mock_diag.return_value = TreatmentPlan(iteration=2, reasoning="ok", actions=[])
         res = diagnose_and_plan_node(state)
-        mock_diag.assert_called_once_with(
-            image=state["current_image"],
-            metrics=state["technical_metrics"],
-            iteration=2,
-            history=state["history"],
-            original_image=state["original_image"],
-            diagnosis=None,
-            intent_text="",
-        )
+        mock_diag.assert_called_once()
+        kwargs = mock_diag.call_args.kwargs
+        # Chỉ kiểm tra phần test này quan tâm: lịch sử và ảnh được truyền đúng
+        assert kwargs["history"] is state["history"]
+        assert kwargs["iteration"] == 2
+        assert kwargs["image"] is state["current_image"]
+        assert kwargs["original_image"] is state["original_image"]
+        assert kwargs["metrics"] is state["technical_metrics"]
         assert res["treatment_plan"] is not None
 
 

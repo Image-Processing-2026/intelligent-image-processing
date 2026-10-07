@@ -259,3 +259,6 @@ class DoctorState(TypedDict):
     variant_ranking_source: Optional[str]  # "critic" (VLM) hoặc "score" (Module 1)
     interactive: bool  # True → dừng sau chẩn đoán đầu tiên để hỏi ý định (cần checkpointer)
     intent: Optional[IntentProfile]
+    user_id: str  # Chủ của các ca trong bộ nhớ (Phase 5)
+    # Vì sao phiên bản được đề xuất: "intent" | "preference" | "critic" | "score"
+    recommended_reason: Optional[str]

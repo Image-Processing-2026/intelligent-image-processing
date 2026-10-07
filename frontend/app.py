@@ -4,6 +4,7 @@ Giao diện người dùng trực quan: so sánh Before/After, Timeline, lý do 
 """
 
 import json
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
 import gradio as gr
@@ -12,6 +13,14 @@ from dotenv import load_dotenv
 
 from src.agent.executor import execute_plan
 from src.agent.graph import run_pipeline
+from src.agent.memory import (
+    DEFAULT_MEMORY_PATH,
+    DEFAULT_USER,
+    MEMORY_ENV,
+    configure_case_memory,
+    get_case_memory,
+    remember_run,
+)
 from src.agent.planner import sanitize_actions
 from src.agent.refine import refine
 from src.agent.session import SessionNotFoundError, answer_session, start_session
@@ -223,6 +232,12 @@ def _format_result(
 VariantActions = Dict[str, List[Dict[str, Any]]]
 
 
+RECOMMENDATION_REASONS = {
+    "intent": "theo phong cách bạn đã chọn",
+    "preference": "theo phong cách bạn hay chọn trước đây (bộ nhớ)",
+}
+
+
 def _variant_outputs(
     result_state: Dict[str, Any],
 ) -> Tuple[List[Tuple[np.ndarray, str]], str, Any, VariantActions]:
@@ -239,6 +254,9 @@ def _variant_outputs(
     source_text = "VLM critic so sánh trực quan" if source == "critic" else "điểm Module 1"
     gallery: List[Tuple[np.ndarray, str]] = []
     lines = [f"**Xếp hạng theo:** {source_text}"]
+    reason = RECOMMENDATION_REASONS.get(result_state.get("recommended_reason") or "")
+    if reason:
+        lines.append(f"**Đề xuất:** {reason}")
     for variant in variants:
         star = " ⭐ đề xuất" if variant.id == recommended else ""
         gallery.append((variant.image, f"#{variant.rank} {variant.label}{star}"))
@@ -263,11 +281,11 @@ def process_with_variants(
 ) -> Tuple[Any, ...]:
     """
     Chạy pipeline một lần, trả về 5 đầu ra của process_interface cộng 4 đầu ra của phần
-    chọn phiên bản (gallery, mô tả, radio, phác đồ).
+    chọn phiên bản (gallery, mô tả, radio, phác đồ) và id ca trong bộ nhớ (None nếu tắt).
     """
     if input_image is None:
         empty = process_interface(None, None, max_iters)
-        return (*empty, [], "*Chưa có phiên bản.*", gr.update(choices=[], value=None), {})
+        return (*empty, [], "*Chưa có phiên bản.*", gr.update(choices=[], value=None), {}, None)
     is_synthetic = ground_truth is not None
     result_state = run_pipeline(
         image=input_image,
@@ -279,17 +297,26 @@ def process_with_variants(
     return (
         *_format_result(input_image, is_synthetic, max_iters, result_state),
         *_variant_outputs(result_state),
+        remember_run(result_state),
     )
+
+
+def _record_choice(case_id: Optional[str], variant_id: str) -> None:
+    """Ghi phiên bản người dùng chọn vào bộ nhớ (nếu bộ nhớ bật và có ca)."""
+    memory = get_case_memory()
+    if memory is not None and case_id:
+        memory.record_choice(case_id, variant_id)
 
 
 def render_chosen_variant(
     input_image: Optional[np.ndarray],
     choice: Optional[str],
     variant_actions: Optional[VariantActions],
+    case_id: Optional[str] = None,
 ) -> Tuple[Optional[np.ndarray], str]:
     """
     Render phiên bản đã chọn ở độ phân giải gốc: áp lại đúng phác đồ của phiên bản (giữ
-    nguyên thứ tự, đã kẹp tham số) lên ảnh đầu vào.
+    nguyên thứ tự, đã kẹp tham số) lên ảnh đầu vào, và ghi lựa chọn vào bộ nhớ.
     """
     if input_image is None or not choice or not variant_actions or choice not in variant_actions:
         return None, "⚠️ **Hãy chạy xử lý với số phiên bản > 1 rồi chọn một phiên bản.**"
@@ -297,6 +324,7 @@ def render_chosen_variant(
         [RegionOperation.model_validate(raw) for raw in variant_actions[choice]]
     )
     rendered = execute_plan(input_image, TreatmentPlan(reasoning=choice, actions=actions))
+    _record_choice(case_id, choice)
     height, width = rendered.shape[:2]
     return rendered, f"✅ Đã xuất phiên bản **{choice}** ở độ phân giải gốc ({width}×{height})."
 
@@ -365,10 +393,10 @@ def chat_answer(
 
     Returns:
         (lịch sử chat, ảnh kết quả, gallery phiên bản, cập nhật radio phiên bản,
-        phác đồ từng phiên bản, phác đồ hiện tại).
+        phác đồ từng phiên bản, phác đồ hiện tại, id ca trong bộ nhớ).
     """
     history = list(history or [])
-    empty = (None, [], gr.update(choices=[], value=None), {}, [])
+    empty = (None, [], gr.update(choices=[], value=None), {}, [], None)
     if not session_id:
         history.append({"role": "assistant", "content": "Hãy bấm 'Phân tích & hỏi ý' trước."})
         return (history, *empty)
@@ -401,13 +429,16 @@ def chat_answer(
     label = next((v.label for v in state.get("variants") or [] if v.id == recommended), None)
     message = f"✅ Xong ({state.get('decision')})."
     if label:
-        message += f" Mình đề xuất bản **{label}**; bạn có thể chọn bản khác bên dưới."
+        reason = RECOMMENDATION_REASONS.get(state.get("recommended_reason") or "")
+        why = f" ({reason})" if reason else ""
+        message += f" Mình đề xuất bản **{label}**{why}; bạn có thể chọn bản khác bên dưới."
     message += " Nếu chưa ưng, hãy góp ý (ví dụ: 'da hơi vàng', 'trời gắt quá')."
     history.append({"role": "assistant", "content": message})
     output = state.get("current_image")
     if current and recommended and recommended != "balanced":
         output = _render_actions(state["original_image"], current)
-    return (history, output, gallery, choice_update, variant_actions, current)
+    case_id = remember_run(state, state.get("user_id") or DEFAULT_USER)
+    return (history, output, gallery, choice_update, variant_actions, current, case_id)
 
 
 def _render_actions(image: np.ndarray, actions: List[Dict[str, Any]]) -> np.ndarray:
@@ -420,11 +451,16 @@ def chat_select_variant(
     input_image: Optional[np.ndarray],
     choice: Optional[str],
     variant_actions: Optional[VariantActions],
+    case_id: Optional[str] = None,
 ) -> Tuple[Optional[np.ndarray], List[Dict[str, Any]]]:
-    """Chọn một phiên bản: render full-res và lấy phác đồ của nó làm phác đồ hiện tại."""
+    """
+    Chọn một phiên bản: render full-res, lấy phác đồ của nó làm phác đồ hiện tại và ghi
+    lựa chọn vào bộ nhớ.
+    """
     if input_image is None or not choice or not variant_actions or choice not in variant_actions:
         return None, []
     actions = variant_actions[choice]
+    _record_choice(case_id, choice)
     return _render_actions(input_image, actions), actions
 
 
@@ -433,9 +469,10 @@ def chat_feedback(
     current_actions: Optional[List[Dict[str, Any]]],
     feedback: str,
     history: Optional[ChatHistory],
+    case_id: Optional[str] = None,
 ) -> Tuple[Any, ...]:
     """
-    Chỉnh theo góp ý trên phác đồ hiện tại.
+    Chỉnh theo góp ý trên phác đồ hiện tại; góp ý hiểu được được ghi vào bộ nhớ.
 
     Returns:
         (lịch sử chat, ảnh mới, phác đồ mới, ô góp ý đã xóa).
@@ -448,6 +485,9 @@ def chat_feedback(
     result = refine(input_image, actions, feedback)
     if result.adjustments:
         reply = "🔧 Đã chỉnh: " + "; ".join(result.notes) + "."
+        memory = get_case_memory()
+        if memory is not None and case_id:
+            memory.record_feedback(case_id, feedback, result.adjustments)
     else:
         reply = (
             "Mình chưa hiểu cần chỉnh gì. Bạn thử nói cụ thể hơn, ví dụ 'tối quá', "
@@ -520,6 +560,7 @@ def create_app() -> gr.Blocks:
                     variant_choice = gr.Radio(label="Phiên bản muốn xuất", choices=[])
                     btn_render = gr.Button("💾 Xuất phiên bản đã chọn (full-res)")
                 variant_actions = gr.State({})
+                case_state = gr.State(None)
 
             # ==================== TAB 2: Lịch sử Chi tiết ====================
             with gr.TabItem("📊 Lịch sử Chi tiết"):
@@ -567,6 +608,7 @@ def create_app() -> gr.Blocks:
                 questions_state = gr.State([])
                 chat_variant_actions = gr.State({})
                 current_actions = gr.State([])
+                chat_case = gr.State(None)
 
         btn_run.click(
             fn=process_with_variants,
@@ -581,11 +623,12 @@ def create_app() -> gr.Blocks:
                 variants_box,
                 variant_choice,
                 variant_actions,
+                case_state,
             ],
         )
         btn_render.click(
             fn=render_chosen_variant,
-            inputs=[in_img, variant_choice, variant_actions],
+            inputs=[in_img, variant_choice, variant_actions, case_state],
             outputs=[out_img, status_box],
         )
         btn_start.click(
@@ -603,16 +646,17 @@ def create_app() -> gr.Blocks:
                 chat_choice,
                 chat_variant_actions,
                 current_actions,
+                chat_case,
             ],
         )
         chat_choice.input(
             fn=chat_select_variant,
-            inputs=[chat_img, chat_choice, chat_variant_actions],
+            inputs=[chat_img, chat_choice, chat_variant_actions, chat_case],
             outputs=[chat_out, current_actions],
         )
         btn_feedback.click(
             fn=chat_feedback,
-            inputs=[chat_img, current_actions, feedback_box, chatbot],
+            inputs=[chat_img, current_actions, feedback_box, chatbot, chat_case],
             outputs=[chatbot, chat_out, current_actions, feedback_box],
         )
 
@@ -622,5 +666,7 @@ def create_app() -> gr.Blocks:
 if __name__ == "__main__":
     # Chỉ nạp .env khi chạy UI, không nạp khi test import module này
     load_dotenv(encoding="utf-8-sig")
+    # Bộ nhớ ca bệnh (Phase 5): CASE_MEMORY_PATH rỗng → tắt
+    configure_case_memory(os.getenv(MEMORY_ENV, str(DEFAULT_MEMORY_PATH)))
     app = create_app()
     app.launch(server_name="0.0.0.0", server_port=7860, theme=gr.themes.Soft())

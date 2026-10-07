@@ -19,6 +19,7 @@ from langgraph.types import Command
 
 from .graph import build_doctor_graph, initial_doctor_state
 from .intent import Question
+from .memory import DEFAULT_USER
 from .state import DiagnosisReport, DoctorState
 
 logger = logging.getLogger(__name__)
@@ -81,6 +82,7 @@ def start_session(
     max_iterations: int = 3,
     num_variants: int = 3,
     session_id: Optional[str] = None,
+    user_id: str = DEFAULT_USER,
 ) -> SessionResult:
     """
     Bắt đầu một phiên tương tác: phân tích và chẩn đoán vòng 1 rồi dừng để hỏi ý định.
@@ -92,6 +94,7 @@ def start_session(
         max_iterations=max_iterations,
         num_variants=num_variants,
         interactive=True,
+        user_id=user_id,
     )
     return _result(session_id, _APP.invoke(state, _config(session_id)))
 

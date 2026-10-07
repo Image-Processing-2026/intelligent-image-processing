@@ -74,6 +74,13 @@ class ProcessResponse(BaseModel):
         description="Phác đồ của ảnh kết quả (các vòng không rollback); gửi /refine để chỉnh",
     )
     intent: Optional[IntentProfile] = None
+    recommended_reason: Optional[str] = Field(
+        default=None, description="'intent', 'preference' (bộ nhớ), 'critic' hoặc 'score'"
+    )
+    case_id: Optional[str] = Field(
+        default=None,
+        description="Id ca trong bộ nhớ; gửi kèm /render và /refine để ghi lựa chọn và góp ý",
+    )
 
 
 class SessionResponse(BaseModel):
@@ -104,3 +111,13 @@ class RefineResponse(BaseModel):
     notes: List[str] = Field(default_factory=list, description="Điều chỉnh đã làm, tiếng Việt")
     source: str = Field(..., description="'rules', 'vlm' hoặc 'none' (không hiểu góp ý)")
     quality_score: Optional[float] = None
+
+
+class MemoryStats(BaseModel):
+    """Thống kê bộ nhớ ca bệnh."""
+
+    enabled: bool
+    cases: int = 0
+    choices: Dict[str, int] = Field(default_factory=dict)
+    feedback: Dict[str, int] = Field(default_factory=dict)
+    preferred_style: Optional[str] = None

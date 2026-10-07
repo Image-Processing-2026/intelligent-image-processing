@@ -118,8 +118,9 @@ def test_process_with_variants_and_render_choice():
 
     img = _dark_image()
     outputs = process_with_variants(img, None, 2, 3)
-    assert len(outputs) == 9
-    out_img, _, _, _, _, variants_gallery, variants_md, choice, actions = outputs
+    assert len(outputs) == 10
+    out_img, _, _, _, _, variants_gallery, variants_md, choice, actions, case_id = outputs
+    assert case_id is None  # bộ nhớ tắt trong test
 
     assert len(variants_gallery) == 3
     assert "Xếp hạng theo" in variants_md
@@ -138,7 +139,7 @@ def test_process_with_single_variant_and_missing_choice():
     assert outputs[5] == [] and outputs[8] == {}
     rendered, status = render_chosen_variant(_dark_image(), None, {})
     assert rendered is None and "chọn một phiên bản" in status
-    assert len(process_with_variants(None, None, 1, 3)) == 9
+    assert len(process_with_variants(None, None, 1, 3)) == 10
 
 
 def test_chat_flow_asks_answers_and_refines():
@@ -153,9 +154,10 @@ def test_chat_flow_asks_answers_and_refines():
     assert "Chẩn đoán" in history[-1]["content"]
 
     answers = [q["default"] for q in questions] + [None] * (QUESTION_SLOTS - len(questions))
-    history, out, gallery, choice, variant_actions, current = chat_answer(
+    history, out, gallery, choice, variant_actions, current, case_id = chat_answer(
         session_id, questions, *answers, "", history
     )
+    assert case_id is None
     assert out.shape == img.shape and "Xong" in history[-1]["content"]
     assert choice["value"] in variant_actions
 
@@ -174,3 +176,16 @@ def test_chat_without_image_or_session():
     assert out is None
     history, *_ = chat_feedback(_dark_image(), [], "", [])
     assert history == []
+
+
+def test_ui_records_the_chosen_variant(tmp_path):
+    """Phase 5: xuất phiên bản trong UI ghi lựa chọn vào bộ nhớ ca bệnh."""
+    from frontend.app import process_with_variants, render_chosen_variant
+    from src.agent.memory import configure_case_memory
+
+    memory = configure_case_memory(tmp_path / "cases.sqlite")
+    img = _dark_image()
+    *_, actions, case_id = process_with_variants(img, None, 1, 3)
+    assert case_id is not None
+    render_chosen_variant(img, "vivid", actions, case_id)
+    assert memory.get(case_id).chosen_variant == "vivid"

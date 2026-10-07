@@ -427,11 +427,32 @@ def refine(original, actions, feedback) -> RefineResult                        #
   operations, and the rest are appended. The image is re-rendered from the original. Feedback
   is an explicit user request, so it bypasses the preserve guard.
 
+**Case memory (Phase 5, `src/agent/memory.py`):**
+- `configure_case_memory(path)` enables a SQLite store; `None` disables it. It is disabled by
+  default. `src/api/main.py` and `frontend/app.py` (`__main__`) enable it at
+  `CASE_MEMORY_PATH` (default `data/memory/cases.sqlite`, gitignored; an empty value disables
+  it). The DB opens lazily on first use, and the test suite disables memory for every test.
+- A `CaseRecord` is stored per finished run: user id, scene, a normalised 6-value metric
+  signature of the original image, defects, preserve, intent style, treatment, best score,
+  recommended variant, then the **chosen variant** and **feedback** (texts and parsed
+  adjustments) as the user acts. **No images are stored.**
+- `similar(diagnosis, metrics, user_id)` returns up to 3 cases with distance ≤ 0.6. The
+  distance is the RMS signature distance, plus 0.5 × (1 − Jaccard of defect types), minus
+  0.2 for the same scene. On iteration 1 they go into the Plan prompt as
+  "KINH NGHIỆM TỪ CA TƯƠNG TỰ", and VLM plans list them in `knowledge` as `case:<id8>`.
+- `preferred_style(user_id)`: after ≥ 3 choices, a style chosen ≥ 60% of the time becomes the
+  recommended variant (`recommended_reason="preference"`). An explicit intent style still wins
+  (`"intent"`).
+
 **API:** `POST /api/v1/process` accepts the form field `num_variants` and returns `variants`
 (`VariantOut`: the fields above plus `preview_base64`), `recommended_variant` and
 `variant_ranking_source`. `POST /api/v1/render` (multipart `file` + form `actions` as a JSON
 list of `RegionOperation`) returns `{image_base64, width, height, applied_actions}`.
-`ProcessResponse` also carries `treatment` (the result's actions) and `intent`.
+`ProcessResponse` also carries `treatment` (the result's actions), `intent`,
+`recommended_reason` and `case_id`. `/process` and `/sessions` accept `user_id` (default
+`"default"`). `/render` accepts optional `case_id` + `variant_id` to record a choice, and
+`/refine` accepts an optional `case_id` to record understood feedback.
+`GET /api/v1/memory?user_id=` returns `{enabled, cases, choices, feedback, preferred_style}`.
 - `POST /api/v1/sessions` (file, `max_iterations`, `num_variants`) →
   `{session_id, status: "needs_input", questions, diagnosis}`.
 - `POST /api/v1/sessions/{id}/answers` (JSON `{answers, notes}`) →

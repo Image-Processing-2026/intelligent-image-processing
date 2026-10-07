@@ -60,6 +60,8 @@ weights/
 data/synthetic/clean/*
 data/synthetic/degraded/*
 data/real/*
+# Bộ nhớ ca bệnh (Phase 5): số liệu và lựa chọn của người dùng, không commit
+data/memory/
 !data/synthetic/clean/.gitkeep
 !data/synthetic/degraded/.gitkeep
 !data/real/.gitkeep
