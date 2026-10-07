@@ -3,7 +3,8 @@ Trạng thái làm việc của LangGraph (Doctor State Schema).
 Lưu trữ toàn bộ dữ liệu ảnh, chỉ số kỹ thuật, lịch sử xử lý và kế hoạch điều trị.
 """
 
-from typing import Any, Dict, List, Literal, Optional, TypedDict
+import operator
+from typing import Annotated, Any, Dict, List, Literal, Optional, TypedDict
 
 import numpy as np
 from pydantic import BaseModel, Field
@@ -189,6 +190,27 @@ class HistoryItem(BaseModel):
     )
 
 
+class Variant(BaseModel):
+    """Một phiên bản kết quả (phong cách) để người dùng chọn, render trên ảnh preview."""
+
+    id: str = Field(..., description="Mã phong cách: balanced, natural, vivid")
+    label: str
+    description: str = ""
+    actions: List[RegionOperation] = Field(
+        default_factory=list, description="Phác đồ đã áp phong cách; dùng để render full-res"
+    )
+    # Ảnh preview (np.ndarray) chỉ dùng trong tiến trình; không đưa vào model_dump/JSON
+    image: Optional[Any] = Field(default=None, exclude=True)
+    quality_score: Optional[float] = Field(
+        default=None, description="Điểm No-Reference của Module 1 trên ảnh preview"
+    )
+    quality_improved: Optional[bool] = Field(
+        default=None, description="Module 1: phiên bản có cải thiện so với ảnh gốc không"
+    )
+    rank: Optional[int] = Field(default=None, description="Thứ hạng, 1 là tốt nhất")
+    critic_note: str = Field(default="", description="Nhận xét của VLM critic (nếu có)")
+
+
 class DoctorState(TypedDict):
     """Kiểu dữ liệu trạng thái được truyền qua lại giữa các Node trong LangGraph."""
 
@@ -208,3 +230,9 @@ class DoctorState(TypedDict):
     decision: str  # "SHIP", "RE_PROCESS", "STOP_BEST_EFFORT"
     rolled_back: bool  # True nếu kết quả cuối là ảnh đã rollback do suy thoái
     error_message: Optional[str]
+    num_variants: int  # > 1 → sinh các phiên bản phong cách sau khi vòng lặp kết thúc
+    # Các nhánh render song song (Send) cộng dồn kết quả vào đây (chưa xếp hạng)
+    variant_candidates: Annotated[List[Variant], operator.add]
+    variants: List[Variant]  # Đã bỏ trùng và xếp hạng, rank 1 trước
+    recommended_variant: Optional[str]
+    variant_ranking_source: Optional[str]  # "critic" (VLM) hoặc "score" (Module 1)
