@@ -61,8 +61,9 @@ class Defect(BaseModel):
     region: str = Field(default="full", description="'full' hoặc target_prompt của một vùng")
     severity: int = Field(default=1, ge=0, le=3, description="0 không đáng kể … 3 nặng")
     evidence: str = Field(default="", description="Bằng chứng ngắn gọn")
-    # vlm: VLM chẩn đoán; rule: luật từ metric toàn cục; measured: suy ra từ số đo theo vùng
-    origin: Literal["vlm", "rule", "measured"] = "vlm"
+    # vlm: VLM chẩn đoán; rule: luật từ metric toàn cục; measured: suy ra từ số đo theo vùng;
+    # user: người dùng yêu cầu sửa (Phase 4)
+    origin: Literal["vlm", "rule", "measured", "user"] = "vlm"
 
 
 class PreserveItem(BaseModel):
@@ -190,6 +191,26 @@ class HistoryItem(BaseModel):
     )
 
 
+# Phong cách người dùng có thể chọn (khớp id phong cách trong variants.STYLES)
+STYLE_CHOICES: tuple[str, ...] = ("natural", "balanced", "vivid")
+
+
+class IntentProfile(BaseModel):
+    """Ý định của người dùng, thu từ hội thoại trước khi xử lý (Phase 4)."""
+
+    style: Optional[Literal[STYLE_CHOICES]] = None  # type: ignore[valid-type]
+    keep: List[PreserveItem] = Field(
+        default_factory=list, description="Đặc điểm người dùng muốn giữ (ghi đè chẩn đoán)"
+    )
+    fix: List[Literal[DEFECT_TYPES]] = Field(  # type: ignore[valid-type]
+        default_factory=list, description="Loại lỗi người dùng muốn sửa dù VLM coi là chủ ý"
+    )
+    notes: str = Field(default="", description="Ghi chú tự do của người dùng, đưa vào prompt Plan")
+    answers: Dict[str, str] = Field(
+        default_factory=dict, description="Câu trả lời thô: id câu hỏi → lựa chọn"
+    )
+
+
 class Variant(BaseModel):
     """Một phiên bản kết quả (phong cách) để người dùng chọn, render trên ảnh preview."""
 
@@ -236,3 +257,5 @@ class DoctorState(TypedDict):
     variants: List[Variant]  # Đã bỏ trùng và xếp hạng, rank 1 trước
     recommended_variant: Optional[str]
     variant_ranking_source: Optional[str]  # "critic" (VLM) hoặc "score" (Module 1)
+    interactive: bool  # True → dừng sau chẩn đoán đầu tiên để hỏi ý định (cần checkpointer)
+    intent: Optional[IntentProfile]
