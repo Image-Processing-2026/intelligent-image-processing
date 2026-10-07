@@ -1,12 +1,12 @@
 """
 Các định tuyến API RESTful (API Routes).
-Cung cấp các endpoint: /diagnose, /process, /render, /refine, /sessions, /health.
+Cung cấp các endpoint: /diagnose, /process, /render, /refine, /sessions, /memory, /health.
 """
 
 import base64
 import json
 from io import BytesIO
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import numpy as np
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -16,6 +16,7 @@ from pydantic import ValidationError
 
 from src.agent.executor import execute_plan
 from src.agent.graph import plan_treatment, run_pipeline
+from src.agent.memory import DEFAULT_USER, get_case_memory, remember_run
 from src.agent.perception import perceive
 from src.agent.planner import sanitize_actions
 from src.agent.refine import refine
@@ -33,6 +34,7 @@ from src.analyzer_evaluator.analyzer import analyze_image
 from .schemas import (
     AnswerRequest,
     DiagnoseResponse,
+    MemoryStats,
     ProcessResponse,
     RefineResponse,
     RenderResponse,
@@ -89,6 +91,7 @@ async def process_image_endpoint(
     ground_truth: UploadFile = File(None),
     max_iterations: int = Form(3),
     num_variants: int = Form(1),
+    user_id: str = Form(DEFAULT_USER),
 ):
     """Thực thi toàn bộ chu trình xử lý ảnh khép kín với LangGraph."""
     try:
@@ -110,14 +113,17 @@ async def process_image_endpoint(
             is_synthetic=is_synthetic,
             max_iterations=max_iterations,
             num_variants=num_variants,
+            user_id=user_id,
         )
 
-        return _process_response(result_state)
+        return _process_response(result_state, remember_run(result_state, user_id))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _process_response(result_state: Dict[str, Any]) -> ProcessResponse:
+def _process_response(
+    result_state: Dict[str, Any], case_id: Optional[str] = None
+) -> ProcessResponse:
     """Đóng gói trạng thái cuối của pipeline thành ProcessResponse (ảnh dạng Base64 PNG)."""
     history = result_state.get("history", [])
     return ProcessResponse(
@@ -140,6 +146,8 @@ def _process_response(result_state: Dict[str, Any]) -> ProcessResponse:
         variant_ranking_source=result_state.get("variant_ranking_source"),
         treatment=treatment_recipe(history),
         intent=result_state.get("intent"),
+        recommended_reason=result_state.get("recommended_reason"),
+        case_id=case_id,
     )
 
 
@@ -155,11 +163,17 @@ def _parse_actions(raw: str) -> list:
 
 
 @router.post("/render", response_model=RenderResponse)
-async def render_variant_endpoint(file: UploadFile = File(...), actions: str = Form(...)):
+async def render_variant_endpoint(
+    file: UploadFile = File(...),
+    actions: str = Form(...),
+    case_id: Optional[str] = Form(None),
+    variant_id: Optional[str] = Form(None),
+):
     """
     Render một phiên bản đã chọn ở độ phân giải gốc: áp đúng danh sách thao tác của phiên bản
     (trường `actions` trong /process) lên ảnh gốc. Thao tác được lọc và kẹp như planner nhưng
     GIỮ NGUYÊN thứ tự, để kết quả khớp với ảnh preview người dùng đã chọn.
+    case_id + variant_id (tùy chọn): ghi lựa chọn này vào bộ nhớ ca bệnh.
     """
     parsed = _parse_actions(actions)
     try:
@@ -167,6 +181,9 @@ async def render_variant_endpoint(file: UploadFile = File(...), actions: str = F
         applied = sanitize_actions(parsed)
         plan = TreatmentPlan(reasoning="render", actions=applied)
         rendered = await run_in_threadpool(execute_plan, img, plan)
+        memory = get_case_memory()
+        if memory is not None and case_id and variant_id:
+            memory.record_choice(case_id, variant_id)
         return RenderResponse(
             image_base64=_encode_image_to_base64(rendered),
             width=int(rendered.shape[1]),
@@ -179,17 +196,24 @@ async def render_variant_endpoint(file: UploadFile = File(...), actions: str = F
 
 @router.post("/refine", response_model=RefineResponse)
 async def refine_endpoint(
-    file: UploadFile = File(...), actions: str = Form(...), feedback: str = Form(...)
+    file: UploadFile = File(...),
+    actions: str = Form(...),
+    feedback: str = Form(...),
+    case_id: Optional[str] = Form(None),
 ):
     """
     Chỉnh kết quả theo góp ý ("da hơi vàng, trời gắt quá"): phân tích góp ý thành điều chỉnh,
     áp vào phác đồ `actions` (treatment hoặc actions của một phiên bản) rồi render lại từ
     ảnh gốc ở độ phân giải gốc. Gửi lại `actions` trả về để góp ý tiếp.
+    case_id (tùy chọn): ghi góp ý vào bộ nhớ ca bệnh để lần sau agent học được.
     """
     parsed = _parse_actions(actions)
     try:
         img = _read_image_file(await file.read())
         result = await run_in_threadpool(refine, img, parsed, feedback)
+        memory = get_case_memory()
+        if memory is not None and case_id and result.adjustments:
+            memory.record_feedback(case_id, feedback, result.adjustments)
         return RefineResponse(
             image_base64=_encode_image_to_base64(result.image),
             width=int(result.image.shape[1]),
@@ -205,13 +229,17 @@ async def refine_endpoint(
 
 
 def _session_response(result: SessionResult) -> SessionResponse:
-    """Đóng gói một bước của phiên tương tác."""
+    """Đóng gói một bước của phiên tương tác; phiên xong thì ghi ca vào bộ nhớ."""
+    processed = None
+    if result.state is not None:
+        user_id = result.state.get("user_id") or DEFAULT_USER
+        processed = _process_response(result.state, remember_run(result.state, user_id))
     return SessionResponse(
         session_id=result.session_id,
         status=result.status,
         questions=result.questions,
         diagnosis=result.diagnosis,
-        result=_process_response(result.state) if result.state is not None else None,
+        result=processed,
     )
 
 
@@ -220,6 +248,7 @@ async def start_session_endpoint(
     file: UploadFile = File(...),
     max_iterations: int = Form(3),
     num_variants: int = Form(3),
+    user_id: str = Form(DEFAULT_USER),
 ):
     """
     Bắt đầu phiên tương tác: phân tích, chẩn đoán vòng 1 rồi dừng để hỏi ý định
@@ -228,7 +257,11 @@ async def start_session_endpoint(
     try:
         img = _read_image_file(await file.read())
         result = await run_in_threadpool(
-            start_session, img, max_iterations=max_iterations, num_variants=num_variants
+            start_session,
+            img,
+            max_iterations=max_iterations,
+            num_variants=num_variants,
+            user_id=user_id,
         )
         return _session_response(result)
     except Exception as e:
@@ -253,3 +286,12 @@ async def answer_session_endpoint(session_id: str, request: AnswerRequest):
 def delete_session_endpoint(session_id: str) -> None:
     """Xóa phiên và trạng thái đã lưu."""
     end_session(session_id)
+
+
+@router.get("/memory", response_model=MemoryStats)
+def memory_stats_endpoint(user_id: Optional[str] = None) -> MemoryStats:
+    """Thống kê bộ nhớ ca bệnh (số ca, lựa chọn phong cách, góp ý hay gặp, sở thích)."""
+    memory = get_case_memory()
+    if memory is None:
+        return MemoryStats(enabled=False)
+    return MemoryStats(enabled=True, **memory.stats(user_id))
