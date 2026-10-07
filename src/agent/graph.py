@@ -18,8 +18,9 @@ try:
 except ImportError:
     pass
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, StateGraph
-from langgraph.types import Send
+from langgraph.types import Send, interrupt
 
 from src.analyzer_evaluator.analyzer import analyze_image
 from src.analyzer_evaluator.no_reference_eval import evaluate_no_reference
@@ -27,9 +28,10 @@ from src.analyzer_evaluator.reference_eval import evaluate_reference
 
 from .executor import execute_plan
 from .imaging import downscale
+from .intent import apply_intent, build_questions, intent_from_answers, intent_prompt
 from .perception import perceive
 from .planner import action_region, apply_preserve_guard, validate_and_sort_plan
-from .state import DiagnosisReport, DoctorState, HistoryItem, TreatmentPlan
+from .state import DiagnosisReport, DoctorState, HistoryItem, IntentProfile, TreatmentPlan
 from .variants import (
     is_noisy,
     merged_preserve,
@@ -73,7 +75,33 @@ def perceive_node(state: DoctorState) -> Dict[str, Any]:
         history=state.get("history", []),
         original_image=state.get("original_image"),
     )
-    return {"diagnosis": diagnosis}
+    # Ý định người dùng (đã hỏi ở vòng 1) ghi đè chẩn đoán của mọi vòng
+    return {"diagnosis": apply_intent(diagnosis, state.get("intent"))}
+
+
+def clarify_node(state: DoctorState) -> Dict[str, Any]:
+    """
+    Node hỏi ý định (Phase 4): chỉ ở vòng 1, khi chạy tương tác và chưa có ý định.
+    interrupt() dừng graph và trả câu hỏi cho người dùng; khi resume với
+    {"answers": {...}, "notes": "..."} node chạy lại từ đầu, nên phần dựng câu hỏi phải
+    tất định (build_questions đáp ứng điều này).
+    """
+    if not state.get("interactive") or state.get("intent") is not None or state["iteration"] > 1:
+        return {}
+    diagnosis = state.get("diagnosis")
+    questions = build_questions(diagnosis)
+    response = interrupt(
+        {
+            "questions": [question.model_dump() for question in questions],
+            "diagnosis": diagnosis.model_dump(mode="json") if diagnosis is not None else None,
+        }
+    )
+    response = response if isinstance(response, dict) else {}
+    intent = intent_from_answers(
+        questions, dict(response.get("answers") or {}), str(response.get("notes") or "")
+    )
+    updated = apply_intent(diagnosis, intent) if diagnosis is not None else None
+    return {"intent": intent, "diagnosis": updated}
 
 
 def plan_treatment(
@@ -83,9 +111,11 @@ def plan_treatment(
     iteration: int = 1,
     history: Optional[List[HistoryItem]] = None,
     original_image: Optional[np.ndarray] = None,
+    intent: Optional[IntentProfile] = None,
 ) -> TreatmentPlan:
     """
     Giai đoạn Plan: lập kế hoạch từ chẩn đoán, chuẩn hóa và áp preserve guard.
+    Ý định người dùng đã được áp vào chẩn đoán; ở đây chỉ đưa thêm vào prompt VLM.
     Chẩn đoán không còn lỗi nào (severity >= 1) → plan rỗng, không gọi VLM lần hai.
     """
     if diagnosis is not None and not diagnosis.actionable_defects:
@@ -102,6 +132,7 @@ def plan_treatment(
         history=history,
         original_image=original_image,
         diagnosis=diagnosis,
+        intent_text=intent_prompt(intent),
     )
     validated_plan = validate_and_sort_plan(plan)
     if diagnosis is not None:
@@ -118,6 +149,7 @@ def diagnose_and_plan_node(state: DoctorState) -> Dict[str, Any]:
         iteration=state["iteration"],
         history=state.get("history", []),
         original_image=state.get("original_image"),
+        intent=state.get("intent"),
     )
     return {"treatment_plan": plan}
 
@@ -392,6 +424,9 @@ def should_continue(state: DoctorState) -> Union[str, List[Send]]:
     if state["decision"] == "RE_PROCESS":
         return "re_process"
     style_ids = styles_for(state.get("num_variants", 1))
+    intent = state.get("intent")
+    if intent is not None and intent.style and intent.style not in style_ids:
+        style_ids.append(intent.style)
     if len(style_ids) < 2:
         return "ship"
     history = state.get("history") or []
@@ -428,6 +463,10 @@ def rank_variants_node(state: DoctorState) -> Dict[str, Any]:
     ranked, recommended, source = rank_variants(
         downscale(state["original_image"]), state.get("variant_candidates") or [], diagnosis
     )
+    # Người dùng đã nói rõ phong cách mong muốn → đề xuất đúng phong cách đó
+    intent = state.get("intent")
+    if intent is not None and intent.style in {variant.id for variant in ranked}:
+        recommended = intent.style
     return {
         "variants": ranked,
         "recommended_variant": recommended,
@@ -438,12 +477,13 @@ def rank_variants_node(state: DoctorState) -> Dict[str, Any]:
 # ---------------------------------------------------------
 # Xây dựng và biên dịch đồ thị
 # ---------------------------------------------------------
-def build_doctor_graph():
-    """Khởi tạo StateGraph của LangGraph."""
+def build_doctor_graph(checkpointer: Optional[BaseCheckpointSaver] = None):
+    """Khởi tạo StateGraph của LangGraph (checkpointer cần cho chạy tương tác/interrupt)."""
     workflow = StateGraph(DoctorState)
 
     workflow.add_node("analyze", analyze_node)
     workflow.add_node("perceive", perceive_node)
+    workflow.add_node("clarify", clarify_node)
     workflow.add_node("diagnose_and_plan", diagnose_and_plan_node)
     workflow.add_node("process", process_node)
     workflow.add_node("evaluate", evaluate_node)
@@ -454,7 +494,8 @@ def build_doctor_graph():
     workflow.set_entry_point("analyze")
 
     workflow.add_edge("analyze", "perceive")
-    workflow.add_edge("perceive", "diagnose_and_plan")
+    workflow.add_edge("perceive", "clarify")
+    workflow.add_edge("clarify", "diagnose_and_plan")
     workflow.add_edge("diagnose_and_plan", "process")
     workflow.add_edge("process", "evaluate")
     workflow.add_edge("evaluate", "decide")
@@ -468,7 +509,7 @@ def build_doctor_graph():
     workflow.add_edge("render_variant", "rank_variants")
     workflow.add_edge("rank_variants", END)
 
-    return workflow.compile()
+    return workflow.compile(checkpointer=checkpointer)
 
 
 def run_pipeline(
@@ -477,13 +518,31 @@ def run_pipeline(
     is_synthetic: bool = False,
     max_iterations: int = 3,
     num_variants: int = 1,
+    intent: Optional[IntentProfile] = None,
 ) -> DoctorState:
     """
     Hàm giao tiếp ngoài để chạy toàn bộ chu trình xử lý ảnh.
     num_variants > 1 (tối đa 3): sau vòng lặp, sinh các phiên bản phong cách trên ảnh preview
     (state["variants"], đã xếp hạng); current_image vẫn là kết quả full-res của phác đồ.
+    intent: ý định người dùng có sẵn (không hỏi). Chạy tương tác: xem src/agent/session.py.
     """
     app = build_doctor_graph()
+    initial_state = initial_doctor_state(
+        image, ground_truth, is_synthetic, max_iterations, num_variants, intent
+    )
+    return app.invoke(initial_state)
+
+
+def initial_doctor_state(
+    image: np.ndarray,
+    ground_truth: Optional[np.ndarray] = None,
+    is_synthetic: bool = False,
+    max_iterations: int = 3,
+    num_variants: int = 1,
+    intent: Optional[IntentProfile] = None,
+    interactive: bool = False,
+) -> DoctorState:
+    """State khởi đầu của pipeline (dùng chung cho chạy thường và chạy tương tác)."""
     initial_state: DoctorState = {
         "original_image": image,
         "current_image": image.copy(),
@@ -506,5 +565,7 @@ def run_pipeline(
         "variants": [],
         "recommended_variant": None,
         "variant_ranking_source": None,
+        "interactive": interactive,
+        "intent": intent,
     }
-    return app.invoke(initial_state)
+    return initial_state

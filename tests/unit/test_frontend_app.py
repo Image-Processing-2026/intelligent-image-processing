@@ -139,3 +139,38 @@ def test_process_with_single_variant_and_missing_choice():
     rendered, status = render_chosen_variant(_dark_image(), None, {})
     assert rendered is None and "chọn một phiên bản" in status
     assert len(process_with_variants(None, None, 1, 3)) == 9
+
+
+def test_chat_flow_asks_answers_and_refines():
+    """Phase 4: hỏi ý → trả lời → góp ý; mỗi bước cập nhật hội thoại và ảnh."""
+    from frontend.app import QUESTION_SLOTS, chat_answer, chat_feedback, chat_start
+
+    img = _dark_image()
+    history, session_id, questions, *radios = chat_start(img, [])
+    assert session_id and questions[-1]["id"] == "style"
+    assert len(radios) == QUESTION_SLOTS
+    assert radios[len(questions) - 1]["visible"] is True
+    assert "Chẩn đoán" in history[-1]["content"]
+
+    answers = [q["default"] for q in questions] + [None] * (QUESTION_SLOTS - len(questions))
+    history, out, gallery, choice, variant_actions, current = chat_answer(
+        session_id, questions, *answers, "", history
+    )
+    assert out.shape == img.shape and "Xong" in history[-1]["content"]
+    assert choice["value"] in variant_actions
+
+    history, refined, new_actions, cleared = chat_feedback(img, current, "tối quá", history)
+    assert "Đã chỉnh" in history[-1]["content"] and cleared == ""
+    assert len(new_actions) == len(current) + 1
+    assert refined.mean() > out.mean()
+
+
+def test_chat_without_image_or_session():
+    from frontend.app import chat_answer, chat_feedback, chat_start
+
+    history, session_id, *_ = chat_start(None, [])
+    assert session_id is None and "tải một ảnh" in history[-1]["content"]
+    history, out, *_ = chat_answer(None, [], None, None, None, "", [])
+    assert out is None
+    history, *_ = chat_feedback(_dark_image(), [], "", [])
+    assert history == []
