@@ -29,6 +29,17 @@ def _offline_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _no_case_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Tắt bộ nhớ ca bệnh trong mọi test (src.api.main bật nó khi import), để test không ghi
+    vào data/memory. Test cần bộ nhớ tự cấu hình một file tạm.
+    """
+    from src.agent import memory
+
+    monkeypatch.setattr(memory, "_MEMORY", None)
+
+
 @pytest.fixture
 def flat_gray_image() -> np.ndarray:
     """Ảnh RGB xám đồng nhất mức 128 — contrast=0, noise=0."""
