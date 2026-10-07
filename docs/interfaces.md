@@ -359,8 +359,45 @@ operation's parameters. Parameters that belong to another operation are dropped.
 The rule-based plan (no API key, or Gemini failed) runs the recipes of the `auto_apply`
 playbook cards that match the diagnosis plus the defects implied by the Module 1 levels.
 
-Graph: `analyze → perceive → diagnose_and_plan → process → evaluate → decide`.
+Graph: `analyze → perceive → diagnose_and_plan → process → evaluate → decide`, then, when
+`num_variants > 1`, `decide → render_variant ×N (parallel, LangGraph Send) → rank_variants → END`.
 `POST /api/v1/diagnose` returns `{technical_metrics, diagnosis, treatment_plan}`.
+
+**Variants (Phase 3, `src/agent/variants.py`):**
+```python
+class Variant(BaseModel):              # src/agent/state.py
+    id: str                            # "balanced" | "natural" | "vivid"
+    label: str
+    description: str = ""
+    actions: List[RegionOperation]     # styled treatment; re-render with POST /render
+    image: Optional[np.ndarray]        # ≤1024 px preview, excluded from model_dump/JSON
+    quality_score: Optional[float]     # Module 1 no-reference score of the preview
+    quality_improved: Optional[bool]
+    rank: Optional[int]                # 1 = best
+    critic_note: str = ""              # VLM critic comment (when GEMINI_API_KEY is set)
+
+def run_pipeline(image, ground_truth=None, is_synthetic=False, max_iterations=3,
+                 num_variants=1) -> DoctorState
+# num_variants > 1 (max 3) adds state["variants"] (ranked), state["recommended_variant"] and
+# state["variant_ranking_source"] ("critic" | "score"). state["current_image"] is unchanged:
+# the full-resolution result of the loop, i.e. the "balanced" style.
+```
+- The treatment is the actions of every iteration that was not rolled back, in order.
+- Styles are deterministic transforms of that treatment: balanced is the treatment as is;
+  natural is gentler (×0.5–0.8) with no sharpening; vivid is stronger, and adds CLAHE 1.5
+  (skipped on noisy images) and saturation 1.12 when the treatment lacks them.
+  Every style is clamped and passes `apply_preserve_guard`.
+- Ranking: a VLM critic compares the original with every variant in one call and only judges
+  (ADR-001). Without a key, or when the critic fails, the Module 1 score decides: variants
+  that did not improve rank last, and a 0.5-point tie tolerance favours `balanced`. Variants
+  whose images are identical are dropped.
+- `planner.sanitize_actions(actions)` drops unknown operations and clamps parameters and region
+  fields **without reordering**, so a variant re-rendered at full resolution matches its preview.
+
+**API:** `POST /api/v1/process` accepts the form field `num_variants` and returns `variants`
+(`VariantOut`: the fields above plus `preview_base64`), `recommended_variant` and
+`variant_ranking_source`. `POST /api/v1/render` (multipart `file` + form `actions` as a JSON
+list of `RegionOperation`) returns `{image_base64, width, height, applied_actions}`.
 
 **Decision rules (`graph.decide_node`), in order:**
 1. Degraded iteration → `STOP_BEST_EFFORT` and roll back to the previous image.
