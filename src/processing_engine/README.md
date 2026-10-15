@@ -24,12 +24,25 @@ def apply_region_op(
     image: np.ndarray,
     mask: np.ndarray | None,
     op_func: Callable[[np.ndarray, ...], np.ndarray],
+    *,
+    crop_halo: int | None = None,
     **kwargs,
 ) -> np.ndarray:
     """
     Áp dụng hàm op_func lên ảnh và tự động hòa trộn theo mặt nạ mềm (nếu có).
     """
 ```
+
+**Crop-to-mask.** Outside `mask > 0` the blend always returns the original pixels, so an operation that declares `crop_halo` (its kernel's radius of influence) runs only on the mask's bounding box plus that halo. Output is byte-identical to running on the whole image, and 3–12× faster for masks covering 5–25% of a 1080p–12MP image (see [`docs/module3/benchmark/crop_to_mask.md`](../../docs/module3/benchmark/crop_to_mask.md)).
+
+| Cropped (`crop_halo`) | Always whole image (`None`) |
+|---|---|
+| denoise `gaussian` (4σ_blur + 1), `median` (k/2), `nlm` (13) | denoise `bilateral` — OpenCV float SIMD rounds by pixel position (±1) |
+| sharpen `unsharp_mask` (9) | sharpen `laplacian` — `filter2D` float, same ±1 issue |
+| `gamma` (0), `color_balance` with only `temperature_shift` (0) | `color_balance` with `saturation_scale` — `HSV2RGB` ±1 |
+| | `clahe`, `white_balance` — use whole-image / whole-region statistics |
+
+Only declare `crop_halo` for an operation after adding it to `tests/unit/test_crop_to_mask.py`, which checks byte equality against the whole-image path.
 
 ### 2.2 Denoising (`denoise.py`)
 - `apply_denoise(image, mask, method="bilateral", strength=1.0)`

@@ -83,10 +83,14 @@ def apply_color_balance(
             f"{1.0 / TEMPERATURE_GAIN_PER_UNIT:.2f} so channel gains stay positive, "
             f"got {temperature_shift}"
         )
+    # Gain kênh là phép toán từng điểm ảnh → cắt theo mask không cần halo. Khi đổi saturation thì
+    # không cắt: HSV2RGB của OpenCV làm tròn khác nhau theo vị trí điểm ảnh (lệch 1 mức xám).
+    crop_halo = 0 if abs(saturation_scale - 1.0) <= 1e-3 else None
     return apply_region_op(
         image,
         mask,
         _raw_color_balance,
+        crop_halo=crop_halo,
         saturation_scale=saturation_scale,
         temperature_shift=temperature_shift,
     )

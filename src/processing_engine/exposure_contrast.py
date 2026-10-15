@@ -32,7 +32,8 @@ def apply_gamma(
         ProcessingInputError: gamma không phải số > 0, hoặc ảnh/mặt nạ vi phạm hợp đồng.
     """
     gamma = require_number(gamma, "gamma", "apply_gamma", gt=0.0)
-    return apply_region_op(image, mask, _raw_gamma, gamma=gamma)
+    # Phép toán từng điểm ảnh (LUT) → cắt theo mask không cần halo
+    return apply_region_op(image, mask, _raw_gamma, crop_halo=0, gamma=gamma)
 
 
 def _raw_clahe(
