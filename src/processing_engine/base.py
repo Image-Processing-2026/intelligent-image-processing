@@ -145,7 +145,7 @@ def apply_region_op(
         op_name,
         image.shape,
         "none" if mask is None else "soft",
-        kwargs,
+        {k: f"<array {v.shape}>" if isinstance(v, np.ndarray) else v for k, v in kwargs.items()},
     )
 
     # 1. Áp dụng thuật toán xử lý ảnh lên toàn bộ khung hình

@@ -43,7 +43,16 @@ def apply_region_op(
 - `apply_sharpen(image, mask, method="unsharp_mask", amount=1.0)`
 
 ### 2.5 Color Balance & Correction (`color.py`)
-- `apply_color_balance(image, mask, saturation_scale=1.1, temperature_shift=0.0)`
+- `apply_color_balance(image, mask, saturation_scale=1.0, temperature_shift=0.0)`
+  - `temperature_shift` is a warm/cool tone shift via channel gains (`gain_R = 1 + k·t`, `gain_B = 1 − k·t`, `k = 20/128`), not a Kelvin colour temperature.
+- `apply_white_balance(image, mask, method="gray_world", percentile=99.0)`
+  - Methods: `"gray_world"`, `"white_patch"`. The mask also weights the illuminant estimate.
+  - Not yet wired into the Agent toolbox — see [`HANDOFF_PERSON4.md`](HANDOFF_PERSON4.md).
+
+### 2.6 Input contract & errors (`base.py`)
+- Images: `uint8`, shape `(H, W, 3)` RGB, `(H, W)` or `(H, W, 1)` grayscale. The output always has the input shape.
+- Masks: `float32`, shape `(H, W)` or `(H, W, 1)`, finite values in `[0, 1]`.
+- Anything else (RGBA, float images, unknown `method`, `gamma <= 0`, NaN, …) raises `ProcessingInputError` (a `ValueError`) before any filtering runs. Normalising images (dropping alpha, converting dtype) is the caller's job.
 
 ---
 
