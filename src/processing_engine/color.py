@@ -7,7 +7,7 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from .base import apply_region_op
+from .base import apply_region_op, require_number
 
 
 def _raw_color_balance(
@@ -43,7 +43,17 @@ def apply_color_balance(
 ) -> np.ndarray:
     """
     Cân chỉnh màu sắc cho vùng ảnh xác định theo mặt nạ mềm.
+
+    Raises:
+        ProcessingInputError: saturation_scale âm, tham số không phải số hữu hạn,
+            hoặc ảnh/mặt nạ vi phạm hợp đồng.
     """
+    saturation_scale = require_number(
+        saturation_scale, "saturation_scale", "apply_color_balance", ge=0.0
+    )
+    temperature_shift = require_number(
+        temperature_shift, "temperature_shift", "apply_color_balance"
+    )
     return apply_region_op(
         image,
         mask,

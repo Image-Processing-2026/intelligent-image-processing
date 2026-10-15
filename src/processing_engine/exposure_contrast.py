@@ -8,16 +8,16 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
-from .base import apply_region_op
+from .base import ProcessingInputError, apply_region_op, require_number
 
 
 def _raw_gamma(image: np.ndarray, gamma: float = 1.0) -> np.ndarray:
     """Biến đổi gamma: I_out = 255 * (I_in / 255) ^ (1 / gamma)."""
     if abs(gamma - 1.0) < 1e-3:
         return image
-    # Tạo bảng ánh xạ LUT (Lookup Table) để tăng tốc độ tính toán
-    inv_gamma = 1.0 / max(0.01, gamma)
-    table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)]).astype(np.uint8)
+    # Tạo bảng ánh xạ LUT (Lookup Table) 256 phần tử: tính lũy thừa 1 lần cho mỗi mức xám
+    # thay vì cho từng điểm ảnh. Giữ phép cắt cụt (astype) vì test tích hợp của Module 2 khóa LUT này.
+    table = np.array([((i / 255.0) ** (1.0 / gamma)) * 255 for i in range(256)]).astype(np.uint8)
     return cv2.LUT(image, table)
 
 
@@ -27,7 +27,11 @@ def apply_gamma(
     """
     Hiệu chỉnh độ sáng phi tuyến tính theo vùng bằng hàm Gamma.
     gamma > 1.0 làm sáng ảnh tối; gamma < 1.0 làm tối ảnh chói.
+
+    Raises:
+        ProcessingInputError: gamma không phải số > 0, hoặc ảnh/mặt nạ vi phạm hợp đồng.
     """
+    gamma = require_number(gamma, "gamma", "apply_gamma", gt=0.0)
     return apply_region_op(image, mask, _raw_gamma, gamma=gamma)
 
 
@@ -49,6 +53,22 @@ def _raw_clahe(
     return cv2.cvtColor(lab_merged, cv2.COLOR_LAB2RGB)
 
 
+def _validate_tile_grid(tile_grid_size: object) -> Tuple[int, int]:
+    """Lưới tile phải là 2 số nguyên dương; chấp nhận list (VD: từ JSON) và chuyển thành tuple."""
+    if (
+        not isinstance(tile_grid_size, (tuple, list))
+        or len(tile_grid_size) != 2
+        or not all(
+            isinstance(v, (int, np.integer)) and not isinstance(v, bool) and v > 0
+            for v in tile_grid_size
+        )
+    ):
+        raise ProcessingInputError(
+            f"apply_clahe: tile_grid_size must be two positive integers, got {tile_grid_size!r}"
+        )
+    return (int(tile_grid_size[0]), int(tile_grid_size[1]))
+
+
 def apply_clahe(
     image: np.ndarray,
     mask: Optional[np.ndarray] = None,
@@ -57,7 +77,13 @@ def apply_clahe(
 ) -> np.ndarray:
     """
     Áp dụng CLAHE lên vùng ảnh chỉ định để cải thiện độ tương phản cục bộ.
+
+    Raises:
+        ProcessingInputError: clip_limit không phải số > 0, tile_grid_size không phải
+            2 số nguyên dương, hoặc ảnh/mặt nạ vi phạm hợp đồng.
     """
+    clip_limit = require_number(clip_limit, "clip_limit", "apply_clahe", gt=0.0)
+    tile_grid_size = _validate_tile_grid(tile_grid_size)
     return apply_region_op(
         image, mask, _raw_clahe, clip_limit=clip_limit, tile_grid_size=tile_grid_size
     )
