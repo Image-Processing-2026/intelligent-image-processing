@@ -142,6 +142,12 @@ Cả hai đều **giữ nguyên phơi sáng chung** (không đẩy ảnh sáng l
    còn vùng sáng dịch mạnh hơn một chút. Đây là chỉnh tông ấm/lạnh, không phải nhiệt độ màu Kelvin.
 3. **Ảnh `(H, W, 1)`** giờ được trả về đúng shape `(H, W, 1)`.
 4. `apply_clahe` nhận `tile_grid_size` dạng list (từ JSON). Executor hiện chưa truyền tham số này.
+5. **`denoise.strength` có nghĩa vật lý:** σ_target = 12.5 · strength (σ nhiễu Gauss, thang 0–255),
+   tức strength 2.0 tương ứng σ 25. Các hệ số được hiệu chỉnh bằng benchmark (`docs/module3/benchmark/`).
+   **bilateral và nlm cho kết quả giống hệt từng byte so với trước**, nên số liệu trong playbook vẫn
+   đúng. gaussian yếu đi khoảng một nửa ở cùng strength (trước đây quá mạnh gấp 2 lần), median đổi
+   ngưỡng kernel (3×3 khi σ < 17.5, 5×5 khi σ < 35). Gợi ý cho prompt VLM: "strength ≈ σ nhiễu
+   ước lượng / 12.5". Nếu Module 1 có ước lượng σ, có thể tính strength trực tiếp thay vì để VLM đoán.
 
 ---
 

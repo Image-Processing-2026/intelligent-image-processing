@@ -278,5 +278,56 @@ def test_denoise_reduces_noise_on_flat_patch(method):
     assert out.std() < 0.7 * noisy.std()
 
 
+def test_strength_maps_to_noise_sigma():
+    """Quy ước thống nhất: σ_target = 12.5 · strength (thang 0–255); strength 2.0 ↔ σ 25."""
+    from src.processing_engine.denoise import noise_sigma_for_strength
+
+    assert noise_sigma_for_strength(1.0) == pytest.approx(12.5)
+    assert noise_sigma_for_strength(2.0) == pytest.approx(25.0)
+
+
+@pytest.mark.parametrize(
+    "method, strength, expected",
+    [
+        # σ_target = 12.5 → σ_color = σ_space = 4σ = 50, d = max(5, ⌊0.4σ⌋) = 5
+        ("bilateral", 1.0, ("bilateralFilter", 5, 50.0)),
+        # σ_target = 25 → d = 10, σ_color = 100
+        ("bilateral", 2.0, ("bilateralFilter", 10, 100.0)),
+        # σ_target = 25 → h = 0.8σ = 20
+        ("nlm", 2.0, ("fastNlMeansDenoisingColored", None, 20.0)),
+        # σ_target = 12.5 → cửa sổ 3×3; σ_target = 18.75 → 5×5; σ_target = 37.5 → 7×7
+        ("median", 1.0, ("medianBlur", 3, None)),
+        ("median", 1.5, ("medianBlur", 5, None)),
+        ("median", 3.0, ("medianBlur", 7, None)),
+        # σ_target = 25 → σ_blur = 0.06σ = 1.5 px, kernel (0, 0) để OpenCV tự tính đủ ±3σ_blur
+        ("gaussian", 2.0, ("GaussianBlur", (0, 0), 1.5)),
+    ],
+)
+def test_denoise_parameters_follow_sigma_convention(monkeypatch, method, strength, expected):
+    """Khóa tham số OpenCV suy ra từ σ_target (đã hiệu chỉnh bằng scripts/benchmark_module3.py)."""
+    from src.processing_engine import denoise as denoise_module
+
+    fn_name, size_arg, sigma_arg = expected
+    calls = []
+
+    def spy(img, *args, **kwargs):
+        calls.append((args, kwargs))
+        return img
+
+    monkeypatch.setattr(denoise_module.cv2, fn_name, spy)
+    apply_denoise(np.zeros((8, 8, 3), dtype=np.uint8), method=method, strength=strength)
+    args, kwargs = calls[0]
+    if fn_name == "bilateralFilter":
+        assert args[0] == size_arg
+        assert args[1] == pytest.approx(sigma_arg) and args[2] == pytest.approx(sigma_arg)
+    elif fn_name == "fastNlMeansDenoisingColored":
+        assert args[1] == pytest.approx(sigma_arg) and args[2] == pytest.approx(sigma_arg)
+    elif fn_name == "medianBlur":
+        assert args[0] == size_arg
+    else:
+        assert args[0] == size_arg
+        assert kwargs["sigmaX"] == pytest.approx(sigma_arg)
+
+
 def test_color_balance_is_noop_on_neutral_params(textured_rgb):
     np.testing.assert_array_equal(apply_color_balance(textured_rgb), textured_rgb)
