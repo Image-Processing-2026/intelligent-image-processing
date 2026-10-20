@@ -1269,3 +1269,51 @@ def test_no_reference_eval_grayscale_input_safe_with_pyiqa(monkeypatch):
     assert res.brisque_score == 42.0
     assert res.niqe_score == 42.0
     assert res.estimated_quality_score is not None
+
+
+# ---------------------------------------------------------------------------
+# Độ nét đã trừ phần do nhiễu (nhiễu thổi phồng phương sai Laplacian)
+# ---------------------------------------------------------------------------
+def _gaussian_noise(base: np.ndarray, sigma: float, seed: int = 0) -> np.ndarray:
+    noise = np.random.default_rng(seed).normal(0.0, sigma, base.shape)
+    return np.clip(base.astype(np.float64) + noise, 0, 255).astype(np.uint8)
+
+
+def test_signal_sharpness_of_pure_noise_is_near_zero():
+    """Ảnh phẳng chỉ có nhiễu: chỉ số thô rất cao, độ nét thật gần như bằng 0."""
+    from src.analyzer_evaluator.no_reference_eval import _signal_sharpness
+
+    for sigma in (5, 10, 20):
+        metrics = analyze_image(_gaussian_noise(np.full((128, 128, 3), 128), sigma))
+        assert metrics.sharpness_laplacian_var > 200
+        assert _signal_sharpness(metrics) < 0.1 * metrics.sharpness_laplacian_var
+
+
+def test_denoising_heavy_noise_counts_as_improvement():
+    """Khử nhiễu nặng: chỉ số thô sụt > 30% nhưng chi tiết thật không mất → cải thiện."""
+    textured = cv2.resize(
+        np.random.default_rng(1).integers(0, 256, (16, 16, 3), dtype=np.uint8),
+        (128, 128),
+        interpolation=cv2.INTER_CUBIC,
+    )
+    noisy = _gaussian_noise(textured, 25)
+    denoised = cv2.bilateralFilter(noisy, 7, 75, 75)
+    raw_drop = 1 - analyze_image(denoised).sharpness_laplacian_var / max(
+        analyze_image(noisy).sharpness_laplacian_var, 1.0
+    )
+    assert raw_drop > 0.30  # thước đo cũ sẽ coi đây là mất nét
+    result = evaluate_no_reference(denoised, previous_image=noisy, iteration=2)
+    assert result.quality_improved is True
+
+
+def test_oversmoothing_a_clean_image_is_still_rejected():
+    """Làm mờ ảnh sạch nhiều chi tiết vẫn không được tính là cải thiện."""
+    textured = cv2.resize(
+        np.random.default_rng(2).integers(0, 256, (32, 32, 3), dtype=np.uint8),
+        (128, 128),
+        interpolation=cv2.INTER_CUBIC,
+    )
+    slightly_noisy = _gaussian_noise(textured, 3)
+    blurred = cv2.GaussianBlur(slightly_noisy, (0, 0), 3)
+    result = evaluate_no_reference(blurred, previous_image=slightly_noisy, iteration=2)
+    assert result.quality_improved is False
