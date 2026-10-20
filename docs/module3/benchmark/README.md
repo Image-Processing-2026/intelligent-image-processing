@@ -114,7 +114,27 @@ có cho cùng một kết quả bất kể nguồn sáng hay không, tức là �
   ám thuần đỏ–lam như ở đây thì đúng là mô hình của nó. Cột này không so sánh công bằng được với WB,
   vốn hoạt động mù (không biết ground-truth).
 
-## 5. Giới hạn của benchmark
+## 5. Tốc độ cắt theo mask ([`crop_to_mask.md`](crop_to_mask.md))
+
+Sinh bởi `python scripts/benchmark_crop_to_mask.py --out-dir docs/module3/benchmark`
+(ảnh `astronaut` phóng lên 1920×1080 và 4000×3000, mask `create_soft_mask` của Module 2).
+Mỗi dòng đều được kiểm tra kết quả cắt **giống hệt từng byte** với chạy toàn ảnh.
+
+| | mask ≈ 5% | mask ≈ 25% |
+|---|---|---|
+| NLM s = 0.8, 12MP | 14.86 s → **1.30 s** (×11.5) | 14.52 s → 5.25 s (×2.8) |
+| NLM s = 0.8, 1080p | 2.75 s → 1.12 s (×2.5) | 2.73 s → 1.09 s (×2.5) |
+| gaussian / median / unsharp / gamma / temperature, 12MP | ≈ 1.1 s → ≈ 0.1 s (×10–12) | ≈ 1.1 s → ≈ 0.35 s (×3) |
+
+- Tăng tốc xấp xỉ tỉ lệ diện tích ảnh / diện tích hộp bao của mask. Với các thao tác rẻ (gamma,
+  gain màu), thời gian toàn ảnh chủ yếu nằm ở bước hòa trộn float32 trên toàn ảnh, nên cắt cũng có lợi.
+- NLM ở 1080p chỉ được ×2.5 dù mask nhỏ, và thời gian cắt gần như không đổi giữa mask 5% và 25%:
+  có một chi phí cố định khoảng 1 s mà benchmark này không tách ra được. Ở 12MP, phần tính theo
+  diện tích chiếm ưu thế nên tăng tốc gần với tỉ lệ diện tích.
+- Bilateral, Laplacian, saturation, CLAHE và white balance vẫn chạy toàn ảnh (xem
+  `src/processing_engine/README.md`), nên không có trong bảng.
+
+## 6. Giới hạn của benchmark
 
 1. Chỉ có 4 ảnh, độ phân giải nhỏ (384 px). Đủ để chọn hệ số, nhưng chưa đủ để kết luận tổng quát.
 2. Suy giảm là tổng hợp (nhiễu Gauss độc lập theo pixel, ám màu nhân thuần túy). Nhiễu thật của cảm

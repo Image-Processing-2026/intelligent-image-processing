@@ -38,9 +38,43 @@ BILATERAL_DIAMETER_PER_NOISE_SIGMA = 0.4
 NLM_H_PER_NOISE_SIGMA = 0.8
 
 
+# NLM: kích thước patch và vùng tìm kiếm (pixel, số lẻ)
+NLM_TEMPLATE_WINDOW = 7
+NLM_SEARCH_WINDOW = 21
+
+
 def noise_sigma_for_strength(strength: float) -> float:
     """σ nhiễu mục tiêu (thang 0–255) ứng với strength."""
     return NOISE_SIGMA_PER_STRENGTH * strength
+
+
+def _gaussian_blur_sigma(sigma: float) -> float:
+    return GAUSSIAN_BLUR_SIGMA_PER_NOISE_SIGMA * sigma
+
+
+def _median_ksize(sigma: float) -> int:
+    return 2 * math.floor(sigma / MEDIAN_SIGMA_PER_KERNEL_STEP) + 3
+
+
+def _crop_halo(method: str, strength: float) -> Optional[int]:
+    """
+    Bán kính ảnh hưởng (pixel) để cắt theo mask, None nếu method không được cắt.
+
+    - gaussian: OpenCV dùng kernel bán kính ≈ 3σ_blur với ảnh uint8; lấy 4σ_blur + 1 cho dư.
+    - median: nửa cửa sổ k×k.
+    - nlm: điểm ảnh p lấy trung bình các patch tâm q trong vùng tìm kiếm, mỗi patch phủ thêm
+      nửa patch → bán kính = nửa vùng tìm + nửa patch = 10 + 3.
+    - bilateral: None — đường SIMD số thực của OpenCV làm tròn khác nhau theo vị trí điểm ảnh
+      (lệch 1 mức xám với ảnh xám), nên không đảm bảo giống hệt kết quả toàn ảnh.
+    """
+    sigma = noise_sigma_for_strength(strength)
+    if method == "gaussian":
+        return math.ceil(4 * _gaussian_blur_sigma(sigma)) + 1
+    if method == "median":
+        return _median_ksize(sigma) // 2
+    if method == "nlm":
+        return NLM_SEARCH_WINDOW // 2 + NLM_TEMPLATE_WINDOW // 2
+    return None
 
 
 def _raw_denoise(
@@ -53,13 +87,11 @@ def _raw_denoise(
 
     if method == "gaussian":
         # Tích chập với nhân Gauss G_σ: làm mờ đều, giảm nhiễu nhưng cũng mất chi tiết cạnh
-        blur_sigma = GAUSSIAN_BLUR_SIGMA_PER_NOISE_SIGMA * sigma
-        return cv2.GaussianBlur(image, (0, 0), sigmaX=blur_sigma)
+        return cv2.GaussianBlur(image, (0, 0), sigmaX=_gaussian_blur_sigma(sigma))
 
     if method == "median":
         # Trung vị cửa sổ k×k: tốt nhất với nhiễu xung (muối tiêu); với nhiễu Gauss chỉ ở mức vừa
-        ksize = 2 * math.floor(sigma / MEDIAN_SIGMA_PER_KERNEL_STEP) + 3
-        return cv2.medianBlur(image, ksize)
+        return cv2.medianBlur(image, _median_ksize(sigma))
 
     if method == "bilateral":
         # Bộ lọc song phương: trọng số = khoảng cách không gian × chênh lệch cường độ → giữ cạnh
@@ -71,8 +103,10 @@ def _raw_denoise(
     # Non-Local Means: trung bình các patch tương tự trên vùng tìm kiếm rộng
     h = NLM_H_PER_NOISE_SIGMA * sigma
     if image.ndim == 2:
-        return cv2.fastNlMeansDenoising(image, None, h, 7, 21)
-    return cv2.fastNlMeansDenoisingColored(image, None, h, h, 7, 21)
+        return cv2.fastNlMeansDenoising(image, None, h, NLM_TEMPLATE_WINDOW, NLM_SEARCH_WINDOW)
+    return cv2.fastNlMeansDenoisingColored(
+        image, None, h, h, NLM_TEMPLATE_WINDOW, NLM_SEARCH_WINDOW
+    )
 
 
 def apply_denoise(
@@ -95,4 +129,11 @@ def apply_denoise(
     """
     require_choice(method, DENOISE_METHODS, "method", "apply_denoise")
     strength = require_number(strength, "strength", "apply_denoise", gt=0.0)
-    return apply_region_op(image, mask, _raw_denoise, method=method, strength=strength)
+    return apply_region_op(
+        image,
+        mask,
+        _raw_denoise,
+        crop_halo=_crop_halo(method, strength),
+        method=method,
+        strength=strength,
+    )
