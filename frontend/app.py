@@ -13,7 +13,10 @@ from dotenv import load_dotenv
 from src.agent.executor import execute_plan
 from src.agent.graph import run_pipeline
 from src.agent.planner import sanitize_actions
+from src.agent.refine import refine
+from src.agent.session import SessionNotFoundError, answer_session, start_session
 from src.agent.state import DiagnosisReport, RegionOperation, TreatmentPlan
+from src.agent.variants import treatment_recipe
 from src.analyzer_evaluator.analyzer import analyze_image
 
 _SEVERITY_LABELS = {0: "không đáng kể", 1: "nhẹ", 2: "rõ", 3: "nặng"}
@@ -298,6 +301,163 @@ def render_chosen_variant(
     return rendered, f"✅ Đã xuất phiên bản **{choice}** ở độ phân giải gốc ({width}×{height})."
 
 
+# ==================== Trò chuyện với Doctor (Phase 4) ====================
+ChatHistory = List[Dict[str, str]]
+QUESTION_SLOTS = 3
+
+
+def _question_updates(questions: List[Dict[str, Any]]) -> List[Any]:
+    """Cập nhật QUESTION_SLOTS ô radio theo danh sách câu hỏi (ô thừa bị ẩn)."""
+    updates: List[Any] = []
+    for slot in range(QUESTION_SLOTS):
+        if slot < len(questions):
+            question = questions[slot]
+            updates.append(
+                gr.update(
+                    visible=True,
+                    label=question["text"],
+                    choices=[(c["label"], c["value"]) for c in question["choices"]],
+                    value=question["default"],
+                )
+            )
+        else:
+            updates.append(gr.update(visible=False, choices=[], value=None))
+    return updates
+
+
+def chat_start(
+    input_image: Optional[np.ndarray], history: Optional[ChatHistory]
+) -> Tuple[Any, ...]:
+    """
+    Bắt đầu phiên: phân tích, chẩn đoán rồi hỏi ý định.
+
+    Returns:
+        (lịch sử chat, session_id, câu hỏi (dict), 3 cập nhật radio).
+    """
+    history = list(history or [])
+    if input_image is None:
+        history.append({"role": "assistant", "content": "Hãy tải một ảnh lên trước nhé."})
+        return (history, None, [], *_question_updates([]))
+    result = start_session(input_image)
+    questions = [question.model_dump() for question in result.questions]
+    summary = result.diagnosis.summary if result.diagnosis else ""
+    history.append(
+        {
+            "role": "assistant",
+            "content": f"🩺 **Chẩn đoán:** {summary}\n\nTrước khi xử lý, mình muốn hỏi bạn "
+            f"{len(questions)} câu để chỉnh đúng ý bạn (chọn ở bên dưới).",
+        }
+    )
+    return (history, result.session_id, questions, *_question_updates(questions))
+
+
+def chat_answer(
+    session_id: Optional[str],
+    questions: Optional[List[Dict[str, Any]]],
+    answer_1: Optional[str],
+    answer_2: Optional[str],
+    answer_3: Optional[str],
+    notes: str,
+    history: Optional[ChatHistory],
+) -> Tuple[Any, ...]:
+    """
+    Gửi câu trả lời, chạy tiếp pipeline.
+
+    Returns:
+        (lịch sử chat, ảnh kết quả, gallery phiên bản, cập nhật radio phiên bản,
+        phác đồ từng phiên bản, phác đồ hiện tại).
+    """
+    history = list(history or [])
+    empty = (None, [], gr.update(choices=[], value=None), {}, [])
+    if not session_id:
+        history.append({"role": "assistant", "content": "Hãy bấm 'Phân tích & hỏi ý' trước."})
+        return (history, *empty)
+    questions = questions or []
+    raw = (answer_1, answer_2, answer_3)
+    answers = {q["id"]: value for q, value in zip(questions, raw) if value}
+    chosen = []
+    for question in questions:
+        value = answers.get(question["id"])
+        label = next((c["label"] for c in question["choices"] if c["value"] == value), None)
+        if label:
+            chosen.append(label)
+    user_text = "; ".join(chosen) + (f". {notes.strip()}" if notes.strip() else "")
+    history.append({"role": "user", "content": user_text or "(dùng lựa chọn mặc định)"})
+    try:
+        result = answer_session(session_id, answers, notes)
+    except (SessionNotFoundError, ValueError):
+        history.append(
+            {"role": "assistant", "content": "Phiên đã kết thúc. Hãy bấm 'Phân tích & hỏi ý' lại."}
+        )
+        return (history, *empty)
+    state = result.state or {}
+    gallery, _, choice_update, variant_actions = _variant_outputs(state)
+    recommended = state.get("recommended_variant")
+    current = variant_actions.get(recommended) if recommended else None
+    if current is None:
+        current = [
+            action.model_dump(mode="json") for action in treatment_recipe(state.get("history", []))
+        ]
+    label = next((v.label for v in state.get("variants") or [] if v.id == recommended), None)
+    message = f"✅ Xong ({state.get('decision')})."
+    if label:
+        message += f" Mình đề xuất bản **{label}**; bạn có thể chọn bản khác bên dưới."
+    message += " Nếu chưa ưng, hãy góp ý (ví dụ: 'da hơi vàng', 'trời gắt quá')."
+    history.append({"role": "assistant", "content": message})
+    output = state.get("current_image")
+    if current and recommended and recommended != "balanced":
+        output = _render_actions(state["original_image"], current)
+    return (history, output, gallery, choice_update, variant_actions, current)
+
+
+def _render_actions(image: np.ndarray, actions: List[Dict[str, Any]]) -> np.ndarray:
+    """Render một phác đồ (dạng dict) lên ảnh gốc, giữ nguyên thứ tự thao tác."""
+    parsed = sanitize_actions([RegionOperation.model_validate(raw) for raw in actions])
+    return execute_plan(image, TreatmentPlan(reasoning="render", actions=parsed))
+
+
+def chat_select_variant(
+    input_image: Optional[np.ndarray],
+    choice: Optional[str],
+    variant_actions: Optional[VariantActions],
+) -> Tuple[Optional[np.ndarray], List[Dict[str, Any]]]:
+    """Chọn một phiên bản: render full-res và lấy phác đồ của nó làm phác đồ hiện tại."""
+    if input_image is None or not choice or not variant_actions or choice not in variant_actions:
+        return None, []
+    actions = variant_actions[choice]
+    return _render_actions(input_image, actions), actions
+
+
+def chat_feedback(
+    input_image: Optional[np.ndarray],
+    current_actions: Optional[List[Dict[str, Any]]],
+    feedback: str,
+    history: Optional[ChatHistory],
+) -> Tuple[Any, ...]:
+    """
+    Chỉnh theo góp ý trên phác đồ hiện tại.
+
+    Returns:
+        (lịch sử chat, ảnh mới, phác đồ mới, ô góp ý đã xóa).
+    """
+    history = list(history or [])
+    if input_image is None or not feedback.strip():
+        return (history, gr.update(), current_actions or [], feedback)
+    history.append({"role": "user", "content": feedback})
+    actions = [RegionOperation.model_validate(raw) for raw in current_actions or []]
+    result = refine(input_image, actions, feedback)
+    if result.adjustments:
+        reply = "🔧 Đã chỉnh: " + "; ".join(result.notes) + "."
+    else:
+        reply = (
+            "Mình chưa hiểu cần chỉnh gì. Bạn thử nói cụ thể hơn, ví dụ 'tối quá', "
+            "'da hơi vàng', 'màu rực quá', 'còn nhiễu'."
+        )
+    history.append({"role": "assistant", "content": reply})
+    new_actions = [action.model_dump(mode="json") for action in result.actions]
+    return (history, result.image, new_actions, "")
+
+
 def create_app() -> gr.Blocks:
     """Tạo giao diện Gradio Blocks hoàn chỉnh."""
     with gr.Blocks(title="AI Image Doctor — Intelligent Image Processing") as demo:
@@ -375,6 +535,39 @@ def create_app() -> gr.Blocks:
                 with gr.Accordion("📋 JSON Chi tiết Kỹ thuật (Raw Data)", open=False):
                     details_box = gr.Code(label="Chi tiết JSON", language="json")
 
+            # ==================== TAB 3: Trò chuyện với Doctor ====================
+            with gr.TabItem("💬 Trò chuyện với Doctor"):
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        chat_img = gr.Image(label="Ảnh của bạn", type="numpy")
+                        btn_start = gr.Button("1. Phân tích & hỏi ý", variant="primary")
+                        question_radios = [
+                            gr.Radio(visible=False, choices=[]) for _ in range(QUESTION_SLOTS)
+                        ]
+                        notes_box = gr.Textbox(
+                            label="Mong muốn thêm (tùy chọn)",
+                            placeholder="Ví dụ: giữ tông ấm, làm rõ khuôn mặt",
+                        )
+                        btn_answer = gr.Button("2. Xử lý theo ý tôi", variant="primary")
+                    with gr.Column(scale=1):
+                        chatbot = gr.Chatbot(label="AI Image Doctor", height=360)
+                        chat_out = gr.Image(label="Kết quả", type="numpy")
+                chat_gallery = gr.Gallery(
+                    label="Các phiên bản", columns=3, height="auto", object_fit="contain"
+                )
+                chat_choice = gr.Radio(label="Chọn phiên bản", choices=[])
+                with gr.Row():
+                    feedback_box = gr.Textbox(
+                        label="3. Góp ý để chỉnh tiếp",
+                        placeholder="Ví dụ: da hơi vàng, trời gắt quá",
+                        scale=4,
+                    )
+                    btn_feedback = gr.Button("Chỉnh theo góp ý", scale=1)
+                session_state = gr.State(None)
+                questions_state = gr.State([])
+                chat_variant_actions = gr.State({})
+                current_actions = gr.State([])
+
         btn_run.click(
             fn=process_with_variants,
             inputs=[in_img, gt_img, max_iter_slider, variants_slider],
@@ -394,6 +587,33 @@ def create_app() -> gr.Blocks:
             fn=render_chosen_variant,
             inputs=[in_img, variant_choice, variant_actions],
             outputs=[out_img, status_box],
+        )
+        btn_start.click(
+            fn=chat_start,
+            inputs=[chat_img, chatbot],
+            outputs=[chatbot, session_state, questions_state, *question_radios],
+        )
+        btn_answer.click(
+            fn=chat_answer,
+            inputs=[session_state, questions_state, *question_radios, notes_box, chatbot],
+            outputs=[
+                chatbot,
+                chat_out,
+                chat_gallery,
+                chat_choice,
+                chat_variant_actions,
+                current_actions,
+            ],
+        )
+        chat_choice.input(
+            fn=chat_select_variant,
+            inputs=[chat_img, chat_choice, chat_variant_actions],
+            outputs=[chat_out, current_actions],
+        )
+        btn_feedback.click(
+            fn=chat_feedback,
+            inputs=[chat_img, current_actions, feedback_box, chatbot],
+            outputs=[chatbot, chat_out, current_actions, feedback_box],
         )
 
     return demo

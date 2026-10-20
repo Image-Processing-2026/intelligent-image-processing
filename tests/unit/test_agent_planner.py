@@ -244,6 +244,7 @@ def test_diagnose_and_plan_node_passes_history():
             history=state["history"],
             original_image=state["original_image"],
             diagnosis=None,
+            intent_text="",
         )
         assert res["treatment_plan"] is not None
 

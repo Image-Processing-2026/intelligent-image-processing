@@ -6,7 +6,9 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from src.agent.state import DiagnosisReport, RegionOperation, TreatmentPlan
+from src.agent.intent import Question
+from src.agent.refine import Adjustment
+from src.agent.state import DiagnosisReport, IntentProfile, RegionOperation, TreatmentPlan
 
 
 class DiagnoseRequest(BaseModel):
@@ -67,3 +69,38 @@ class ProcessResponse(BaseModel):
     variant_ranking_source: Optional[str] = Field(
         default=None, description="'critic' (VLM xếp hạng) hoặc 'score' (điểm Module 1)"
     )
+    treatment: List[RegionOperation] = Field(
+        default_factory=list,
+        description="Phác đồ của ảnh kết quả (các vòng không rollback); gửi /refine để chỉnh",
+    )
+    intent: Optional[IntentProfile] = None
+
+
+class SessionResponse(BaseModel):
+    """Một bước của phiên tương tác: cần trả lời câu hỏi, hoặc đã có kết quả."""
+
+    session_id: str
+    status: str = Field(..., description="'needs_input' hoặc 'done'")
+    questions: List[Question] = Field(default_factory=list)
+    diagnosis: Optional[DiagnosisReport] = None
+    result: Optional[ProcessResponse] = None
+
+
+class AnswerRequest(BaseModel):
+    """Câu trả lời cho các câu hỏi của phiên (id câu hỏi → value của lựa chọn) và ghi chú."""
+
+    answers: Dict[str, str] = Field(default_factory=dict)
+    notes: str = ""
+
+
+class RefineResponse(BaseModel):
+    """Ảnh và phác đồ sau khi chỉnh theo góp ý."""
+
+    image_base64: str
+    width: int
+    height: int
+    actions: List[RegionOperation]
+    adjustments: List[Adjustment]
+    notes: List[str] = Field(default_factory=list, description="Điều chỉnh đã làm, tiếng Việt")
+    source: str = Field(..., description="'rules', 'vlm' hoặc 'none' (không hiểu góp ý)")
+    quality_score: Optional[float] = None

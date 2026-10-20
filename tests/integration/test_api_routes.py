@@ -217,3 +217,48 @@ def test_render_rejects_malformed_actions():
         data={"actions": '{"not": "a list"}'},
     )
     assert response.status_code == 422
+
+
+def test_session_flow_asks_then_returns_the_result():
+    """Phase 4: /sessions dừng để hỏi; /answers chạy tiếp và trả kết quả kèm ý định."""
+    started = client.post(
+        "/api/v1/sessions",
+        files={"file": ("dark.png", _create_dark_png_bytes(), "image/png")},
+        data={"max_iterations": "1", "num_variants": "2"},
+    )
+    assert started.status_code == 200
+    body = started.json()
+    assert body["status"] == "needs_input"
+    assert body["questions"][-1]["id"] == "style"
+    session_id = body["session_id"]
+
+    done = client.post(
+        f"/api/v1/sessions/{session_id}/answers",
+        json={"answers": {"style": "vivid"}, "notes": "giữ tông ấm"},
+    )
+    assert done.status_code == 200
+    result = done.json()["result"]
+    assert done.json()["status"] == "done"
+    assert result["intent"]["style"] == "vivid"
+    assert result["recommended_variant"] == "vivid"
+    assert isinstance(result["treatment"], list)
+
+    again = client.post(f"/api/v1/sessions/{session_id}/answers", json={})
+    assert again.status_code == 409
+    assert client.delete(f"/api/v1/sessions/{session_id}").status_code == 204
+    missing = client.post(f"/api/v1/sessions/{session_id}/answers", json={})
+    assert missing.status_code == 404
+
+
+def test_refine_endpoint_applies_feedback():
+    response = client.post(
+        "/api/v1/refine",
+        files={"file": ("dark.png", _create_dark_png_bytes(), "image/png")},
+        data={"actions": "[]", "feedback": "tối quá, màu nhạt quá"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "rules"
+    assert [a["kind"] for a in body["adjustments"]] == ["brighter", "more_saturated"]
+    assert [a["operation"] for a in body["actions"]] == ["gamma_correct", "color_correct"]
+    assert (body["width"], body["height"]) == (64, 64)

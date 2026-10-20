@@ -75,6 +75,8 @@ Nhiệm vụ của bạn:
    phù hợp (ví dụ khử nhiễu VÀ nâng sáng) với đúng giá trị đã chọn; chỉ lệch khi thấy lý do cụ
    thể trên ảnh và phải nêu lý do đó. Tuân thủ các mục "Tránh", và nêu id playbook đã dựa vào
    trong reasoning (ví dụ: "[dark-region]").
+9. Nếu có Ý ĐỊNH NGƯỜI DÙNG: đó là ưu tiên cao nhất. Không làm mất điều người dùng muốn giữ,
+   phải xử lý điều người dùng muốn sửa, và chọn cường độ hợp với phong cách họ mong muốn.
 
 Viết "reasoning" bằng tiếng Việt có dấu. Trả về kết quả dưới định dạng JSON thuần túy theo cấu trúc:
 {
@@ -399,9 +401,11 @@ def diagnose_and_plan(
     history: Optional[List[HistoryItem]] = None,
     original_image: Optional[np.ndarray] = None,
     diagnosis: Optional[DiagnosisReport] = None,
+    intent_text: str = "",
 ) -> TreatmentPlan:
     """
     Giai đoạn Plan: gọi Gemini lập kế hoạch điều trị dựa trên chỉ số và chẩn đoán.
+    intent_text: khối 'Ý ĐỊNH NGƯỜI DÙNG' (intent.intent_prompt), đặt trước tri thức.
     - Không có GEMINI_API_KEY → kế hoạch rule-based (source="rule_based").
     - Lỗi SDK/mạng/parse → kế hoạch rule-based (source="vlm_fallback"), không trả plan rỗng.
     - VLM trả "actions": [] hợp lệ → plan rỗng thật sự (ảnh đã tốt).
@@ -418,8 +422,9 @@ def diagnose_and_plan(
 
     try:
         context = retrieve(diagnosis or diagnose_from_metrics(metrics, iteration), metrics)
+        knowledge_text = "\n".join(text for text in (intent_text, format_context(context)) if text)
         contents = _build_contents(
-            image, metrics, iteration, history, original_image, diagnosis, format_context(context)
+            image, metrics, iteration, history, original_image, diagnosis, knowledge_text
         )
         data = call_gemini_json(api_key, SYSTEM_PROMPT, contents, PLAN_RESPONSE_SCHEMA)
         plan = _plan_from_vlm_json(data, iteration)
