@@ -33,6 +33,8 @@ wheels/
 htmlcov/
 .ruff_cache/
 **/.ruff_cache/
+.playwright-mcp/
+scratch/
 
 # Environment variables & keys
 .env
