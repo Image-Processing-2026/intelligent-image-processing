@@ -3,6 +3,7 @@ Unit tests for Gradio frontend app (frontend/app.py).
 """
 
 import json
+from unittest.mock import Mock
 
 import gradio as gr
 import numpy as np
@@ -189,3 +190,134 @@ def test_ui_records_the_chosen_variant(tmp_path):
     assert case_id is not None
     render_chosen_variant(img, "vivid", actions, case_id)
     assert memory.get(case_id).chosen_variant == "vivid"
+
+
+def test_resets_clear_image_dependent_state():
+    from frontend.app import chat_reset, processing_reset
+
+    result = processing_reset()
+    assert len(result) == 10
+    assert result[0] is None and result[2] == [] and result[4] == "{}"
+    assert result[7]["value"] is None and result[8:] == ({}, None)
+    chat = chat_reset()
+    assert len(chat) == 14
+    assert chat[:3] == ([], None, [])
+    assert all(radio["visible"] is False for radio in chat[3:6])
+    assert chat[6] is None and chat[9:12] == ({}, [], None)
+
+
+def test_ui_job_success_calls_once_and_preserves_choice_updates():
+    from frontend.app import WAITING, ui_job
+
+    with gr.Blocks():
+        image, choice, button, status = gr.Image(), gr.Radio(), gr.Button(), gr.Markdown()
+    callback = Mock(return_value=(None, gr.update(choices=["balanced"], value="balanced")))
+    job = ui_job(
+        callback,
+        ("input",),
+        [image, choice],
+        [choice, button],
+        (None, gr.update(choices=[], value=None)),
+        status,
+        {button: lambda values: values[choice]["value"] == "balanced"},
+    )
+    waiting = next(job)
+    assert waiting[status] == WAITING and not waiting[button]["interactive"]
+    callback.assert_not_called()
+    result = next(job)
+    callback.assert_called_once_with("input")
+    assert result[choice]["choices"] == ["balanced"]
+    assert result[choice]["value"] == "balanced" and result[button]["interactive"]
+
+
+def test_ui_job_failure_clears_results_unlocks_and_hides_exception(caplog):
+    from frontend.app import ERROR, ui_job
+
+    with gr.Blocks():
+        image, state, run, render, status = (
+            gr.Image(),
+            gr.State(),
+            gr.Button(),
+            gr.Button(),
+            gr.Markdown(),
+        )
+    callback = Mock(side_effect=RuntimeError("private payload"))
+    updates = list(
+        ui_job(
+            callback,
+            (),
+            [image, state],
+            [run, render],
+            (None, {}),
+            status,
+            {render: lambda values: bool(values[state])},
+        )
+    )
+    final = updates[-1]
+    assert final[image] is None and final[state] == {}
+    assert final[run]["interactive"] and not final[render]["interactive"]
+    assert final[status] == ERROR and "private payload" not in final[status]
+    assert "UI operation failed" in caplog.text
+    callback.assert_called_once()
+
+
+def test_processing_wrapper_invokes_pipeline_once(monkeypatch):
+    import frontend.app as app
+
+    image = _dark_image()
+    pipeline = Mock(return_value={"current_image": image, "decision": "SHIP", "iteration": 2})
+    monkeypatch.setattr(app, "run_pipeline", pipeline)
+    monkeypatch.setattr(app, "remember_run", lambda state: None)
+    result = app.process_with_variants(image, None, 1, 1)
+    assert len(result) == 10 and result[7]["value"] is None and result[8] == {}
+    pipeline.assert_called_once()
+
+
+def test_chat_ui_consumes_session_and_keeps_variant_choices_during_refinement(monkeypatch):
+    import frontend.app as app
+
+    demo = app.create_app()
+    handlers = {fn.fn.__name__: fn for fn in demo.fns.values()}
+    image = _dark_image()
+    answer = Mock(
+        return_value=(
+            [],
+            image,
+            [],
+            gr.update(choices=["balanced"], value="balanced"),
+            {"balanced": []},
+            [],
+            None,
+        )
+    )
+    monkeypatch.setattr(app, "chat_answer", answer)
+    handler = handlers["answer_job"]
+    result = list(handler.fn("session-a", [], None, None, None, "", []))[-1]
+    answer.assert_called_once()
+    assert result[handler.outputs[1]] is None
+    assert result[handler.outputs[8]]["choices"] == ["balanced"]
+    feedback = Mock(return_value=([], image, [], ""))
+    monkeypatch.setattr(app, "chat_feedback", feedback)
+    snapshot = [
+        [],
+        None,
+        [],
+        None,
+        None,
+        None,
+        image,
+        [],
+        "balanced",
+        {"balanced": []},
+        [],
+        None,
+        "",
+        "",
+    ]
+    job = handlers["feedback_job"].fn(image, [], "tối quá", [], None, *snapshot)
+    waiting = next(job)
+    choice = handlers["feedback_job"].outputs[8]
+    assert "choices" not in waiting[choice]
+    final = next(job)
+    assert final[choice]["value"] == "balanced"
+    feedback.assert_called_once()

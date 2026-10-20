@@ -4,12 +4,19 @@ Giao diện người dùng trực quan: so sánh Before/After, Timeline, lý do 
 """
 
 import json
+import logging
 import os
+import sys
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import gradio as gr
 import numpy as np
 from dotenv import load_dotenv
+
+if __name__ == "__main__" and not __package__:
+    # Direct script launch puts frontend/, rather than the repo root, on sys.path.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.agent.executor import execute_plan
 from src.agent.graph import run_pipeline
@@ -115,8 +122,8 @@ def _format_result(
 
     # 1. Trạng thái & Quyết định cuối
     decision_map = {
-        "SHIP": ("✅", "SHIP — Đạt chất lượng mục tiêu"),
-        "STOP_BEST_EFFORT": ("⚠️", "STOP_BEST_EFFORT — Dừng ở mức tối ưu tốt nhất"),
+        "SHIP": ("", "SHIP — Đạt ngưỡng đánh giá của hệ thống"),
+        "STOP_BEST_EFFORT": ("", "STOP_BEST_EFFORT — Đã dừng — xem kết quả và lịch sử"),
         "RE_PROCESS": ("🔄", "RE_PROCESS — Tiếp tục lặp"),
     }
     emoji, label = decision_map.get(decision, ("❓", decision))
@@ -132,7 +139,7 @@ def _format_result(
         status_lines.append(f"- **Chỉ số tham chiếu:** PSNR = `{psnr} dB` | SSIM = `{ssim}`")
     elif eval_result:
         score = eval_result.get("estimated_quality_score", "N/A")
-        status_lines.append(f"- **Điểm chất lượng ước lượng (No-Reference):** `{score} / 100`")
+        status_lines.append(f"- **Điểm đánh giá ước lượng:** `{score} / 100`")
 
     status_md = "\n".join(status_lines)
 
@@ -270,7 +277,12 @@ def _variant_outputs(
         variant.id: [action.model_dump(mode="json") for action in variant.actions]
         for variant in variants
     }
-    return gallery, "\n".join(lines), gr.update(choices=choices, value=recommended), actions
+    return (
+        gallery,
+        "\n".join(lines),
+        gr.update(choices=choices, value=recommended if recommended in actions else variants[0].id),
+        actions,
+    )
 
 
 def process_with_variants(
@@ -498,122 +510,190 @@ def chat_feedback(
     return (history, result.image, new_actions, "")
 
 
-def create_app() -> gr.Blocks:
-    """Tạo giao diện Gradio Blocks hoàn chỉnh."""
-    with gr.Blocks(title="AI Image Doctor — Intelligent Image Processing") as demo:
-        gr.Markdown(
-            "# 🩺 AI Image Doctor\n"
-            "### Hệ thống Chẩn đoán & Xử lý Ảnh Khép kín (Closed-Loop Agentic Processing)\n"
-            "*Kết hợp Thị giác Máy tính Kinh điển và Mô hình Đa phương thức Gemini VLM.*"
+LOGGER = logging.getLogger(__name__)
+CSS = Path(__file__).with_name("styles.css").read_text(encoding="utf-8")
+WAITING = "Đang xử lý, thời gian phụ thuộc ảnh và số vòng"
+ERROR = "Không thể hoàn tất xử lý. Vui lòng thử lại."
+
+
+def processing_reset():
+    """Clear transient results only; never delete persisted case memory."""
+    return (
+        None,
+        "Chọn ảnh rồi bấm Phân tích & xử lý.",
+        [],
+        "",
+        "{}",
+        [],
+        "Chưa có phiên bản.",
+        gr.update(choices=[], value=None),
+        {},
+        None,
+    )
+
+
+def chat_reset():
+    return (
+        [],
+        None,
+        [],
+        *_question_updates([]),
+        None,
+        [],
+        gr.update(choices=[], value=None),
+        {},
+        [],
+        None,
+        "",
+        "",
+    )
+
+
+def ui_job(callback, args, outputs, controls, empty, status, gates):
+    """Yield real waiting state, then results and unlocked controls even on failure."""
+    # Keep component metadata (radio choices/visibility) while a job is running.
+    # Results are replaced on success and fully cleared on failure.
+    waiting = {}
+    for control in controls:
+        previous = waiting.get(control)
+        waiting[control] = gr.update(
+            **(
+                {k: v for k, v in previous.items() if k != "__type__"}
+                if isinstance(previous, dict) and previous.get("__type__") == "update"
+                else {}
+            ),
+            interactive=False,
         )
+    yield {**waiting, status: WAITING}
+    try:
+        result = callback(*args)
+        values = dict(zip(outputs, result))
+        message = "Hoàn tất."
+    except Exception:
+        LOGGER.exception("UI operation failed")
+        values = dict(zip(outputs, empty))
+        message = ERROR
+    unlocked = {control: gr.update(interactive=True) for control in controls}
+    unlocked.update(
+        {control: gr.update(interactive=bool(check(values))) for control, check in gates.items()}
+    )
+    for control, update in unlocked.items():
+        previous = values.get(control)
+        if isinstance(previous, dict) and previous.get("__type__") == "update":
+            values[control] = {**previous, **update}
+        elif control in values:
+            values[control] = gr.update(value=previous, interactive=update["interactive"])
+        else:
+            values[control] = update
+    yield {**values, status: message}
 
-        with gr.Tabs():
-            # ==================== TAB 1: Chẩn đoán & Xử lý ====================
-            with gr.TabItem("🩺 Chẩn đoán & Xử lý"):
-                with gr.Row():
-                    # Cột trái: Đầu vào và Điều khiển
-                    with gr.Column(scale=1):
-                        gr.Markdown("### 📤 Ảnh Đầu vào (Before)")
-                        in_img = gr.Image(label="Ảnh đầu vào (Input Image)", type="numpy")
-                        gt_img = gr.Image(
-                            label="📎 Ảnh Ground-Truth (Tùy chọn — Dành cho Synthetic Test)",
-                            type="numpy",
-                        )
-                        max_iter_slider = gr.Slider(
-                            minimum=1,
-                            maximum=5,
-                            value=3,
-                            step=1,
-                            label="⚙️ Số vòng lặp tối đa (Max Iterations)",
-                        )
-                        variants_slider = gr.Slider(
-                            minimum=1,
-                            maximum=3,
-                            value=3,
-                            step=1,
-                            label="🎨 Số phiên bản để chọn (1 = chỉ một kết quả)",
-                        )
-                        btn_run = gr.Button(
-                            "🚀 Khởi chạy Chẩn đoán & Xử lý",
-                            variant="primary",
-                            size="lg",
-                        )
 
-                    # Cột phải: Kết quả và So sánh After
-                    with gr.Column(scale=1):
-                        gr.Markdown("### ✅ Ảnh Kết quả sau Điều trị (After)")
-                        out_img = gr.Image(
-                            label="Ảnh kết quả sau điều trị (Treated Image)",
-                            type="numpy",
+def create_app() -> gr.Blocks:
+    """Two-tab demo with isolated image/session state and serialized UI jobs."""
+    with gr.Blocks(title="AI Image Doctor", analytics_enabled=False, fill_width=True) as demo:
+        with gr.Column(elem_id="doctor-app"):
+            gr.Markdown(
+                "# AI Image Doctor\n**Bản demo báo cáo tiến độ**\n\n"
+                "Chẩn đoán và cải thiện ảnh bằng AI kết hợp xử lý ảnh cổ điển"
+            )
+            with gr.Tabs():
+                with gr.TabItem("Xử lý ảnh"):
+                    with gr.Row():
+                        with gr.Column(min_width=280, elem_classes="doctor-card"):
+                            gr.Markdown("### 1. Chọn ảnh")
+                            in_img = gr.Image(label="Ảnh gốc", type="numpy", height=300)
+                            samples = [
+                                ("Thiếu sáng", "coffee_underexposed.jpg"),
+                                ("Nhiễu", "astro_noisy.jpg"),
+                                ("Ám màu", "cat_warm_cast.jpg"),
+                            ]
+                            sample_buttons = []
+                            with gr.Row():
+                                for label, name in samples:
+                                    path = Path(__file__).resolve().parents[1] / "data/real" / name
+                                    if path.is_file():
+                                        sample_buttons.append(
+                                            (gr.Button(label, size="sm", min_width=0), path)
+                                        )
+                            with gr.Accordion("Tuỳ chọn xử lý", open=False):
+                                max_iter_slider = gr.Slider(
+                                    1, 5, value=3, step=1, label="Số vòng tối đa"
+                                )
+                                variants_slider = gr.Slider(
+                                    1, 3, value=3, step=1, label="Số phiên bản"
+                                )
+                                gt_img = gr.Image(
+                                    label="Ảnh chuẩn tương ứng (ground truth)", type="numpy"
+                                )
+                                gr.Markdown(
+                                    "Chỉ dùng khi có ảnh chuẩn tương ứng để đánh giá thử nghiệm"
+                                )
+                            with gr.Row():
+                                btn_run = gr.Button(
+                                    "Phân tích & xử lý", variant="primary", min_width=0
+                                )
+                                btn_reset = gr.Button("Làm mới", min_width=0)
+                        with gr.Column(min_width=280, elem_classes="doctor-card"):
+                            gr.Markdown("### 2. Xem kết quả")
+                            out_img = gr.Image(
+                                label="Ảnh sau xử lý",
+                                type="numpy",
+                                height=300,
+                                interactive=False,
+                                buttons=["download", "fullscreen"],
+                            )
+                            status_box = gr.Markdown(processing_reset()[1])
+                            job_status = gr.Markdown("")
+                    with gr.Accordion("Các phiên bản ảnh", open=False) as variants_panel:
+                        variants_gallery = gr.Gallery(
+                            label="Các phiên bản", columns=3, object_fit="contain"
                         )
-                        status_box = gr.Markdown(
-                            value="*Tải ảnh lên và nhấn 'Khởi chạy' để bắt đầu quy trình AI Image Doctor.*",
-                            label="Trạng thái",
-                        )
-
-                gr.Markdown("### 🎨 Chọn phiên bản (preview)")
-                variants_gallery = gr.Gallery(
-                    label="Các phiên bản", columns=3, height="auto", object_fit="contain"
-                )
-                variants_box = gr.Markdown(value="*Chưa có phiên bản.*")
-                with gr.Row():
-                    variant_choice = gr.Radio(label="Phiên bản muốn xuất", choices=[])
-                    btn_render = gr.Button("💾 Xuất phiên bản đã chọn (full-res)")
-                variant_actions = gr.State({})
-                case_state = gr.State(None)
-
-            # ==================== TAB 2: Lịch sử Chi tiết ====================
-            with gr.TabItem("📊 Lịch sử Chi tiết"):
-                gr.Markdown("### 🖼️ Timeline Ảnh qua Từng Vòng Lặp")
-                gallery = gr.Gallery(
-                    label="Timeline quá trình xử lý",
-                    columns=4,
-                    height="auto",
-                    object_fit="contain",
-                )
-                gr.Markdown("### 🧠 Lý do Chẩn đoán & Phác đồ Điều trị qua các Vòng")
-                reasoning_box = gr.Markdown(value="*Chưa có dữ liệu lịch sử.*")
-                with gr.Accordion("📋 JSON Chi tiết Kỹ thuật (Raw Data)", open=False):
-                    details_box = gr.Code(label="Chi tiết JSON", language="json")
-
-            # ==================== TAB 3: Trò chuyện với Doctor ====================
-            with gr.TabItem("💬 Trò chuyện với Doctor"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        chat_img = gr.Image(label="Ảnh của bạn", type="numpy")
-                        btn_start = gr.Button("1. Phân tích & hỏi ý", variant="primary")
-                        question_radios = [
-                            gr.Radio(visible=False, choices=[]) for _ in range(QUESTION_SLOTS)
-                        ]
-                        notes_box = gr.Textbox(
-                            label="Mong muốn thêm (tùy chọn)",
-                            placeholder="Ví dụ: giữ tông ấm, làm rõ khuôn mặt",
-                        )
-                        btn_answer = gr.Button("2. Xử lý theo ý tôi", variant="primary")
-                    with gr.Column(scale=1):
-                        chatbot = gr.Chatbot(label="AI Image Doctor", height=360)
-                        chat_out = gr.Image(label="Kết quả", type="numpy")
-                chat_gallery = gr.Gallery(
-                    label="Các phiên bản", columns=3, height="auto", object_fit="contain"
-                )
-                chat_choice = gr.Radio(label="Chọn phiên bản", choices=[])
-                with gr.Row():
-                    feedback_box = gr.Textbox(
-                        label="3. Góp ý để chỉnh tiếp",
-                        placeholder="Ví dụ: da hơi vàng, trời gắt quá",
-                        scale=4,
+                        variants_box = gr.Markdown("Chưa có phiên bản.")
+                        variant_choice = gr.Radio(label="Phiên bản đã chọn", choices=[])
+                        btn_render = gr.Button("Áp dụng phiên bản đã chọn", interactive=False)
+                    variant_actions, case_state = gr.State({}), gr.State(None)
+                    gr.Markdown("### 3. Quá trình xử lý")
+                    gallery = gr.Gallery(
+                        label="Timeline qua từng vòng", columns=4, object_fit="contain"
                     )
-                    btn_feedback = gr.Button("Chỉnh theo góp ý", scale=1)
-                session_state = gr.State(None)
-                questions_state = gr.State([])
-                chat_variant_actions = gr.State({})
-                current_actions = gr.State([])
-                chat_case = gr.State(None)
+                    reasoning_box = gr.Markdown("")
+                    with gr.Accordion("Dữ liệu kỹ thuật (JSON)", open=False):
+                        details_box = gr.Code(value="{}", language="json", label="Chi tiết JSON")
+                with gr.TabItem("Trò chuyện & tinh chỉnh"):
+                    gr.Markdown("Chọn ảnh → Phân tích và trả lời câu hỏi → Góp ý để tinh chỉnh")
+                    with gr.Row():
+                        with gr.Column(min_width=280, elem_classes="doctor-card"):
+                            chat_img = gr.Image(label="Ảnh của bạn", type="numpy", height=300)
+                            btn_start = gr.Button("1. Phân tích & hỏi ý", variant="primary")
+                            question_radios = [
+                                gr.Radio(visible=False, choices=[]) for _ in range(QUESTION_SLOTS)
+                            ]
+                            notes_box = gr.Textbox(
+                                label="Mong muốn thêm", placeholder="Giữ tông ấm, làm rõ khuôn mặt"
+                            )
+                            btn_answer = gr.Button("2. Xử lý theo ý tôi", interactive=False)
+                        with gr.Column(min_width=280, elem_classes="doctor-card"):
+                            chatbot = gr.Chatbot(label="AI Image Doctor", height=360)
+                            chat_out = gr.Image(
+                                label="Kết quả", type="numpy", interactive=False, height=300
+                            )
+                    chat_status = gr.Markdown("")
+                    chat_gallery = gr.Gallery(
+                        label="Các phiên bản", columns=3, object_fit="contain"
+                    )
+                    chat_choice = gr.Radio(label="Chọn phiên bản", choices=[])
+                    feedback_box = gr.Textbox(
+                        label="3. Góp ý để chỉnh tiếp", placeholder="Da hơi vàng, trời gắt quá"
+                    )
+                    btn_feedback = gr.Button("Chỉnh theo góp ý", interactive=False)
+                    session_state, questions_state = gr.State(None), gr.State([])
+                    chat_variant_actions, current_actions, chat_case = (
+                        gr.State({}),
+                        gr.State([]),
+                        gr.State(None),
+                    )
 
-        btn_run.click(
-            fn=process_with_variants,
-            inputs=[in_img, gt_img, max_iter_slider, variants_slider],
-            outputs=[
+            process_outputs = [
                 out_img,
                 status_box,
                 gallery,
@@ -624,43 +704,213 @@ def create_app() -> gr.Blocks:
                 variant_choice,
                 variant_actions,
                 case_state,
-            ],
-        )
-        btn_render.click(
-            fn=render_chosen_variant,
-            inputs=[in_img, variant_choice, variant_actions, case_state],
-            outputs=[out_img, status_box],
-        )
-        btn_start.click(
-            fn=chat_start,
-            inputs=[chat_img, chatbot],
-            outputs=[chatbot, session_state, questions_state, *question_radios],
-        )
-        btn_answer.click(
-            fn=chat_answer,
-            inputs=[session_state, questions_state, *question_radios, notes_box, chatbot],
-            outputs=[
+            ]
+            process_controls = [
+                in_img,
+                gt_img,
+                max_iter_slider,
+                variants_slider,
+                btn_run,
+                btn_reset,
+                variant_choice,
+                btn_render,
+                *[b for b, _ in sample_buttons],
+            ]
+
+            def render_gate(v):
+                return v.get(variant_choice, {}).get("value") in v.get(variant_actions, {})
+
+            def reset_process():
+                return (
+                    *processing_reset(),
+                    gr.update(interactive=False),
+                    gr.update(open=False),
+                    "",
+                )
+
+            reset_outputs = [*process_outputs, btn_render, variants_panel, job_status]
+            for image in [in_img, gt_img]:
+                image.change(reset_process, outputs=reset_outputs, queue=False)
+            btn_reset.click(
+                lambda: (None, None, *reset_process()),
+                outputs=[in_img, gt_img, *reset_outputs],
+                queue=False,
+            )
+            for button, path in sample_buttons:
+                button.click(lambda path=path: str(path), outputs=in_img, queue=False)
+
+            def process_job(*args):
+                for update in ui_job(
+                    process_with_variants,
+                    args,
+                    process_outputs,
+                    process_controls,
+                    processing_reset(),
+                    job_status,
+                    {btn_render: render_gate},
+                ):
+                    update[variants_panel] = gr.update(open=bool(update.get(variant_actions)))
+                    yield update
+
+            def render_job(*args):
+                # Preserve variant state on success; discard every stale result on failure.
+                yield {
+                    **{c: gr.update(interactive=False) for c in process_controls},
+                    job_status: WAITING,
+                }
+                try:
+                    image, message = render_chosen_variant(*args)
+                    values = {out_img: image, status_box: message}
+                    valid = bool(args[1] and args[2] and args[1] in args[2])
+                except Exception:
+                    LOGGER.exception("Variant rendering failed")
+                    values = dict(zip(process_outputs, processing_reset()))
+                    message, valid = ERROR, False
+                for control in process_controls:
+                    previous = values.get(control)
+                    values[control] = (
+                        {**previous, "interactive": True}
+                        if isinstance(previous, dict) and previous.get("__type__") == "update"
+                        else gr.update(interactive=True)
+                    )
+                yield {
+                    **values,
+                    btn_render: gr.update(interactive=valid),
+                    job_status: message,
+                }
+
+            variant_choice.input(
+                lambda choice, actions: gr.update(interactive=bool(choice in (actions or {}))),
+                [variant_choice, variant_actions],
+                btn_render,
+                queue=False,
+            )
+            common = dict(
+                trigger_mode="once",
+                concurrency_limit=1,
+                concurrency_id="doctor-ui",
+                show_progress="full",
+            )
+            btn_run.click(
+                process_job,
+                [in_img, gt_img, max_iter_slider, variants_slider],
+                list(
+                    dict.fromkeys([*process_outputs, *process_controls, job_status, variants_panel])
+                ),
+                **common,
+            )
+            btn_render.click(
+                render_job,
+                [in_img, variant_choice, variant_actions, case_state],
+                list(dict.fromkeys([*process_outputs, *process_controls, job_status])),
+                **common,
+            )
+
+            chat_outputs = [
                 chatbot,
+                session_state,
+                questions_state,
+                *question_radios,
                 chat_out,
                 chat_gallery,
                 chat_choice,
                 chat_variant_actions,
                 current_actions,
                 chat_case,
-            ],
-        )
-        chat_choice.input(
-            fn=chat_select_variant,
-            inputs=[chat_img, chat_choice, chat_variant_actions, chat_case],
-            outputs=[chat_out, current_actions],
-        )
-        btn_feedback.click(
-            fn=chat_feedback,
-            inputs=[chat_img, current_actions, feedback_box, chatbot, chat_case],
-            outputs=[chatbot, chat_out, current_actions, feedback_box],
-        )
+                notes_box,
+                feedback_box,
+            ]
+            chat_controls = [
+                chat_img,
+                btn_start,
+                btn_answer,
+                btn_feedback,
+                chat_choice,
+                notes_box,
+                feedback_box,
+                *question_radios,
+            ]
+            gates = {
+                btn_answer: lambda v: v.get(session_state),
+                btn_feedback: lambda v: v.get(chat_out) is not None,
+            }
 
-    return demo
+            def reset_chat():
+                return (
+                    *chat_reset(),
+                    gr.update(interactive=False),
+                    gr.update(interactive=False),
+                    "",
+                )
+
+            chat_img.change(
+                reset_chat,
+                outputs=[*chat_outputs, btn_answer, btn_feedback, chat_status],
+                queue=False,
+            )
+
+            def chat_job(kind, *args):
+                def operation(*args):
+                    values = list(chat_reset())
+                    if kind == "start":
+                        values[:6] = chat_start(*args)
+                    elif kind == "answer":
+                        result = chat_answer(*args)
+                        values[0] = result[0]
+                        # answer_session consumes the session; require a new start for another answer.
+                        values[1:6] = [None, [], *_question_updates([])]
+                        values[6:12] = result[1:]
+                    elif kind == "feedback":
+                        result = chat_feedback(*args[:5])
+                        values = list(args[5:])
+                        values[0], values[6], values[10], values[13] = result
+                    else:
+                        values = list(args[4:])
+                        values[6], values[10] = chat_select_variant(*args[:4])
+                    return tuple(values)
+
+                yield from ui_job(
+                    operation, args, chat_outputs, chat_controls, chat_reset(), chat_status, gates
+                )
+
+            # Named generators are required for Gradio streaming detection.
+            def answer_job(*args):
+                yield from chat_job("answer", *args)
+
+            def start_job(*args):
+                yield from chat_job("start", *args)
+
+            def feedback_job(*args):
+                yield from chat_job("feedback", *args)
+
+            def select_job(*args):
+                yield from chat_job("select", *args)
+
+            btn_start.click(
+                start_job,
+                [chat_img, chatbot],
+                list(dict.fromkeys([*chat_outputs, *chat_controls, chat_status])),
+                **common,
+            )
+            btn_answer.click(
+                answer_job,
+                [session_state, questions_state, *question_radios, notes_box, chatbot],
+                list(dict.fromkeys([*chat_outputs, *chat_controls, chat_status])),
+                **common,
+            )
+            btn_feedback.click(
+                feedback_job,
+                [chat_img, current_actions, feedback_box, chatbot, chat_case, *chat_outputs],
+                list(dict.fromkeys([*chat_outputs, *chat_controls, chat_status])),
+                **common,
+            )
+            chat_choice.input(
+                select_job,
+                [chat_img, chat_choice, chat_variant_actions, chat_case, *chat_outputs],
+                list(dict.fromkeys([*chat_outputs, *chat_controls, chat_status])),
+                **common,
+            )
+    return demo.queue()
 
 
 if __name__ == "__main__":
@@ -669,4 +919,6 @@ if __name__ == "__main__":
     # Bộ nhớ ca bệnh (Phase 5): CASE_MEMORY_PATH rỗng → tắt
     configure_case_memory(os.getenv(MEMORY_ENV, str(DEFAULT_MEMORY_PATH)))
     app = create_app()
-    app.launch(server_name="0.0.0.0", server_port=7860, theme=gr.themes.Soft())
+    app.launch(
+        server_name="0.0.0.0", server_port=7860, theme=gr.themes.Soft(primary_hue="teal"), css=CSS
+    )
