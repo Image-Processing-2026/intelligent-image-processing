@@ -4,7 +4,7 @@ Quản lý chu trình khép kín: Analyze -> Diagnose -> Plan -> Process -> Eval
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -29,6 +29,7 @@ from src.analyzer_evaluator.reference_eval import evaluate_reference
 from .executor import execute_plan
 from .imaging import downscale
 from .intent import apply_intent, build_questions, intent_from_answers, intent_prompt
+from .memory import DEFAULT_USER, experience_prompt, get_case_memory
 from .perception import perceive
 from .planner import action_region, apply_preserve_guard, validate_and_sort_plan
 from .state import DiagnosisReport, DoctorState, HistoryItem, IntentProfile, TreatmentPlan
@@ -112,9 +113,11 @@ def plan_treatment(
     history: Optional[List[HistoryItem]] = None,
     original_image: Optional[np.ndarray] = None,
     intent: Optional[IntentProfile] = None,
+    experience_text: str = "",
 ) -> TreatmentPlan:
     """
     Giai đoạn Plan: lập kế hoạch từ chẩn đoán, chuẩn hóa và áp preserve guard.
+    experience_text: kinh nghiệm từ ca tương tự trong bộ nhớ (chỉ dùng cho prompt VLM).
     Ý định người dùng đã được áp vào chẩn đoán; ở đây chỉ đưa thêm vào prompt VLM.
     Chẩn đoán không còn lỗi nào (severity >= 1) → plan rỗng, không gọi VLM lần hai.
     """
@@ -133,6 +136,7 @@ def plan_treatment(
         original_image=original_image,
         diagnosis=diagnosis,
         intent_text=intent_prompt(intent),
+        experience_text=experience_text,
     )
     validated_plan = validate_and_sort_plan(plan)
     if diagnosis is not None:
@@ -140,8 +144,29 @@ def plan_treatment(
     return validated_plan
 
 
+def _experience(state: DoctorState) -> Tuple[str, List[str]]:
+    """
+    Kinh nghiệm từ bộ nhớ ca bệnh cho vòng 1 (các vòng sau đã có phản hồi của chính vòng
+    trước): (khối prompt, id các ca đã dùng). Bộ nhớ tắt hoặc lỗi → không có kinh nghiệm.
+    """
+    memory = get_case_memory()
+    if memory is None or state["iteration"] > 1:
+        return "", []
+    try:
+        cases = memory.similar(
+            state.get("diagnosis"),
+            state["technical_metrics"],
+            user_id=state.get("user_id") or DEFAULT_USER,
+        )
+    except Exception as exc:
+        logger.warning("Case memory lookup failed: %s", exc)
+        return "", []
+    return experience_prompt(cases), [f"case:{case.id[:8]}" for case, _ in cases]
+
+
 def diagnose_and_plan_node(state: DoctorState) -> Dict[str, Any]:
     """Node 3: Lập kế hoạch điều trị từ chẩn đoán của giai đoạn Perceive."""
+    experience_text, case_ids = _experience(state)
     plan = plan_treatment(
         image=state["current_image"],
         metrics=state["technical_metrics"],
@@ -150,7 +175,10 @@ def diagnose_and_plan_node(state: DoctorState) -> Dict[str, Any]:
         history=state.get("history", []),
         original_image=state.get("original_image"),
         intent=state.get("intent"),
+        experience_text=experience_text,
     )
+    if case_ids and plan.source == "vlm":
+        plan.knowledge = plan.knowledge + case_ids
     return {"treatment_plan": plan}
 
 
@@ -463,14 +491,26 @@ def rank_variants_node(state: DoctorState) -> Dict[str, Any]:
     ranked, recommended, source = rank_variants(
         downscale(state["original_image"]), state.get("variant_candidates") or [], diagnosis
     )
-    # Người dùng đã nói rõ phong cách mong muốn → đề xuất đúng phong cách đó
+    # Ưu tiên: phong cách người dùng nói rõ > phong cách họ hay chọn > xếp hạng
+    available = {variant.id for variant in ranked}
+    reason = source
     intent = state.get("intent")
-    if intent is not None and intent.style in {variant.id for variant in ranked}:
-        recommended = intent.style
+    memory = get_case_memory()
+    if intent is not None and intent.style in available:
+        recommended, reason = intent.style, "intent"
+    elif memory is not None:
+        try:
+            preferred = memory.preferred_style(state.get("user_id") or DEFAULT_USER)
+        except Exception as exc:
+            logger.warning("Case memory preference lookup failed: %s", exc)
+            preferred = None
+        if preferred in available:
+            recommended, reason = preferred, "preference"
     return {
         "variants": ranked,
         "recommended_variant": recommended,
         "variant_ranking_source": source,
+        "recommended_reason": reason if ranked else None,
     }
 
 
@@ -519,16 +559,18 @@ def run_pipeline(
     max_iterations: int = 3,
     num_variants: int = 1,
     intent: Optional[IntentProfile] = None,
+    user_id: str = DEFAULT_USER,
 ) -> DoctorState:
     """
     Hàm giao tiếp ngoài để chạy toàn bộ chu trình xử lý ảnh.
+    user_id: chủ của các ca trong bộ nhớ (kinh nghiệm và sở thích được tách theo người dùng).
     num_variants > 1 (tối đa 3): sau vòng lặp, sinh các phiên bản phong cách trên ảnh preview
     (state["variants"], đã xếp hạng); current_image vẫn là kết quả full-res của phác đồ.
     intent: ý định người dùng có sẵn (không hỏi). Chạy tương tác: xem src/agent/session.py.
     """
     app = build_doctor_graph()
     initial_state = initial_doctor_state(
-        image, ground_truth, is_synthetic, max_iterations, num_variants, intent
+        image, ground_truth, is_synthetic, max_iterations, num_variants, intent, user_id=user_id
     )
     return app.invoke(initial_state)
 
@@ -541,6 +583,7 @@ def initial_doctor_state(
     num_variants: int = 1,
     intent: Optional[IntentProfile] = None,
     interactive: bool = False,
+    user_id: str = DEFAULT_USER,
 ) -> DoctorState:
     """State khởi đầu của pipeline (dùng chung cho chạy thường và chạy tương tác)."""
     initial_state: DoctorState = {
@@ -567,5 +610,7 @@ def initial_doctor_state(
         "variant_ranking_source": None,
         "interactive": interactive,
         "intent": intent,
+        "user_id": user_id,
+        "recommended_reason": None,
     }
     return initial_state

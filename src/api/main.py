@@ -9,11 +9,17 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.agent.memory import DEFAULT_MEMORY_PATH, MEMORY_ENV, configure_case_memory
+
 from .routes import router
 
 # utf-8-sig: .env lưu bằng Notepad/PowerShell 5.1 có BOM, làm tên khóa đầu tiên thành
 # '﻿GEMINI_API_KEY' và server âm thầm chạy rule-based
 load_dotenv(encoding="utf-8-sig")
+
+# Bộ nhớ ca bệnh (Phase 5): CASE_MEMORY_PATH rỗng → tắt; mặc định data/memory/cases.sqlite.
+# CSDL chỉ được mở ở lần ghi/đọc đầu tiên.
+configure_case_memory(os.getenv(MEMORY_ENV, str(DEFAULT_MEMORY_PATH)))
 
 app = FastAPI(
     title="Intelligent Image Processing API",

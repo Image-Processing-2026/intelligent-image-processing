@@ -77,6 +77,9 @@ Nhiệm vụ của bạn:
    trong reasoning (ví dụ: "[dark-region]").
 9. Nếu có Ý ĐỊNH NGƯỜI DÙNG: đó là ưu tiên cao nhất. Không làm mất điều người dùng muốn giữ,
    phải xử lý điều người dùng muốn sửa, và chọn cường độ hợp với phong cách họ mong muốn.
+10. Nếu có KINH NGHIỆM TỪ CA TƯƠNG TỰ: học từ phản hồi cũ của chính người dùng này. Ví dụ ca
+   giống trước đây bị chê "tối quá" thì lần này nâng sáng mạnh tay hơn. Không chép nguyên
+   phác đồ cũ: ảnh hiện tại vẫn là căn cứ chính.
 
 Viết "reasoning" bằng tiếng Việt có dấu. Trả về kết quả dưới định dạng JSON thuần túy theo cấu trúc:
 {
@@ -402,10 +405,12 @@ def diagnose_and_plan(
     original_image: Optional[np.ndarray] = None,
     diagnosis: Optional[DiagnosisReport] = None,
     intent_text: str = "",
+    experience_text: str = "",
 ) -> TreatmentPlan:
     """
     Giai đoạn Plan: gọi Gemini lập kế hoạch điều trị dựa trên chỉ số và chẩn đoán.
     intent_text: khối 'Ý ĐỊNH NGƯỜI DÙNG' (intent.intent_prompt), đặt trước tri thức.
+    experience_text: khối 'KINH NGHIỆM TỪ CA TƯƠNG TỰ' (memory.experience_prompt).
     - Không có GEMINI_API_KEY → kế hoạch rule-based (source="rule_based").
     - Lỗi SDK/mạng/parse → kế hoạch rule-based (source="vlm_fallback"), không trả plan rỗng.
     - VLM trả "actions": [] hợp lệ → plan rỗng thật sự (ảnh đã tốt).
@@ -422,7 +427,9 @@ def diagnose_and_plan(
 
     try:
         context = retrieve(diagnosis or diagnose_from_metrics(metrics, iteration), metrics)
-        knowledge_text = "\n".join(text for text in (intent_text, format_context(context)) if text)
+        knowledge_text = "\n".join(
+            text for text in (intent_text, experience_text, format_context(context)) if text
+        )
         contents = _build_contents(
             image, metrics, iteration, history, original_image, diagnosis, knowledge_text
         )

@@ -262,3 +262,48 @@ def test_refine_endpoint_applies_feedback():
     assert [a["kind"] for a in body["adjustments"]] == ["brighter", "more_saturated"]
     assert [a["operation"] for a in body["actions"]] == ["gamma_correct", "color_correct"]
     assert (body["width"], body["height"]) == (64, 64)
+
+
+def test_memory_records_runs_choices_and_feedback(tmp_path):
+    """Phase 5: /process ghi ca; /render và /refine kèm case_id ghi lựa chọn và góp ý."""
+    from src.agent.memory import configure_case_memory
+
+    assert client.get("/api/v1/memory").json() == {
+        "enabled": False,
+        "cases": 0,
+        "choices": {},
+        "feedback": {},
+        "preferred_style": None,
+    }
+    memory = configure_case_memory(tmp_path / "cases.sqlite")
+    image_bytes = _create_dark_png_bytes()
+    processed = client.post(
+        "/api/v1/process",
+        files={"file": ("dark.png", image_bytes, "image/png")},
+        data={"max_iterations": "1", "num_variants": "2", "user_id": "an"},
+    ).json()
+    case_id = processed["case_id"]
+    assert case_id and memory.get(case_id).user_id == "an"
+
+    natural = next(v for v in processed["variants"] if v["id"] == "natural")
+    client.post(
+        "/api/v1/render",
+        files={"file": ("dark.png", image_bytes, "image/png")},
+        data={
+            "actions": json.dumps(natural["actions"]),
+            "case_id": case_id,
+            "variant_id": "natural",
+        },
+    )
+    client.post(
+        "/api/v1/refine",
+        files={"file": ("dark.png", image_bytes, "image/png")},
+        data={"actions": "[]", "feedback": "tối quá", "case_id": case_id},
+    )
+    case = memory.get(case_id)
+    assert case.chosen_variant == "natural"
+    assert case.feedback == ["brighter@full:2"]
+
+    stats = client.get("/api/v1/memory", params={"user_id": "an"}).json()
+    assert stats["enabled"] is True and stats["cases"] == 1
+    assert stats["choices"] == {"natural": 1} and stats["feedback"] == {"brighter": 1}
