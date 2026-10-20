@@ -60,7 +60,7 @@
       region: $defect
       params: {method: unsharp_mask, amount: {1: 0.5, 2: 0.8, 3: 1.0}}
   avoid:
-    - "Chỉ dùng method unsharp_mask: bản laplacian hiện tại nhân độ sáng ảnh với amount (amount 0.5 làm ảnh tối đi một nửa)."
+    - "Ảnh chụp dùng method unsharp_mask: cùng amount, laplacian khuếch đại nhiễu mạnh hơn nhiều (amount 0.5: nhiễu ×4.1 so với ×1.5)."
     - "amount > 1.2: viền sáng (halo) quanh cạnh, ảnh trông gắt và giả."
     - "Ảnh còn nhiễu: làm nét khuếch đại nhiễu; khử nhiễu trước hoặc bỏ qua làm nét."
     - "Làm nét mạnh da mặt: lộ khuyết điểm; với chân dung chỉ làm nét nhẹ (≤ 0.6)."

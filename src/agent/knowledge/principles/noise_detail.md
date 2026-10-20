@@ -37,8 +37,10 @@ Unsharp mask tăng tương phản tại cạnh nên ảnh trông nét hơn, như
 mất. Mờ chuyển động và lệch nét cần giải chập (deconvolution), không có trong toolbox. Làm nét
 quá tay sinh viền sáng (halo) và khuếch đại nhiễu, nên luôn làm nét sau khi khử nhiễu, và nhẹ tay.
 
-## Lỗi hiện tại của method laplacian
-tags: sharpen, laplacian, unsharp_mask, brightness, bug
-sources: Kiểm thử nội bộ src/processing_engine/sharpen.py
-Kernel laplacian của Module 3 có tổng hệ số bằng amount, nên ngoài làm nét nó nhân độ sáng ảnh
-với amount (amount 0.3 làm ảnh còn 30% độ sáng). Cho đến khi được sửa, chỉ dùng unsharp_mask.
+## unsharp_mask và laplacian khác nhau ở tần số được làm nét
+tags: sharpen, laplacian, unsharp_mask, noise, amount, calibration
+sources: Đo nội bộ trên skimage astronaut làm mờ nhẹ + nhiễu σ=4 (2026-10)
+unsharp_mask cộng lại chi tiết ở dải tần trung bình (Gaussian sigma 2), còn laplacian dùng kernel
+3×3 nên đẩy mạnh chi tiết cấp điểm ảnh, và nhiễu nằm đúng ở dải đó. Cùng amount, laplacian mạnh
+hơn nhiều: amount 0.5 làm nhiễu tăng ×4.1 (unsharp_mask ×1.5), amount 1.0 tăng ×7.1 (×1.9).
+Với ảnh chụp, dùng unsharp_mask; laplacian chỉ hợp ảnh sạch nhiễu như tài liệu scan, với amount nhỏ.
