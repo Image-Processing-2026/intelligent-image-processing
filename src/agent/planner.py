@@ -227,33 +227,39 @@ def clamp_parameters(operation: str, params: Dict[str, Any]) -> Dict[str, Any]:
     return clamped
 
 
-def validate_and_sort_plan(plan: TreatmentPlan) -> TreatmentPlan:
+def sanitize_actions(actions: List[RegionOperation]) -> List[RegionOperation]:
     """
-    Xác thực kế hoạch điều trị:
+    Lọc và kẹp các thao tác, GIỮ NGUYÊN thứ tự:
     1. Loại bỏ các thao tác không nằm trong Toolbox.
-    2. Kẹp (clamp) tham số và các trường vùng về khoảng an toàn.
-    3. Sắp xếp thứ tự ưu tiên (khử nhiễu -> cân bằng sáng -> CLAHE -> làm nét -> chỉnh màu).
+    2. Kẹp (clamp) tham số và các trường vùng về khoảng an toàn; bỏ bbox/binary_mask.
+    Dùng cho phác đồ đã thực thi (render lại một phiên bản): đổi thứ tự sẽ đổi kết quả.
     """
     valid_actions: List[RegionOperation] = []
-
-    for action in plan.actions:
+    for action in actions:
         op_name = action.operation.lower().strip()
-        if op_name in ALLOWED_OPERATIONS:
-            # Kẹp tham số về khoảng an toàn
-            action.parameters = clamp_parameters(op_name, action.parameters)
-            # Kẹp các trường vùng (Module 2) và bỏ bbox/binary_mask
-            region_fields = {
-                name: getattr(action, name)
-                for name in (*REGION_FIELD_BOUNDS, "instance_index", *IN_PROCESS_REGION_FIELDS)
-            }
-            for name, value in clamp_region_fields(region_fields).items():
-                setattr(action, name, value)
-            # Gán lại độ ưu tiên mặc định nếu chưa được sắp xếp
-            calculated_priority = OPERATION_ORDER.get(op_name, 99)
-            action.order = calculated_priority
-            valid_actions.append(action)
+        if op_name not in ALLOWED_OPERATIONS:
+            continue
+        action.parameters = clamp_parameters(op_name, action.parameters)
+        region_fields = {
+            name: getattr(action, name)
+            for name in (*REGION_FIELD_BOUNDS, "instance_index", *IN_PROCESS_REGION_FIELDS)
+        }
+        for name, value in clamp_region_fields(region_fields).items():
+            setattr(action, name, value)
+        valid_actions.append(action)
+    return valid_actions
 
-    # Sắp xếp danh sách hành động theo thứ tự an toàn
+
+def validate_and_sort_plan(plan: TreatmentPlan) -> TreatmentPlan:
+    """
+    Xác thực kế hoạch điều trị của một vòng:
+    1–2. Lọc thao tác ngoài Toolbox, kẹp tham số và trường vùng (sanitize_actions).
+    3. Sắp xếp thứ tự ưu tiên (khử nhiễu -> cân bằng sáng -> CLAHE -> làm nét -> chỉnh màu).
+    """
+    valid_actions = sanitize_actions(plan.actions)
+    for action in valid_actions:
+        action.order = OPERATION_ORDER.get(action.operation.lower().strip(), 99)
+    # Sắp xếp danh sách hành động theo thứ tự an toàn (sort ổn định giữ thứ tự cùng loại)
     valid_actions.sort(key=lambda x: x.order)
     plan.actions = valid_actions
     return plan

@@ -4,6 +4,7 @@ Integration tests for FastAPI endpoints: /health, /diagnose, /process.
 
 import base64
 import io
+import json
 
 import numpy as np
 from fastapi.testclient import TestClient
@@ -128,3 +129,91 @@ def test_process_endpoint_invalid_file():
         files={"file": ("corrupt.png", b"not_an_image", "image/png")},
     )
     assert response.status_code == 500
+
+
+def _decode(image_base64: str) -> np.ndarray:
+    return np.array(Image.open(io.BytesIO(base64.b64decode(image_base64))).convert("RGB"))
+
+
+def _create_dark_png_bytes(width: int = 64, height: int = 64) -> bytes:
+    gradient = np.tile(np.linspace(10, 60, width), (height, 1)).astype(np.uint8)
+    img = Image.fromarray(np.repeat(gradient[:, :, None], 3, axis=2))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_process_endpoint_returns_ranked_variants():
+    """Phase 3: num_variants=3 → các phiên bản đã xếp hạng, kèm preview và phác đồ."""
+    response = client.post(
+        "/api/v1/process",
+        files={"file": ("dark.png", _create_dark_png_bytes(), "image/png")},
+        data={"max_iterations": "2", "num_variants": "3"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    variants = data["variants"]
+    assert sorted(v["id"] for v in variants) == ["balanced", "natural", "vivid"]
+    assert [v["rank"] for v in variants] == [1, 2, 3]
+    assert data["recommended_variant"] in {v["id"] for v in variants}
+    assert data["variant_ranking_source"] == "score"
+    assert all(_decode(v["preview_base64"]).shape == (64, 64, 3) for v in variants)
+
+
+def test_render_reproduces_the_chosen_variant():
+    """Render full-res phiên bản 'balanced' phải khớp ảnh kết quả của /process."""
+    image_bytes = _create_dark_png_bytes()
+    processed = client.post(
+        "/api/v1/process",
+        files={"file": ("dark.png", image_bytes, "image/png")},
+        data={"max_iterations": "2", "num_variants": "2"},
+    ).json()
+    balanced = next(v for v in processed["variants"] if v["id"] == "balanced")
+
+    response = client.post(
+        "/api/v1/render",
+        files={"file": ("dark.png", image_bytes, "image/png")},
+        data={"actions": json.dumps(balanced["actions"])},
+    )
+    assert response.status_code == 200
+    rendered = response.json()
+    assert (rendered["width"], rendered["height"]) == (64, 64)
+    assert np.array_equal(
+        _decode(rendered["image_base64"]), _decode(processed["processed_image_base64"])
+    )
+
+
+def test_render_keeps_action_order_and_drops_unknown_operations():
+    actions = [
+        {
+            "region_id": "full",
+            "target_prompt": "full",
+            "region_type": "full",
+            "detected_issue": "x",
+            "operation": op,
+            "parameters": params,
+        }
+        for op, params in [
+            ("gamma_correct", {"gamma": 9.0}),
+            ("face_beautify", {}),
+            ("denoise", {"method": "bilateral", "strength": 1.0}),
+        ]
+    ]
+    response = client.post(
+        "/api/v1/render",
+        files={"file": ("dark.png", _create_dark_png_bytes(), "image/png")},
+        data={"actions": json.dumps(actions)},
+    )
+    assert response.status_code == 200
+    applied = response.json()["applied_actions"]
+    assert [a["operation"] for a in applied] == ["gamma_correct", "denoise"]
+    assert applied[0]["parameters"]["gamma"] == 2.5  # đã kẹp theo PARAMETER_BOUNDS
+
+
+def test_render_rejects_malformed_actions():
+    response = client.post(
+        "/api/v1/render",
+        files={"file": ("dark.png", _create_dark_png_bytes(), "image/png")},
+        data={"actions": '{"not": "a list"}'},
+    )
+    assert response.status_code == 422

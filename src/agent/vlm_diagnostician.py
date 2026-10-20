@@ -76,7 +76,7 @@ Nhiệm vụ của bạn:
    thể trên ảnh và phải nêu lý do đó. Tuân thủ các mục "Tránh", và nêu id playbook đã dựa vào
    trong reasoning (ví dụ: "[dark-region]").
 
-Viết "reasoning" bằng tiếng Việt. Trả về kết quả dưới định dạng JSON thuần túy theo cấu trúc:
+Viết "reasoning" bằng tiếng Việt có dấu. Trả về kết quả dưới định dạng JSON thuần túy theo cấu trúc:
 {
   "iteration": 1,
   "reasoning": "Giải thích lý do lựa chọn thuật toán và tham số...",

@@ -105,3 +105,37 @@ def test_reasoning_lists_playbook_knowledge():
     _, _, _, reasoning, _ = process_interface(img, None, 1)
     assert "Tri thức tham khảo" in reasoning
     assert "global-underexposed" in reasoning
+
+
+def _dark_image() -> np.ndarray:
+    gradient = np.tile(np.linspace(10, 60, 48), (48, 1)).astype(np.uint8)
+    return np.repeat(gradient[:, :, None], 3, axis=2)
+
+
+def test_process_with_variants_and_render_choice():
+    """Phase 3: một lần chạy cho 3 phiên bản; xuất bản 'balanced' khớp ảnh kết quả."""
+    from frontend.app import process_with_variants, render_chosen_variant
+
+    img = _dark_image()
+    outputs = process_with_variants(img, None, 2, 3)
+    assert len(outputs) == 9
+    out_img, _, _, _, _, variants_gallery, variants_md, choice, actions = outputs
+
+    assert len(variants_gallery) == 3
+    assert "Xếp hạng theo" in variants_md
+    assert choice["value"] in actions
+    assert sorted(actions) == ["balanced", "natural", "vivid"]
+
+    rendered, status = render_chosen_variant(img, "balanced", actions)
+    assert np.array_equal(rendered, out_img)
+    assert "48×48" in status
+
+
+def test_process_with_single_variant_and_missing_choice():
+    from frontend.app import process_with_variants, render_chosen_variant
+
+    outputs = process_with_variants(_dark_image(), None, 1, 1)
+    assert outputs[5] == [] and outputs[8] == {}
+    rendered, status = render_chosen_variant(_dark_image(), None, {})
+    assert rendered is None and "chọn một phiên bản" in status
+    assert len(process_with_variants(None, None, 1, 3)) == 9

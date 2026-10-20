@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from src.agent.state import DiagnosisReport, TreatmentPlan
+from src.agent.state import DiagnosisReport, RegionOperation, TreatmentPlan
 
 
 class DiagnoseRequest(BaseModel):
@@ -23,6 +23,31 @@ class DiagnoseResponse(BaseModel):
     treatment_plan: TreatmentPlan
 
 
+class VariantOut(BaseModel):
+    """Một phiên bản kết quả (phong cách) để người dùng chọn."""
+
+    id: str
+    label: str
+    description: str = ""
+    rank: Optional[int] = None
+    quality_score: Optional[float] = None
+    quality_improved: Optional[bool] = None
+    critic_note: str = ""
+    actions: List[RegionOperation] = Field(
+        default_factory=list, description="Gửi lại /render để xuất phiên bản này ở full-res"
+    )
+    preview_base64: str = Field(..., description="Ảnh preview (cạnh dài ≤ 1024) dạng PNG")
+
+
+class RenderResponse(BaseModel):
+    """Ảnh full-res của một phiên bản đã chọn."""
+
+    image_base64: str
+    width: int
+    height: int
+    applied_actions: List[RegionOperation]
+
+
 class ProcessResponse(BaseModel):
     """Kết quả xử lý ảnh hoàn chỉnh sau chu trình khép kín."""
 
@@ -34,4 +59,11 @@ class ProcessResponse(BaseModel):
     intermediate_images_base64: List[str] = Field(
         default_factory=list,
         description="Danh sách ảnh trung gian sau mỗi vòng lặp (Base64 PNG thumbnails)",
+    )
+    variants: List[VariantOut] = Field(
+        default_factory=list, description="Các phiên bản đã xếp hạng (khi num_variants > 1)"
+    )
+    recommended_variant: Optional[str] = None
+    variant_ranking_source: Optional[str] = Field(
+        default=None, description="'critic' (VLM xếp hạng) hoặc 'score' (điểm Module 1)"
     )
