@@ -24,6 +24,9 @@ dependencies = [
     "google-genai>=2.0.0",
     "mediapipe>=0.10.11",
     "python-dotenv>=1.0.1",
+    "python-multipart>=0.0.9",
+    "sqlalchemy>=2.0.0",
+    "argon2-cffi>=23.1.0",
     "gradio>=4.20.0",
 ]
 
