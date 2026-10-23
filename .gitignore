@@ -64,6 +64,8 @@ data/synthetic/degraded/*
 data/real/*
 # Bộ nhớ ca bệnh (Phase 5): số liệu và lựa chọn của người dùng, không commit
 data/memory/
+# Web app: tài khoản, phiên xử lý và ảnh người dùng, không commit
+data/app/
 !data/synthetic/clean/.gitkeep
 !data/synthetic/degraded/.gitkeep
 !data/real/.gitkeep
@@ -71,3 +73,8 @@ data/memory/
 # Generated artifacts (output images, reports) — keep explicitly committed ones
 artifacts/*
 !artifacts/region_engine_person_output.png
+
+# Web app frontend (web/)
+web/node_modules/
+web/dist/
+web/coverage/
