@@ -66,7 +66,7 @@ analyze → perceive → clarify → diagnose_and_plan → process → evaluate 
 
 ### VLM behaviour (`src/agent/vlm_diagnostician.py`)
 
-- SDK is `google-genai` (`genai.Client(...).models.generate_content`) with `response_json_schema=PLAN_RESPONSE_SCHEMA`, generated from the planner bounds. Model defaults to `DEFAULT_GEMINI_MODEL`, overridable via `GEMINI_MODEL`. Images are downscaled to `VLM_MAX_SIDE`; from iteration 2 the original image is sent too.
+- SDK is `google-genai` (`genai.Client(...).models.generate_content`) with `response_json_schema=PLAN_RESPONSE_SCHEMA`, generated from the planner bounds. Model defaults to `DEFAULT_GEMINI_MODEL`, overridable via `GEMINI_MODEL`. Images are sent at full resolution (PNG, or JPEG q95 when over the `VLM_INLINE_IMAGE_BUDGET` inline budget) with `media_resolution=HIGH`; Gemini still resamples them to its own token budget. From iteration 2 the original image is sent too.
 - Knowledge Base (`src/agent/knowledge/`, see its `README.md`): YAML playbook cards (symptoms → recipe using the 5 tools → contraindications) and markdown principles. Retrieval is structured filtering plus BM25, with no embeddings. `format_context()` injects the matched cards into the Plan prompt, with parameters already resolved for the case's severity. `TreatmentPlan.knowledge` records the ids used.
 - No `GEMINI_API_KEY` → rule-based plan (`TreatmentPlan.source == "rule_based"`), produced by the KB rule engine from the `auto_apply` cards. All tests depend on this offline path, so keep it working.
 - Key set but the call, parse or validation fails → the same rule-based plan with `source == "vlm_fallback"`. Only a valid VLM response with `actions: []` yields an empty plan (= `SHIP`).
