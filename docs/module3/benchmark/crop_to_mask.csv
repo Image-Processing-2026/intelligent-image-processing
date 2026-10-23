@@ -1,0 +1,25 @@
+resolution,mask_area,op,full_ms,crop_ms,speedup,identical
+1920x1080,0.0546,denoise nlm s=0.8,2748.3,1119.4,2.46,True
+1920x1080,0.0546,denoise gaussian s=2.0,160.4,17.1,9.38,True
+1920x1080,0.0546,denoise median s=2.0,172.3,17.7,9.75,True
+1920x1080,0.0546,sharpen unsharp a=1.0,166.1,16.3,10.18,True
+1920x1080,0.0546,gamma 2.0,158.4,14.8,10.72,True
+1920x1080,0.0546,temperature_shift -0.3,215.1,22.4,9.62,True
+1920x1080,0.2609,denoise nlm s=0.8,2730.5,1087.0,2.51,True
+1920x1080,0.2609,denoise gaussian s=2.0,152.5,63.9,2.39,True
+1920x1080,0.2609,denoise median s=2.0,197.7,64.7,3.05,True
+1920x1080,0.2609,sharpen unsharp a=1.0,186.2,56.6,3.29,True
+1920x1080,0.2609,gamma 2.0,174.5,62.8,2.78,True
+1920x1080,0.2609,temperature_shift -0.3,250.3,73.2,3.42,True
+4000x3000,0.0519,denoise nlm s=0.8,14860.6,1296.2,11.46,True
+4000x3000,0.0519,denoise gaussian s=2.0,1083.0,90.4,11.97,True
+4000x3000,0.0519,denoise median s=2.0,1160.2,107.5,10.79,True
+4000x3000,0.0519,sharpen unsharp a=1.0,1141.2,111.8,10.21,True
+4000x3000,0.0519,gamma 2.0,1113.1,94.5,11.78,True
+4000x3000,0.0519,temperature_shift -0.3,1412.4,118.2,11.95,True
+4000x3000,0.254,denoise nlm s=0.8,14520.4,5248.0,2.77,True
+4000x3000,0.254,denoise gaussian s=2.0,1107.2,344.0,3.22,True
+4000x3000,0.254,denoise median s=2.0,1144.0,380.0,3.01,True
+4000x3000,0.254,sharpen unsharp a=1.0,1147.1,367.8,3.12,True
+4000x3000,0.254,gamma 2.0,923.6,269.1,3.43,True
+4000x3000,0.254,temperature_shift -0.3,1137.4,358.2,3.18,True

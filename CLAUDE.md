@@ -1,0 +1,120 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project
+
+Agentic closed-loop image processing for a university Image Processing course ("AI Image Doctor").
+Gemini VLM + LangGraph **diagnose and orchestrate**; classical CV (OpenCV, scikit-image, NumPy) does **all** pixel work.
+
+**Hard constraint (ADR-001):** never use generative AI (Stable Diffusion, GANs, DALL-E, image-to-image models) to produce or modify pixels. This is a course requirement. Do not add it, even as an "optional" path.
+
+Background docs: `CONTEXT.md` (mission, ownership), `docs/interfaces.md` (cross-module contracts), `docs/decisions.md` (ADR-001…004), `CONTRIBUTING.md` (git workflow). `personal/` holds individual team notes and is not authoritative.
+
+## Commands
+
+```bash
+pip install -r requirements-dev.txt          # includes pytest-cov, pyiqa, ruff
+
+# Lint/format (CI runs only `ruff check src/ tests/`)
+ruff check src/ tests/ --fix && ruff format src/ tests/ && ruff check src/ tests/
+
+# Tests (CI runs tests/unit/ only; integration tests are local)
+pytest tests/unit/ -v
+pytest tests/unit/test_agent_planner.py::test_name -v   # single test
+pytest tests/                                            # unit + integration
+pytest --cov=src/analyzer_evaluator tests/unit/          # coverage gate fail_under=90 (analyzer_evaluator only)
+
+# Run
+uvicorn src.api.main:app --reload --port 8000           # FastAPI, routes under /api/v1 (/health, /diagnose, /process, /render, /refine, /sessions, /memory)
+python frontend/app.py                                  # Gradio on :7860, calls run_pipeline() directly (not via API)
+```
+
+Run from the repo root. `pythonpath = ["."]` means every import uses the `src.` prefix (`from src.agent.graph import run_pipeline`). Tests and the pipeline work without `GEMINI_API_KEY` (see VLM fallback below). The key goes in `.env` (see `.env.example`).
+
+## Architecture: 4 owned modules
+
+| Module | Owner | Role |
+|---|---|---|
+| `src/analyzer_evaluator/` | Person 1 | `analyze_image()` → `TechnicalMetrics`; dual-path evaluation |
+| `src/region_engine/` | Person 2 | Soft masks: `segment_by_prompt`, `detect_faces` (MediaPipe), spatial/quadrant masks, `blend_regions` |
+| `src/processing_engine/` | Person 3 | Classical ops: denoise, gamma, CLAHE, sharpen, color balance |
+| `src/agent/` + `src/api/` | Person 4 | LangGraph loop, VLM diagnosis, plan validation, executor, FastAPI |
+| `src/extensions/` | — | **DEFERRED** (deblur, inpaint, super-res). Never import it into MVP code. Ruff excludes it. |
+
+Cross-module changes must respect `docs/interfaces.md`. Keep edits inside the module you were asked to touch. Region names are normalised by `src/agent/regions.canonical_region` (face/full synonyms); executor, planner and perception all use it.
+
+### Pipeline (`src/agent/graph.py::run_pipeline`)
+
+LangGraph `StateGraph` over `DoctorState` (`src/agent/state.py`):
+
+```
+analyze → perceive → clarify → diagnose_and_plan → process → evaluate → decide ─┬─ SHIP / STOP_BEST_EFFORT → END
+   ↑                                                                  │
+   └──────────────────────────── RE_PROCESS ──────────────────────────┘   (max_iterations, default 3)
+```
+
+- `perceive` (`perception.perceive`) is stage 1. It produces a `DiagnosisReport` (scene, `defects` with severity 0–3, `preserve` = intentional style), measures each subject region through `executor.resolve_region_mask`, adds `measured` defects (for example a backlit face), and drops defects that conflict with `preserve`.
+- `diagnose_and_plan` calls `graph.plan_treatment()` (stage 2). If no defect has severity ≥ 1, it returns an empty plan without calling the VLM. Otherwise it runs `diagnose_and_plan()` → `validate_and_sort_plan()` → `planner.apply_preserve_guard()`, which deterministically neutralises or drops actions that break `preserve`.
+- `process` calls `executor.execute_plan()`. It builds a mask with the region engine and then dispatches to processing-engine functions.
+- `evaluate_node` does its own ADR-002 routing: reference eval only when `is_synthetic` and a ground truth exists. It must store `eval_metrics.model_dump()` (a plain dict), never the Pydantic model. The model breaks `HistoryItem` and the JSON API response.
+- `decide_node`, in order: degraded → `STOP_BEST_EFFORT` + rollback; empty plan → `SHIP`; `_decide_synthetic` (PSNR ≥ 28 and SSIM ≥ 0.88) or `_decide_real` (score ≥ `REAL_TARGET_SCORE` → `SHIP`, gain < `REAL_MIN_GAIN` → `STOP_BEST_EFFORT`). For real images a score-based `SHIP` becomes `RE_PROCESS` when the plan acted on a defect with severity ≥ `VERIFY_SEVERITY` (on its region or on the full image) and iterations remain, so the next Perceive can verify the fix. Only after that does the iteration cap turn a remaining `RE_PROCESS` into `STOP_BEST_EFFORT`.
+- `clarify` (Phase 4, `intent.py`) runs only in interactive sessions (`session.py`, with a `MemorySaver` checkpointer). On iteration 1 it calls `interrupt()` with deterministic questions. On resume the node re-runs from the top, so everything before `interrupt()` must stay deterministic. The resulting `IntentProfile` overrides every iteration's diagnosis (`apply_intent` in `perceive_node`) and adds an "Ý ĐỊNH NGƯỜI DÙNG" block to the Plan prompt. `vlm_diagnostician` receives that block as text (`intent_text`), because importing `intent` there would create an import cycle through `perception`.
+- Feedback (`refine.py`) is stateless: Vietnamese rules, then Gemini, then edits to the treatment, then a re-render from the original. It bypasses the preserve guard because the user asked explicitly.
+- Case memory (`memory.py`, Phase 5): a SQLite store of past runs, choices and feedback, with no images. It is disabled unless `configure_case_memory()` is called (the API and the Gradio `__main__` do so). `tests/conftest.py` disables it for every test; a test that needs it configures a `tmp_path` DB. `diagnose_and_plan_node` adds similar cases to the iteration-1 Plan prompt, and `rank_variants_node` recommends the user's preferred style when the intent gives none. Record runs at the API/UI layer (`remember_run`), not inside the graph.
+- Variants (`variants.py`): with `num_variants > 1`, `should_continue` fans out one `Send` per style (balanced/natural/vivid) to `render_variant`, which renders the treatment of the non-rolled-back iterations on a ≤1024 px preview. `rank_variants` then deduplicates and ranks them, using the VLM critic or the Module 1 score. Render results accumulate in `variant_candidates` (an `operator.add` reducer); the ranked list goes in `variants`. Never write ranked results back into the reducer key. Re-render a chosen variant with `planner.sanitize_actions`, never `validate_and_sort_plan`, because reordering changes the result.
+
+### VLM behaviour (`src/agent/vlm_diagnostician.py`)
+
+- SDK is `google-genai` (`genai.Client(...).models.generate_content`) with `response_json_schema=PLAN_RESPONSE_SCHEMA`, generated from the planner bounds. Model defaults to `DEFAULT_GEMINI_MODEL`, overridable via `GEMINI_MODEL`. Images are downscaled to `VLM_MAX_SIDE`; from iteration 2 the original image is sent too.
+- Knowledge Base (`src/agent/knowledge/`, see its `README.md`): YAML playbook cards (symptoms → recipe using the 5 tools → contraindications) and markdown principles. Retrieval is structured filtering plus BM25, with no embeddings. `format_context()` injects the matched cards into the Plan prompt, with parameters already resolved for the case's severity. `TreatmentPlan.knowledge` records the ids used.
+- No `GEMINI_API_KEY` → rule-based plan (`TreatmentPlan.source == "rule_based"`), produced by the KB rule engine from the `auto_apply` cards. All tests depend on this offline path, so keep it working.
+- Key set but the call, parse or validation fails → the same rule-based plan with `source == "vlm_fallback"`. Only a valid VLM response with `actions: []` yields an empty plan (= `SHIP`).
+- `.env` is saved with a BOM, so `load_dotenv()` misses `GEMINI_API_KEY`; scripts read it with `encoding="utf-8-sig"`.
+- `SYSTEM_PROMPT` is in Vietnamese and lists the toolbox and parameter ranges. Keep it in sync with `planner.py` (gamma hallucination was a past bug).
+- Mock Gemini in tests with `patch.dict("os.environ", {"GEMINI_API_KEY": "fake-..."})` plus patching `src.agent.vlm_diagnostician.genai` and setting `mock_genai.Client.return_value.models`. Both stages call Gemini through `call_gemini_json`, so a pipeline test needs perceive and plan responses (`_route_gemini` in `tests/unit/test_vlm_mock.py` routes them by schema). See `tests/unit/test_vlm_mock.py`). Never hit the real API in unit tests.
+
+## Contracts that are easy to break
+
+**Agent toolbox is fixed at 5 operations** (`planner.ALLOWED_OPERATIONS`): `denoise`, `gamma_correct`, `clahe`, `sharpen`, `color_correct`. Do not invent new operations. Unknown operations are silently dropped. Toolbox names differ from function names: `gamma_correct → apply_gamma` and `color_correct → apply_color_balance`. Changing an operation or its parameters means updating all of these together:
+1. `planner.PARAMETER_BOUNDS` (clamping by `clamp_parameters`) and the `priority_map` in `validate_and_sort_plan`. Order is denoise(10) → gamma(20) → clahe(30) → sharpen(40) → color(50), and the planner overwrites any VLM-supplied order.
+2. The dispatch branch and defaults in `executor.execute_plan`.
+3. The VLM `SYSTEM_PROMPT`. The structured-output schema is generated from `PARAMETER_BOUNDS`.
+4. The playbook cards in `src/agent/knowledge/cards/*.yaml`. They are validated against `ALLOWED_OPERATIONS` and `PARAMETER_BOUNDS` when loaded, so a stale card fails `test_agent_knowledge.py`.
+5. `docs/interfaces.md`.
+
+**Processing engine signature:** `apply_<op>(image, mask: Optional[np.ndarray] = None, **params) -> np.ndarray`. Implement the pure algorithm as `_raw_<op>(image, **params)`, then wrap it with `base.apply_region_op(image, mask, _raw_<op>, ...)`, which handles soft-mask blending. Do not blend by hand inside an operation.
+
+**Images:** inter-module format is RGB `uint8` `(H, W, 3)`. Grayscale input must also work (`test_grayscale_support.py`). Convert back to RGB after any OpenCV BGR work. RGB/BGR swaps have caused real bugs here.
+
+**Masks (ADR-003):** `np.float32` in `[0.0, 1.0]`, shape `(H, W)` or `(H, W, 1)` matching the image, Gaussian-feathered (`mask_utils.create_soft_mask`). Never use hard binary masks for blending. `executor._validate_mask` rejects anything else (wrong dtype, all zeros, NaN, out of range) and **silently falls back to full-image processing**.
+
+**Executor swallows errors:** each action runs in its own `try/except` that logs a warning and skips the action. A broken operation will not fail the pipeline. Assert on output or logs in tests, not on exceptions.
+
+**Region engine is heuristic for now:** `segment_by_prompt` maps keywords (sky/ground/center/full, plus Vietnamese equivalents) to quadrant masks. Any other prompt returns a full-image mask. GroundingDINO/MobileSAM is a TODO. `target_prompt` values `face`/`khuôn mặt` go to MediaPipe. A face action with no detected face is skipped.
+
+**Dual-path evaluation (ADR-002):** PSNR/SSIM/MSE (`evaluate_reference`) only for synthetic images with ground truth. Real images use `evaluate_no_reference` (heuristic score + optional `pyiqa` BRISQUE/NIQE + deltas vs. the previous iteration). `analyzer_evaluator.evaluate_quality()` is the unified router. `graph.evaluate_node` duplicates that routing, so keep both consistent.
+
+**Dependencies:** `numpy<2.0.0` is pinned for compatibility, so do not bump it. Use Pydantic v2 APIs (`model_dump()`, not `.dict()`). ADR-004: CPU-only target (AMD iGPU, no CUDA), so do not add CUDA-only dependencies.
+
+## Conventions
+
+- **Bilingual:** docstrings and code comments in **Vietnamese with diacritics**; log messages, exception messages, identifiers and commit messages in **English**.
+- Full type annotations on every function. Ruff: line length 100, rules `E,F,I,W` (import sorting enforced, `E501` ignored).
+- PowerShell `.ps1` scripts must be saved as UTF-8 **with BOM** (Windows PowerShell 5.1).
+- Tests: unit tests in `tests/unit/`, shared synthetic-image fixtures in `tests/conftest.py` and `tests/fixtures/synthetic_images.py`. Sample real images are in `data/real/`.
+
+## Git workflow
+
+- Branch from `develop`: `feat/`, `fix/`, `refactor/`, `docs/`, `test/<name>`. PR into `develop` (only release PRs go to `main`). Never commit directly to `main`.
+- Conventional Commits: `<type>(<scope>): <description>`, with scopes `agent`, `engine`, `region`, `eval`, `api`, `ui`, `workflow`.
+- CI (`.github/workflows/ci.yml`, Python 3.10): `ruff check src/ tests/` → `pytest tests/unit/ -v`. It must be green, and the PR needs one reviewer approval.
+
+## Definition of done
+
+- [ ] `ruff check src/ tests/` clean and `ruff format` applied
+- [ ] `pytest tests/unit/ -v` passes. New behaviour has unit tests that run offline (no API key, no network)
+- [ ] Type annotations on new functions; Vietnamese docstrings; English logs and exceptions
+- [ ] No `src/extensions/` imports and no generative pixel manipulation
+- [ ] Masks are float32 [0, 1] and feathered; operations use the `apply_<op>` + `apply_region_op` pattern
+- [ ] Toolbox changes are synced across planner, executor, VLM prompt and `docs/interfaces.md`

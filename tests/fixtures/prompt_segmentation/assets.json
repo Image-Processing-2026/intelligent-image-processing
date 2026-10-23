@@ -1,0 +1,42 @@
+{
+  "assets": [
+    {
+      "id": "grounding_dino_tiny_snapshot",
+      "kind": "snapshot",
+      "path": "models/segmentation/grounding-dino-tiny",
+      "url": null,
+      "sha256": null,
+      "archive_format": "zip",
+      "required_files": ["config.json", "preprocessor_config.json"],
+      "note": "Populate with a pinned local Hugging Face snapshot archive and manifest hash."
+    },
+    {
+      "id": "mobile_sam_vit_t",
+      "kind": "file",
+      "path": "models/segmentation/mobile_sam.pt",
+      "url": null,
+      "sha256": null,
+      "note": "Populate with a pinned MobileSAM vit_t checkpoint and hash."
+    }
+  ],
+  "datasets": {
+    "penn_fudan": {
+      "image_root": "tests/fixtures/prompt_segmentation/penn_fudan/PNGImages",
+      "mask_root": "tests/fixtures/prompt_segmentation/penn_fudan/PedMasks",
+      "note": "Download exact image/mask bytes and add per-file hashes before real evaluation."
+    },
+    "ade20k_sky": {
+      "note": "Sky fixture is intentionally not claimed until class metadata and hashes are pinned."
+    }
+  },
+  "real_model_cases": {
+    "person_penn_fudan_00046": {
+      "image": "tests/fixtures/prompt_segmentation/penn_fudan/PNGImages/FudanPed00046.png",
+      "ground_truth": "tests/fixtures/prompt_segmentation/penn_fudan/PedMasks/FudanPed00046_mask.png",
+      "prompt": "person",
+      "expected_nonempty": true,
+      "min_iou": 0.3,
+      "min_dice": 0.45
+    }
+  }
+}

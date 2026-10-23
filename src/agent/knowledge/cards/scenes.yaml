@@ -1,0 +1,93 @@
+# Playbook card — Hướng dẫn theo loại cảnh. Không có điều kiện lỗi: được truy xuất khi
+# loại cảnh khớp, để định hướng cách VLM chọn vùng, cường độ và điều cần giữ.
+
+- id: scene-portrait
+  title: Chân dung — ưu tiên khuôn mặt và làn da
+  priority: 30
+  scenes: [portrait, group]
+  recipe: []
+  avoid:
+    - "Thao tác trên mặt dùng region_type face với feather_radius 25–35; face_mode bbox là mặc định an toàn (oval cần model Face Landmarker, thiếu model thì hệ thống tự hạ về bbox)."
+    - "Làm nét da mặt > 0.6 hoặc CLAHE trên mặt > 1.5: lộ khuyết điểm, da sần."
+    - "Đổi nhiệt độ màu toàn ảnh làm đổi màu da trước tiên; kiểm tra da còn tự nhiên không."
+  rationale: >-
+    Người xem nhìn vào mắt và khuôn mặt đầu tiên: mặt đủ sáng, da đúng màu quan trọng hơn
+    nền hoàn hảo. Xóa phông mềm (soft focus) ở nền là chủ ý.
+  tags: [portrait, chân dung, face, skin, da]
+  sources:
+    - "Kinh nghiệm hậu kỳ chân dung phổ biến"
+
+- id: scene-food
+  title: Ẩm thực — giữ tông ấm và độ ngon mắt
+  priority: 30
+  scenes: [food]
+  recipe: []
+  avoid:
+    - "Không khử ám ấm của đèn nhà hàng/ánh nắng: đồ ăn tông lạnh trông kém ngon."
+    - "CLAHE > 2.0 làm bề mặt thức ăn sần và nhiễu."
+  rationale: >-
+    Ảnh đồ ăn hấp dẫn nhờ tông ấm, màu tươi vừa phải (saturation 1.05–1.15) và sáng đủ để thấy
+    kết cấu; mục tiêu là ngon mắt chứ không phải màu trung tính chính xác.
+  tags: [food, đồ ăn, ẩm thực, warm, ấm]
+  sources:
+    - "Kinh nghiệm chụp ảnh ẩm thực phổ biến"
+
+- id: scene-landscape
+  title: Phong cảnh — cân bằng trời và đất
+  priority: 30
+  scenes: [landscape, cityscape]
+  recipe: []
+  avoid:
+    - "Trời cháy và tiền cảnh tối cùng lúc: xử lý riêng từng vùng (hạ sáng 'sky', nâng sáng vùng dưới), không chỉnh toàn ảnh."
+    - "CLAHE mạnh trên bầu trời: lộ nhiễu và vệt (banding) ở vùng chuyển màu mượt."
+  rationale: >-
+    Dải tương phản của phong cảnh thường vượt khả năng cảm biến; chỉnh theo vùng mô phỏng kính
+    lọc ND chuyển sắc. Tăng nhẹ tương phản cục bộ (CLAHE 1.5–2.0) và bão hòa (1.1) làm cảnh có chiều sâu.
+  tags: [landscape, phong cảnh, sky, bầu trời, horizon, cityscape]
+  sources:
+    - "Ansel Adams, The Negative (Zone System)"
+
+- id: scene-night
+  title: Cảnh đêm — giữ không khí, kiểm soát nhiễu
+  priority: 30
+  scenes: [night]
+  recipe: []
+  avoid:
+    - "Biến đêm thành ngày: giữ vùng tối là tối, chỉ nâng vừa đủ để thấy chủ thể."
+    - "Nguồn sáng (đèn đường, biển hiệu) vốn cháy: không hạ gamma toàn ảnh vì chúng."
+    - "Khử nhiễu trước mọi thao tác nâng sáng hay tương phản."
+  rationale: >-
+    Ảnh đêm có tông tối là bản chất (low key); lỗi thật thường là nhiễu và chủ thể quá tối,
+    không phải "ảnh tối".
+  tags: [night, đêm, low light, city lights, noise]
+  sources:
+    - "Kinh nghiệm chụp ảnh đêm phổ biến"
+
+- id: scene-document
+  title: Tài liệu, chữ viết — ưu tiên độ đọc
+  priority: 30
+  scenes: [document]
+  recipe: []
+  avoid:
+    - "Tăng bão hòa trên tài liệu: nhiễu màu nổi lên nền giấy."
+  rationale: >-
+    Mục tiêu là chữ rõ trên nền sạch: CLAHE mạnh hơn bình thường (2.5–3.0), làm nét unsharp
+    0.8–1.0 và giảm bão hòa (0.8) đều chấp nhận được, khác với ảnh nghệ thuật.
+  tags: [document, tài liệu, text, chữ, scan]
+  sources:
+    - "Gonzalez & Woods, Digital Image Processing (4th ed.), ch.3 — histogram processing"
+
+- id: scene-indoor
+  title: Trong nhà — ánh sáng hỗn hợp
+  priority: 30
+  scenes: [indoor]
+  recipe: []
+  avoid:
+    - "Ánh đèn vàng trong nhà ấm cúng: chỉ khử ám một phần (temperature_shift -0.2), không đưa về trung tính."
+    - "Cửa sổ cháy sáng phía sau chủ thể: chỉnh chủ thể theo vùng thay vì hạ toàn ảnh."
+  rationale: >-
+    Trong nhà thường trộn ánh sáng cửa sổ (lạnh) và đèn (ấm), nên một mức cân bằng trắng toàn
+    ảnh không thể đúng cho mọi vùng.
+  tags: [indoor, trong nhà, tungsten, mixed light, ánh sáng hỗn hợp]
+  sources:
+    - "Kinh nghiệm hậu kỳ ảnh nội thất phổ biến"

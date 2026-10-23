@@ -28,6 +28,7 @@ This document defines the strict contracts and schemas shared across the 4 modul
 from typing import Literal, Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
+
 # ---------------------------------------------------------
 # Module 1: Image Analyzer Output Schema
 # ---------------------------------------------------------
@@ -43,31 +44,97 @@ class TechnicalMetrics(BaseModel):
     color_cast: Optional[str] = Field(None, description="e.g., 'warm', 'cool', 'greenish', 'none'")
     histogram_stats: Dict[str, Any] = Field(default_factory=dict)
 
+
+# ---------------------------------------------------------
+# Module 4: Diagnosis Schema (Perceive stage, src/agent/state.py)
+# ---------------------------------------------------------
+class Defect(BaseModel):
+    type: Literal[DEFECT_TYPES]        # underexposed, overexposed, backlit_subject, low_contrast,
+                                       # noise, blur, color_cast_{warm,cool,green},
+                                       # oversaturated, undersaturated
+    region: str = "full"               # "full" or a subject target_prompt
+    severity: int                      # 0 negligible … 3 severe
+    evidence: str = ""
+    origin: Literal["vlm", "rule", "measured"] = "vlm"
+
+
+class PreserveItem(BaseModel):
+    aspect: Literal[PRESERVE_ASPECTS]  # warm_tone, cool_tone, low_key, high_key, silhouette,
+                                       # film_grain, soft_focus, muted_colors, vivid_colors
+    region: str = "full"
+    reason: str = ""
+
+
+class RegionMetrics(BaseModel):        # soft-mask weighted luma stats of one region
+    region: str
+    backend: str                       # Module 2 resolver that produced the mask
+    area_ratio: float
+    brightness_mean: float
+    brightness_std: float
+    brightness_level: Literal["underexposed", "normal", "overexposed"]
+    highlight_clip_ratio: float
+    shadow_clip_ratio: float
+    brightness_vs_rest: Optional[float]  # region mean minus rest-of-image mean
+
+
+class DiagnosisReport(BaseModel):
+    iteration: int = 1
+    scene_type: Literal[SCENE_TYPES] = "other"
+    lighting: str = ""
+    subjects: List[str]                # regions measured individually (max 4)
+    defects: List[Defect]
+    preserve: List[PreserveItem]       # intentional style; enforced by planner.apply_preserve_guard
+    summary: str = ""
+    region_metrics: Dict[str, RegionMetrics]
+    source: Literal["vlm", "rule_based", "vlm_fallback"] = "vlm"
+
+
 # ---------------------------------------------------------
 # Module 4: Agent Plan Schema (Emitted by VLM / Orchestrator)
 # ---------------------------------------------------------
 class RegionOperationPlan(BaseModel):
-    region_id: str = Field(..., description="Unique ID or target descriptor, e.g. 'sky', 'face', 'full_image'")
-    target_prompt: str = Field(..., description="Text prompt for segmentation or bounding box")
-    region_type: Literal["semantic", "face", "spatial", "full"]
-    detected_issue: str = Field(..., description="e.g. 'underexposed', 'high_noise', 'low_contrast'")
-    operation: Literal[
-        "denoise", 
-        "gamma_correct", 
-        "clahe", 
-        "sharpen", 
-        "color_correct"
-    ]
-    parameters: Dict[str, Any] = Field(
-        default_factory=dict, 
-        description="Parameters specific to operation (e.g. {'clip_limit': 2.0, 'gamma': 1.2})"
+    region_id: str = Field(
+        ..., description="Unique ID or target descriptor, e.g. 'sky', 'face', 'full_image'"
     )
-    order: int = Field(default=0, description="Execution priority order (e.g., denoise before sharpen)")
+    target_prompt: str = Field(..., description="Text prompt for segmentation or bounding box")
+    # None → the executor infers the kind from target_prompt (face / full / quadrant / semantic)
+    region_type: Optional[
+        Literal["semantic", "face", "spatial", "full", "bbox", "binary_mask"]
+    ] = None
+    # bbox / binary_mask are in-process only: the planner resets VLM-supplied values to None
+    bbox: Optional[tuple[int, int, int, int]] = None
+    quadrant: Optional[str] = None
+    # No ge/le bounds on region fields: planner.clamp_region_fields() clamps them
+    # (REGION_FIELD_BOUNDS, e.g. feather_radius in [5, 50]) so one bad VLM value
+    # cannot invalidate the whole plan. Face/semantic options (face_mode, num_faces,
+    # instance_selection, instance_index, *_threshold) follow the same rule.
+    feather_radius: int = 15
+    expand_ratio: float = 0.15
+    merge_policy: Literal["max"] = "max"
+    binary_mask: Optional[Any] = None
+    detected_issue: str = Field(
+        ..., description="e.g. 'underexposed', 'high_noise', 'low_contrast'"
+    )
+    operation: Literal["denoise", "gamma_correct", "clahe", "sharpen", "color_correct"]
+    parameters: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Parameters specific to operation (e.g. {'clip_limit': 2.0, 'gamma': 1.2})",
+    )
+    order: int = Field(
+        default=0, description="Execution priority order (e.g., denoise before sharpen)"
+    )
+
 
 class TreatmentPlan(BaseModel):
     iteration: int = 1
     reasoning: str = Field(..., description="VLM clinical reasoning for proposed treatments")
     actions: List[RegionOperationPlan] = Field(..., description="Ordered list of operations")
+    # "vlm": planned by Gemini; "rule_based": no GEMINI_API_KEY;
+    # "vlm_fallback": the Gemini call or parse failed, so the rule-based plan was used.
+    # An empty plan therefore only means "image already good" when source == "vlm".
+    source: Literal["vlm", "rule_based", "vlm_fallback"] = "vlm"
+    knowledge: List[str] = []          # playbook card / principle ids behind the plan
+
 
 # ---------------------------------------------------------
 # Module 1 & 6: Evaluation Output Schema
@@ -95,30 +162,77 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
     """Tính toán toàn bộ các chỉ số kỹ thuật của ảnh (độ sáng, tương phản, nhiễu, độ mờ)."""
     ...
 
-def evaluate_reference(
-    current_image: np.ndarray, 
-    ground_truth: np.ndarray
-) -> Dict[str, float]:
+
+def evaluate_reference(current_image: np.ndarray, ground_truth: np.ndarray) -> EvaluationResult:
     """Đánh giá chất lượng với ảnh gốc mẫu (PSNR, SSIM, MSE)."""
     ...
 
+
 def evaluate_no_reference(
-    current_image: np.ndarray, 
-    previous_image: Optional[np.ndarray] = None
-) -> Dict[str, float]:
+    current_image: np.ndarray, previous_image: Optional[np.ndarray] = None
+) -> EvaluationResult:
     """Đánh giá chất lượng ảnh thực không có ground-truth (BRISQUE, NIQE, chênh lệch chỉ số)."""
     ...
 ```
 
 ### 3.2 Module 2: Region Engine (`src/region_engine/`)
 ```python
-def segment_by_prompt(image: np.ndarray, text_prompt: str) -> np.ndarray:
+@dataclass(frozen=True)
+class RegionRequest:
+    kind: Literal["full", "bbox", "spatial", "face", "semantic", "binary_mask"]
+    bbox: Optional[tuple[int, int, int, int]] = None
+    quadrant: Optional[str] = None
+    prompt: Optional[str] = None
+    binary_mask: Optional[np.ndarray] = None
+    feather_radius: int = 15
+    expand_ratio: float = 0.15
+    merge_policy: Literal["max"] = "max"
+    face_mode: Literal["bbox", "oval", "sam_refined"] = "bbox"
+    num_faces: int = 4
+    instance_selection: Literal["all", "largest", "index"] = "all"
+    instance_index: Optional[int] = None
+    box_threshold: float = 0.35
+    text_threshold: float = 0.25
+    nms_iou_threshold: float = 0.8
+
+
+@dataclass(frozen=True)
+class RegionResult:
+    status: Literal["ok", "empty"]
+    mask: np.ndarray  # float32, shape (H, W), [0, 1]; never None
+    instance_masks: tuple[np.ndarray, ...]
+    contours: tuple[np.ndarray, ...]  # pixel-space (N, 2), used by face_mode="oval"
+    metadata: Dict[str, Any]
+
+
+def resolve_region(
+    image: np.ndarray,
+    request: RegionRequest | Mapping[str, Any],
+) -> RegionResult:
+    """Resolve one region request without blending the image."""
+    ...
+
+
+def capabilities() -> Dict[str, Any]:
+    """Report geometric readiness, AI assets/dependencies, and verification."""
+    ...
+
+
+def segment_by_prompt(
+    image: np.ndarray, text_prompt: str, feather_radius: int = 15,
+    *, config: PromptSegmentationConfig | None = None,
+) -> np.ndarray:
     """Phân đoạn vùng đối tượng dựa trên mô tả văn bản (GroundingDINO + MobileSAM).
     Trả về soft mask dtype=float32 trong khoảng [0.0, 1.0]."""
     ...
 
+
 def detect_faces(image: np.ndarray) -> List[np.ndarray]:
     """Phát hiện và tạo mặt nạ khuôn mặt bằng MediaPipe."""
+    ...
+
+def detect_face_ovals(image: np.ndarray, *, num_faces: int = 4) -> List[FaceOval]:
+    """Trả hard mask và contour face-oval suy từ MediaPipe Face Landmarker."""
     ...
 
 def create_soft_mask(binary_mask: np.ndarray, feather_radius: int = 15) -> np.ndarray:
@@ -130,46 +244,48 @@ def create_soft_mask(binary_mask: np.ndarray, feather_radius: int = 15) -> np.nd
 All operations implement the standard wrapped signature:
 ```python
 def apply_denoise(
-    image: np.ndarray, 
-    mask: Optional[np.ndarray] = None, 
+    image: np.ndarray,
+    mask: Optional[np.ndarray] = None,
     method: Literal["gaussian", "median", "bilateral", "nlm"] = "bilateral",
     strength: float = 1.0,
-    **kwargs
+    **kwargs,
 ) -> np.ndarray:
     """Khử nhiễu cục bộ hoặc toàn cục theo mặt nạ mềm."""
     ...
 
+
 def apply_gamma(
-    image: np.ndarray, 
-    mask: Optional[np.ndarray] = None, 
-    gamma: float = 1.0
+    image: np.ndarray, mask: Optional[np.ndarray] = None, gamma: float = 1.0
 ) -> np.ndarray:
     """Hiệu chỉnh độ sáng phi tuyến tính bằng hàm Gamma."""
     ...
 
+
 def apply_clahe(
-    image: np.ndarray, 
-    mask: Optional[np.ndarray] = None, 
-    clip_limit: float = 2.0, 
-    tile_grid_size: tuple[int, int] = (8, 8)
+    image: np.ndarray,
+    mask: Optional[np.ndarray] = None,
+    clip_limit: float = 2.0,
+    tile_grid_size: tuple[int, int] = (8, 8),
 ) -> np.ndarray:
     """Cân bằng lược đồ độ sáng cục bộ thích ứng độ tương phản (CLAHE)."""
     ...
 
+
 def apply_sharpen(
-    image: np.ndarray, 
-    mask: Optional[np.ndarray] = None, 
+    image: np.ndarray,
+    mask: Optional[np.ndarray] = None,
     method: Literal["unsharp_mask", "laplacian"] = "unsharp_mask",
-    amount: float = 1.0
+    amount: float = 1.0,
 ) -> np.ndarray:
     """Tăng cường độ sắc nét cục bộ."""
     ...
 
+
 def apply_color_balance(
-    image: np.ndarray, 
-    mask: Optional[np.ndarray] = None, 
+    image: np.ndarray,
+    mask: Optional[np.ndarray] = None,
     saturation_scale: float = 1.0,
-    temperature_shift: float = 0.0
+    temperature_shift: float = 0.0,
 ) -> np.ndarray:
     """Cân bằng trắng và điều chỉnh độ bão hòa màu sắc."""
     ...
@@ -179,12 +295,182 @@ def apply_color_balance(
 ```python
 from langgraph.graph import StateGraph
 
+
 def run_doctor_pipeline(
-    image_bytes: bytes, 
-    is_synthetic: bool = False, 
+    image_bytes: bytes,
+    is_synthetic: bool = False,
     ground_truth_bytes: Optional[bytes] = None,
-    max_iterations: int = 3
+    max_iterations: int = 3,
 ) -> Dict[str, Any]:
     """Khởi chạy toàn bộ vòng lặp khép kín: Analyze -> Diagnose -> Plan -> Process -> Eval -> Decision."""
     ...
+
+
+# src/agent/vlm_diagnostician.py
+def diagnose_and_plan(
+    image: np.ndarray,
+    metrics: Dict[str, Any],
+    iteration: int = 1,
+    history: Optional[List[HistoryItem]] = None,
+    original_image: Optional[np.ndarray] = None,  # sent alongside `image` from iteration 2
+    diagnosis: Optional[DiagnosisReport] = None,
+) -> TreatmentPlan:
+    """Stage 2 (Plan): Gemini (google-genai, structured JSON output) or rule-based fallback."""
+    ...
+
+
+# src/agent/perception.py — stage 1 (Perceive)
+def perceive(
+    image: np.ndarray,
+    metrics: Dict[str, Any],
+    iteration: int = 1,
+    history: Optional[List[HistoryItem]] = None,
+    original_image: Optional[np.ndarray] = None,
+) -> DiagnosisReport:
+    """Gemini diagnosis (or rule-based) → per-region measurement through Module 2 masks →
+    defects inferred from measurements (e.g. backlit face) → defects that conflict with
+    `preserve` dropped."""
+    ...
+
+
+# src/agent/graph.py — used by the graph node and POST /api/v1/diagnose
+def plan_treatment(
+    image: np.ndarray,
+    metrics: Dict[str, Any],
+    diagnosis: Optional[DiagnosisReport],
+    iteration: int = 1,
+    history: Optional[List[HistoryItem]] = None,
+    original_image: Optional[np.ndarray] = None,
+) -> TreatmentPlan:
+    """No defect with severity >= 1 → empty plan without a second VLM call. Otherwise
+    diagnose_and_plan() → validate_and_sort_plan() → apply_preserve_guard()."""
+    ...
+
+
+# src/agent/knowledge — Knowledge Base (playbook cards + principles), see its README.md
+def retrieve(diagnosis, metrics=None, kb=None, max_cards=4, max_principles=3) -> KnowledgeContext
+def format_context(context: KnowledgeContext) -> str      # 'TRI THỨC CHUYÊN MÔN' prompt block
+def plan_actions_from_knowledge(diagnosis, metrics, kb=None) -> (actions, card_ids)  # offline
+def diagnose_from_metrics(metrics, iteration=1, source="rule_based") -> DiagnosisReport
 ```
+
+The VLM plan schema has one `anyOf` variant per operation, each requiring exactly that
+operation's parameters. Parameters that belong to another operation are dropped.
+The rule-based plan (no API key, or Gemini failed) runs the recipes of the `auto_apply`
+playbook cards that match the diagnosis plus the defects implied by the Module 1 levels.
+
+Graph: `analyze → perceive → diagnose_and_plan → process → evaluate → decide`, then, when
+`num_variants > 1`, `decide → render_variant ×N (parallel, LangGraph Send) → rank_variants → END`.
+`POST /api/v1/diagnose` returns `{technical_metrics, diagnosis, treatment_plan}`.
+
+**Variants (Phase 3, `src/agent/variants.py`):**
+```python
+class Variant(BaseModel):              # src/agent/state.py
+    id: str                            # "balanced" | "natural" | "vivid"
+    label: str
+    description: str = ""
+    actions: List[RegionOperation]     # styled treatment; re-render with POST /render
+    image: Optional[np.ndarray]        # ≤1024 px preview, excluded from model_dump/JSON
+    quality_score: Optional[float]     # Module 1 no-reference score of the preview
+    quality_improved: Optional[bool]
+    rank: Optional[int]                # 1 = best
+    critic_note: str = ""              # VLM critic comment (when GEMINI_API_KEY is set)
+
+def run_pipeline(image, ground_truth=None, is_synthetic=False, max_iterations=3,
+                 num_variants=1) -> DoctorState
+# num_variants > 1 (max 3) adds state["variants"] (ranked), state["recommended_variant"] and
+# state["variant_ranking_source"] ("critic" | "score"). state["current_image"] is unchanged:
+# the full-resolution result of the loop, i.e. the "balanced" style.
+```
+- The treatment is the actions of every iteration that was not rolled back, in order.
+- Styles are deterministic transforms of that treatment: balanced is the treatment as is;
+  natural is gentler (×0.5–0.8) with no sharpening; vivid is stronger, and adds CLAHE 1.5
+  (skipped on noisy images) and saturation 1.12 when the treatment lacks them.
+  Every style is clamped and passes `apply_preserve_guard`.
+- Ranking: a VLM critic compares the original with every variant in one call and only judges
+  (ADR-001). Without a key, or when the critic fails, the Module 1 score decides: variants
+  that did not improve rank last, and a 0.5-point tie tolerance favours `balanced`. Variants
+  whose images are identical are dropped.
+- `planner.sanitize_actions(actions)` drops unknown operations and clamps parameters and region
+  fields **without reordering**, so a variant re-rendered at full resolution matches its preview.
+
+**Intent conversation (Phase 4, `src/agent/intent.py`, `session.py`, `refine.py`):**
+```python
+class IntentProfile(BaseModel):        # src/agent/state.py
+    style: Optional[Literal["natural", "balanced", "vivid"]] = None
+    keep: List[PreserveItem]           # user-declared intentional style (overrides the VLM)
+    fix: List[DEFECT_TYPES]            # defects the user wants fixed even if "intentional"
+    notes: str = ""                    # free text, also sent to the Plan prompt
+    answers: Dict[str, str]            # raw question id -> chosen value
+
+def start_session(image, max_iterations=3, num_variants=3) -> SessionResult   # pauses
+def answer_session(session_id, answers, notes="") -> SessionResult             # resumes
+def refine(original, actions, feedback) -> RefineResult                        # stateless
+```
+- Graph: `perceive → clarify → diagnose_and_plan`. `clarify` only acts on iteration 1 of an
+  interactive run with no intent yet: it calls `interrupt()` with deterministic questions
+  built from the diagnosis (at most 2 ambiguities, chosen in priority order: dark mood, warm
+  tone, grain, cool tone, plus one style question). On resume
+  (`Command(resume={"answers", "notes"})`) it builds the intent. Free-text notes are mapped by
+  rules; explicit answers win.
+- The intent overrides every iteration's diagnosis (`apply_intent`): `fix` removes conflicting
+  preserve items and ensures the defect at severity ≥ 2 (`origin="user"`), and `keep` adds
+  preserve items and drops conflicting defects. The Plan prompt gets an
+  "Ý ĐỊNH NGƯỜI DÙNG" block. An intent style is always rendered as a variant and is the
+  recommended one. `run_pipeline(..., intent=...)` accepts a preset intent without asking.
+- Sessions use an in-process `MemorySaver` (lost on restart; at most `MAX_SESSIONS`, oldest
+  evicted).
+- Feedback (`refine`): Vietnamese rules first, then Gemini when the rules find nothing and a
+  key is set. The kinds are brighter/darker, more/less contrast, warmer/cooler, more/less
+  saturated, sharper/softer and less noise, each with a region (face/sky/full) and a strength
+  (1–2). Adjustments edit the treatment: denoise is inserted first, "less" kinds scale existing
+  operations, and the rest are appended. The image is re-rendered from the original. Feedback
+  is an explicit user request, so it bypasses the preserve guard.
+
+**Case memory (Phase 5, `src/agent/memory.py`):**
+- `configure_case_memory(path)` enables a SQLite store; `None` disables it. It is disabled by
+  default. `src/api/main.py` and `frontend/app.py` (`__main__`) enable it at
+  `CASE_MEMORY_PATH` (default `data/memory/cases.sqlite`, gitignored; an empty value disables
+  it). The DB opens lazily on first use, and the test suite disables memory for every test.
+- A `CaseRecord` is stored per finished run: user id, scene, a normalised 6-value metric
+  signature of the original image, defects, preserve, intent style, treatment, best score,
+  recommended variant, then the **chosen variant** and **feedback** (texts and parsed
+  adjustments) as the user acts. **No images are stored.**
+- `similar(diagnosis, metrics, user_id)` returns up to 3 cases with distance ≤ 0.6. The
+  distance is the RMS signature distance, plus 0.5 × (1 − Jaccard of defect types), minus
+  0.2 for the same scene. On iteration 1 they go into the Plan prompt as
+  "KINH NGHIỆM TỪ CA TƯƠNG TỰ", and VLM plans list them in `knowledge` as `case:<id8>`.
+- `preferred_style(user_id)`: after ≥ 3 choices, a style chosen ≥ 60% of the time becomes the
+  recommended variant (`recommended_reason="preference"`). An explicit intent style still wins
+  (`"intent"`).
+
+**API:** `POST /api/v1/process` accepts the form field `num_variants` and returns `variants`
+(`VariantOut`: the fields above plus `preview_base64`), `recommended_variant` and
+`variant_ranking_source`. `POST /api/v1/render` (multipart `file` + form `actions` as a JSON
+list of `RegionOperation`) returns `{image_base64, width, height, applied_actions}`.
+`ProcessResponse` also carries `treatment` (the result's actions), `intent`,
+`recommended_reason` and `case_id`. `/process` and `/sessions` accept `user_id` (default
+`"default"`). `/render` accepts optional `case_id` + `variant_id` to record a choice, and
+`/refine` accepts an optional `case_id` to record understood feedback.
+`GET /api/v1/memory?user_id=` returns `{enabled, cases, choices, feedback, preferred_style}`.
+- `POST /api/v1/sessions` (file, `max_iterations`, `num_variants`) →
+  `{session_id, status: "needs_input", questions, diagnosis}`.
+- `POST /api/v1/sessions/{id}/answers` (JSON `{answers, notes}`) →
+  `{status: "done", result: ProcessResponse}`. Returns 404 for an unknown session and 409 when
+  the session is not waiting for input. `DELETE /api/v1/sessions/{id}` → 204.
+- `POST /api/v1/refine` (file, `actions` JSON, `feedback`) →
+  `{image_base64, width, height, actions, adjustments, notes, source}`, where `source` is
+  `rules`, `vlm` or `none`. Send the returned `actions` back with the next feedback.
+
+**Decision rules (`graph.decide_node`), in order:**
+1. Degraded iteration → `STOP_BEST_EFFORT` and roll back to the previous image.
+   A non-empty plan that changed no pixels (every action skipped) → `STOP_BEST_EFFORT`
+   without rollback.
+2. Empty plan → `SHIP`.
+3. Synthetic: PSNR ≥ 28 dB and SSIM ≥ 0.88 → `SHIP`.
+   Real: `estimated_quality_score` ≥ `REAL_TARGET_SCORE` (85) → `SHIP`;
+   gain over the previous iteration < `REAL_MIN_GAIN` (1.0) → `STOP_BEST_EFFORT` (plateau).
+4. Real images only: a score-based `SHIP` becomes `RE_PROCESS` when this iteration's plan acted
+   on a defect with severity ≥ `VERIFY_SEVERITY` (2), meaning an action on its region or on the
+   full image, and iterations remain. The next Perceive then confirms the fix.
+5. Otherwise `RE_PROCESS`, or `STOP_BEST_EFFORT` when `max_iterations` is reached.
