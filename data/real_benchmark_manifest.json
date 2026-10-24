@@ -1,0 +1,719 @@
+{
+  "schema_version": 1,
+  "description": "Real-photo benchmark for the brain module (perceive + plan). Images are downloaded from Wikimedia Commons by data/download_real_benchmark.py into data/real/benchmark/.",
+  "annotation_status": "Reviewed at full size by Claude on 2026-10-23 before scoring the free-vision answers (backlit_04 excepted, marked ambiguous); still needs team review.",
+  "max_side": 1600,
+  "images": [
+    {
+      "id": "backlit_01",
+      "category": "backlit",
+      "file": "backlit/backlit_01.jpg",
+      "commons_title": "File:Timdwilliamson user image 004.jpeg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Timdwilliamson_user_image_004.jpeg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/8/8e/Timdwilliamson_user_image_004.jpeg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        1080,
+        1920
+      ],
+      "author": "Tim D. Williamson",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [],
+        "preserve": [],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Sun behind the head, but the face is evenly lit by the sky and well exposed. Calling the face dark is a false positive."
+    },
+    {
+      "id": "backlit_02",
+      "category": "backlit",
+      "file": "backlit/backlit_02.jpg",
+      "commons_title": "File:Heranio Mesina.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Heranio_Mesina.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/1/16/Heranio_Mesina.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        920,
+        1632
+      ],
+      "author": "Heranio",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [
+          {
+            "type": "backlit_subject",
+            "region": "face",
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Face dark against a lit sign. Edited with a faded film look and red light leak; recognising that style is a plus but not scored. Fix: lift the face moderately."
+    },
+    {
+      "id": "backlit_03",
+      "category": "backlit",
+      "file": "backlit/backlit_03.jpg",
+      "commons_title": "File:Contre-jour photographs of a handsome man with a hipsterstyle T-shirt (18098910898).jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Contre-jour_photographs_of_a_handsome_man_with_a_hipsterstyle_T-shirt_(18098910898).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/8/8e/Contre-jour_photographs_of_a_handsome_man_with_a_hipsterstyle_T-shirt_%2818098910898%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        5472,
+        3648
+      ],
+      "author": "micadew",
+      "license": "CC BY-SA 2.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/2.0",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [],
+        "preserve": [
+          "warm_tone"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Face well exposed; the sun flare and golden-hour warmth are intentional. Expect no real correction."
+    },
+    {
+      "id": "backlit_04",
+      "category": "backlit",
+      "file": "backlit/backlit_04.jpg",
+      "commons_title": "File:Faces in the WOMAD Crowd -16 (16685679337).jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Faces_in_the_WOMAD_Crowd_-16_(16685679337).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/2/24/Faces_in_the_WOMAD_Crowd_-16_%2816685679337%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        1451,
+        1128
+      ],
+      "author": "Michael Coghlan from Adelaide, Australia",
+      "license": "CC BY-SA 2.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/2.0",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [],
+        "preserve": [
+          "soft_focus"
+        ],
+        "empty_plan": true,
+        "ambiguous": true
+      },
+      "note": "Face adequately exposed; sky behind is clipped and hair shows over-sharpening/compression artifacts. Marked ambiguous: model answers were read before this re-annotation."
+    },
+    {
+      "id": "low_light_01",
+      "category": "low_light",
+      "file": "low_light/low_light_01.jpg",
+      "commons_title": "File:Tad's Steaks.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Tad%27s_Steaks.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/d/dc/Tad%27s_Steaks.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        1184,
+        664
+      ],
+      "author": "Steve Bowbrick",
+      "license": "CC BY 2.0",
+      "license_url": "https://creativecommons.org/licenses/by/2.0",
+      "expected": {
+        "scene_type": "night",
+        "defects": [
+          {
+            "type": "underexposed",
+            "region": "full",
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Film-scan night street: deep blacks, red neon. A mild shadow lift is reasonable; it must still look like night. No obvious noise."
+    },
+    {
+      "id": "low_light_02",
+      "category": "low_light",
+      "file": "low_light/low_light_02.jpg",
+      "commons_title": "File:Chodsky1.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Chodsky1.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/9/9d/Chodsky1.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        1765,
+        1447
+      ],
+      "author": "Canarian",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "animal",
+        "defects": [
+          {
+            "type": "underexposed",
+            "region": "full",
+            "min_severity": 2
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Dark indoor shot of a dog; black fur must keep detail without turning grey."
+    },
+    {
+      "id": "low_light_03",
+      "category": "low_light",
+      "file": "low_light/low_light_03.jpg",
+      "commons_title": "File:Wiese, Große Höhe.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Wiese,_Gro%C3%9Fe_H%C3%B6he.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/f/f5/Wiese%2C_Gro%C3%9Fe_H%C3%B6he.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3648,
+        2048
+      ],
+      "author": "AmmarMysterio",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "landscape",
+        "defects": [
+          {
+            "type": "underexposed",
+            "region": "ground",
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Field in the foreground is dark under a correctly exposed sky; brighten the ground, not the sky."
+    },
+    {
+      "id": "color_cast_01",
+      "category": "color_cast",
+      "file": "color_cast/color_cast_01.jpg",
+      "commons_title": "File:Sawfish seen from Underwater Tunnel Atlantis.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Sawfish_seen_from_Underwater_Tunnel_Atlantis.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/9/90/Sawfish_seen_from_Underwater_Tunnel_Atlantis.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        1600,
+        1200
+      ],
+      "author": "Fred Hsu (Wikipedia:User:Fredhsu on en.wikipedia)",
+      "license": "CC BY-SA 3.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/3.0/",
+      "expected": {
+        "scene_type": "animal",
+        "defects": [
+          {
+            "type": "color_cast_cool",
+            "region": "full",
+            "min_severity": 1
+          },
+          {
+            "type": "low_contrast",
+            "region": "full",
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Aquarium shot with a cyan/blue cast and a hazy, washed-out look. Some blue is natural underwater, so a mild fix is expected."
+    },
+    {
+      "id": "color_cast_02",
+      "category": "color_cast",
+      "file": "color_cast/color_cast_02.jpg",
+      "commons_title": "File:Peak of the Steeple (5387310773).jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Peak_of_the_Steeple_(5387310773).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/e/e2/Peak_of_the_Steeple_%285387310773%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2705,
+        1812
+      ],
+      "author": "Let Ideas Compete from Lafayette, Colorado, United States",
+      "license": "CC BY 2.0",
+      "license_url": "https://creativecommons.org/licenses/by/2.0",
+      "expected": {
+        "scene_type": "cityscape",
+        "defects": [
+          {
+            "type": "color_cast_cool",
+            "region": "full",
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": true
+      },
+      "note": "Cross-processed look (magenta/purple shadows, cyan sky), probably an intentional edit. Acceptable: a mild colour correction, or recognising it as a style and leaving it. Not acceptable: a strong warm shift."
+    },
+    {
+      "id": "color_cast_03",
+      "category": "color_cast",
+      "file": "color_cast/color_cast_03.jpg",
+      "commons_title": "File:Starr 060405-7407 Polycarpon tetraphyllum.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Starr_060405-7407_Polycarpon_tetraphyllum.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/6/6f/Starr_060405-7407_Polycarpon_tetraphyllum.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2592,
+        1944
+      ],
+      "author": "Forest & Kim Starr",
+      "license": "CC BY 3.0",
+      "license_url": "https://creativecommons.org/licenses/by/3.0",
+      "expected": {
+        "scene_type": "macro",
+        "defects": [
+          {
+            "type": "color_cast_warm",
+            "region": "full",
+            "min_severity": 3
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Tungsten-lit herbarium specimen with a heavy orange cast."
+    },
+    {
+      "id": "noisy_01",
+      "category": "noisy",
+      "file": "noisy/noisy_01.jpg",
+      "commons_title": "File:NIND Saint-Remi ISOH3.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:NIND_Saint-Remi_ISOH3.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/6/65/NIND_Saint-Remi_ISOH3.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4513,
+        3243
+      ],
+      "author": "Trougnouf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0",
+      "expected": {
+        "scene_type": "indoor",
+        "defects": [
+          {
+            "type": "noise",
+            "region": "full",
+            "min_severity": 2
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "NIND high-ISO church interior. Noise is easier to see at full size than in the thumbnail."
+    },
+    {
+      "id": "noisy_02",
+      "category": "noisy",
+      "file": "noisy/noisy_02.jpg",
+      "commons_title": "File:NIND holywater ISOH1.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:NIND_holywater_ISOH1.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/a/a9/NIND_holywater_ISOH1.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4936,
+        3296
+      ],
+      "author": "Trougnouf (Benoit Brummer)",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0",
+      "expected": {
+        "scene_type": "indoor",
+        "defects": [
+          {
+            "type": "noise",
+            "region": "full",
+            "min_severity": 2
+          },
+          {
+            "type": "underexposed",
+            "region": "full",
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "NIND high-ISO dim chapel; denoise before any brightening."
+    },
+    {
+      "id": "noisy_03",
+      "category": "noisy",
+      "file": "noisy/noisy_03.jpg",
+      "commons_title": "File:NIND MuseeL-Sepik-C500D ISOH1.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:NIND_MuseeL-Sepik-C500D_ISOH1.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/4/41/NIND_MuseeL-Sepik-C500D_ISOH1.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2368,
+        3048
+      ],
+      "author": "Trougnouf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0",
+      "expected": {
+        "scene_type": "product",
+        "defects": [
+          {
+            "type": "noise",
+            "region": "full",
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "NIND high-ISO museum object on a plain wall; noise shows in the flat background."
+    },
+    {
+      "id": "multi_defect_01",
+      "category": "multi_defect",
+      "file": "multi_defect/multi_defect_01.jpg",
+      "commons_title": "File:Aht-blue1.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Aht-blue1.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/a/a2/Aht-blue1.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        1109,
+        1357
+      ],
+      "author": "Canarian",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "animal",
+        "defects": [
+          {
+            "type": "underexposed",
+            "region": "full",
+            "min_severity": 1
+          },
+          {
+            "type": "noise",
+            "region": "full",
+            "min_severity": 1
+          },
+          {
+            "type": "color_cast_cool",
+            "region": "full",
+            "min_severity": 1
+          },
+          {
+            "type": "blur",
+            "region": "full",
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Indoor snapshot of a dog: dim, noisy, soft, strong blue cast from the carpet/light."
+    },
+    {
+      "id": "multi_defect_02",
+      "category": "multi_defect",
+      "file": "multi_defect/multi_defect_02.jpg",
+      "commons_title": "File:0014Outdoor location photo shoot group photographs of deaf-mute road cyclists 14.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:0014Outdoor_location_photo_shoot_group_photographs_of_deaf-mute_road_cyclists_14.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/3/3a/0014Outdoor_location_photo_shoot_group_photographs_of_deaf-mute_road_cyclists_14.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4608,
+        3456
+      ],
+      "author": "Judgefloro",
+      "license": "CC0",
+      "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "expected": {
+        "scene_type": "group",
+        "defects": [],
+        "preserve": [],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Compact-camera group shot under overcast light: flat but acceptable. An optional mild contrast boost is fine; heavy correction is not."
+    },
+    {
+      "id": "multi_defect_03",
+      "category": "multi_defect",
+      "file": "multi_defect/multi_defect_03.jpg",
+      "commons_title": "File:DFC 2482 A quiet dimly lit street at night with a small warmly lit storefront adorned with lanterns and string lights casting colorful reflections on the sidewalk.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:DFC_2482_A_quiet_dimly_lit_street_at_night_with_a_small_warmly_lit_storefront_adorned_with_lanterns_and_string_lights_casting_colorful_reflections_on_the_sidewalk.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/0/0c/DFC_2482_A_quiet_dimly_lit_street_at_night_with_a_small_warmly_lit_storefront_adorned_with_lanterns_and_string_lights_casting_colorful_reflections_on_the_sidewalk.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        5568,
+        3712
+      ],
+      "author": "PattayaPatrol",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "night",
+        "defects": [],
+        "preserve": [
+          "vivid_colors"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Well-exposed night street; the purple/blue/orange mixed lighting is part of the scene. Expect no real correction."
+    },
+    {
+      "id": "intentional_style_01",
+      "category": "intentional_style",
+      "file": "intentional_style/intentional_style_01.jpg",
+      "commons_title": "File:Selvaggia Lucarelli - International Journalism Festival 2015.JPG",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Selvaggia_Lucarelli_-_International_Journalism_Festival_2015.JPG",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/8/81/Selvaggia_Lucarelli_-_International_Journalism_Festival_2015.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        1805,
+        2712
+      ],
+      "author": "Niccolò Caranti",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [],
+        "preserve": [
+          "low_key"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Studio low-key portrait. Expect no brightening."
+    },
+    {
+      "id": "intentional_style_02",
+      "category": "intentional_style",
+      "file": "intentional_style/intentional_style_02.jpg",
+      "commons_title": "File:Estátua do Laçador supermoon (black and white).jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Est%C3%A1tua_do_La%C3%A7ador_supermoon_(black_and_white).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/6/61/Est%C3%A1tua_do_La%C3%A7ador_supermoon_%28black_and_white%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        5184,
+        3456
+      ],
+      "author": "Original: LeonardoSVieira Derivative work: Lenny Maidana",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "other",
+        "defects": [],
+        "preserve": [
+          "silhouette",
+          "low_key"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Statue silhouetted against the supermoon (B&W). Lifting the shadows would ruin it."
+    },
+    {
+      "id": "intentional_style_03",
+      "category": "intentional_style",
+      "file": "intentional_style/intentional_style_03.jpg",
+      "commons_title": "File:Camilla Rose Henley (6313353430).jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Camilla_Rose_Henley_(6313353430).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/a/a2/Camilla_Rose_Henley_%286313353430%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2832,
+        4256
+      ],
+      "author": "Lies Thru a Lens",
+      "license": "CC BY 2.0",
+      "license_url": "https://creativecommons.org/licenses/by/2.0",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [],
+        "preserve": [
+          "high_key",
+          "soft_focus"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "High-key portrait. Must not be read as overexposed."
+    },
+    {
+      "id": "intentional_style_04",
+      "category": "intentional_style",
+      "file": "intentional_style/intentional_style_04.jpg",
+      "commons_title": "File:Contre-jour on english south coast arp.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Contre-jour_on_english_south_coast_arp.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/8/85/Contre-jour_on_english_south_coast_arp.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2010,
+        1370
+      ],
+      "author": "Adrian Pingstone",
+      "license": "Public domain",
+      "license_url": "",
+      "expected": {
+        "scene_type": "landscape",
+        "defects": [],
+        "preserve": [
+          "silhouette",
+          "warm_tone"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Sunset silhouettes of hikers. Classic false positive for backlit_subject."
+    },
+    {
+      "id": "already_good_01",
+      "category": "already_good",
+      "file": "already_good/already_good_01.jpg",
+      "commons_title": "File:Kutia kondh woman 3.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Kutia_kondh_woman_3.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/b/ba/Kutia_kondh_woman_3.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2967,
+        2278
+      ],
+      "author": "PICQ, background blur by Samsara",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [],
+        "preserve": [],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Well-exposed environmental portrait. Expect an empty plan."
+    },
+    {
+      "id": "already_good_02",
+      "category": "already_good",
+      "file": "already_good/already_good_02.jpg",
+      "commons_title": "File:Werfenweng 2018 Kat D2 STAWOWCZYK Waldemar-9379.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Werfenweng_2018_Kat_D2_STAWOWCZYK_Waldemar-9379.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/3/3a/Werfenweng_2018_Kat_D2_STAWOWCZYK_Waldemar-9379.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3750,
+        2500
+      ],
+      "author": "Isiwal",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "landscape",
+        "defects": [],
+        "preserve": [],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Bright snow scene, correctly exposed; bright snow is not overexposure."
+    },
+    {
+      "id": "already_good_03",
+      "category": "already_good",
+      "file": "already_good/already_good_03.jpg",
+      "commons_title": "File:Ravi Coltrane at the Blue Note, March 7, 2023-L1002389.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Ravi_Coltrane_at_the_Blue_Note,_March_7,_2023-L1002389.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/1/1d/Ravi_Coltrane_at_the_Blue_Note%2C_March_7%2C_2023-L1002389.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        6063,
+        4685
+      ],
+      "author": "Frank Schulenburg",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "indoor",
+        "defects": [],
+        "preserve": [
+          "cool_tone",
+          "vivid_colors"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Jazz club stage lighting; the blue is intentional, not a color cast."
+    },
+    {
+      "id": "group_small_faces_01",
+      "category": "group_small_faces",
+      "file": "group_small_faces/group_small_faces_01.jpg",
+      "commons_title": "File:0014Outdoor location photo shoot group photographs of deaf-mute road cyclists 30.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:0014Outdoor_location_photo_shoot_group_photographs_of_deaf-mute_road_cyclists_30.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/5/5b/0014Outdoor_location_photo_shoot_group_photographs_of_deaf-mute_road_cyclists_30.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4608,
+        3456
+      ],
+      "author": "Judgefloro",
+      "license": "CC0",
+      "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "expected": {
+        "scene_type": "group",
+        "defects": [],
+        "preserve": [],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Overcast group shot of cyclists, many small faces; flat but acceptable. An optional mild contrast boost is fine."
+    },
+    {
+      "id": "group_small_faces_02",
+      "category": "group_small_faces",
+      "file": "group_small_faces/group_small_faces_02.jpg",
+      "commons_title": "File:Faces in the WOMAD Crowd -10 (16691551079).jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Faces_in_the_WOMAD_Crowd_-10_(16691551079).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/e/ee/Faces_in_the_WOMAD_Crowd_-10_%2816691551079%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        1276,
+        856
+      ],
+      "author": "Michael Coghlan from Adelaide, Australia",
+      "license": "CC BY-SA 2.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/2.0",
+      "expected": {
+        "scene_type": "group",
+        "defects": [],
+        "preserve": [
+          "warm_tone"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Crowd in warm evening light; faces partly shaded, which is natural."
+    },
+    {
+      "id": "group_small_faces_03",
+      "category": "group_small_faces",
+      "file": "group_small_faces/group_small_faces_03.jpg",
+      "commons_title": "File:Saskatchewan Farm Elevator.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Saskatchewan_Farm_Elevator.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/0/0c/Saskatchewan_Farm_Elevator.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        1824,
+        1342
+      ],
+      "author": "Saffron Blaze",
+      "license": "CC BY-SA 3.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
+      "expected": {
+        "scene_type": "group",
+        "defects": [],
+        "preserve": [],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Family with horses on a farm; small figures, good exposure."
+    }
+  ]
+}
