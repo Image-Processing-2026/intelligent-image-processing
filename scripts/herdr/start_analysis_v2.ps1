@@ -34,15 +34,21 @@ function Invoke-Step([string]$Description, [scriptblock]$Action) {
 }
 
 function Invoke-HerdrJson([string[]]$Arguments) {
+    $ErrorActionPreference = 'Continue'
     $raw = & herdr @Arguments | Out-String
     if ($LASTEXITCODE -ne 0) { throw "herdr $($Arguments -join ' ') failed (exit $LASTEXITCODE)" }
     return $raw | ConvertFrom-Json
 }
 
 function Test-AgentExists([string]$Name) {
+    # stderr của lệnh native thành lỗi dừng khi ErrorActionPreference=Stop (PowerShell 5.1)
+    $ErrorActionPreference = 'Continue'
     & herdr agent get $Name *> $null
     return ($LASTEXITCODE -eq 0)
 }
+
+# powershell -File truyền 'calib,agent' thành một chuỗi: tách theo dấu phẩy
+$Lanes = @($Lanes | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 
 if ($env:HERDR_ENV -ne '1') { throw 'Run this script inside a Herdr pane (HERDR_ENV=1).' }
 foreach ($lane in $Lanes) {
@@ -69,41 +75,43 @@ Write-Host "Worktree root: $WorktreeRoot"
 Write-Host "Base branch:   $BaseBranch"
 if (-not (Test-Path $WorktreeRoot)) { Invoke-Step "create $WorktreeRoot" { New-Item -ItemType Directory -Path $WorktreeRoot | Out-Null } }
 
+function Copy-LocalAssets([string]$Path) {
+    # Tệp không nằm trong git mà lane cần: key Gemini, ảnh benchmark, fixture Penn-Fudan
+    Invoke-Step "copy .env, data/real, penn_fudan into $Path" {
+        $envFile = Join-Path $MainRepo '.env'
+        $envTarget = Join-Path $Path '.env'
+        if ((Test-Path $envFile) -and -not (Test-Path $envTarget)) { Copy-Item $envFile $envTarget }
+        $relPaths = @('data\real', 'tests\fixtures\prompt_segmentation\penn_fudan')
+        foreach ($rel in $relPaths) {
+            $src = Join-Path $MainRepo $rel
+            if (Test-Path $src) {
+                & robocopy $src (Join-Path $Path $rel) /E /XC /XN /XO /NFL /NDL /NJH /NJS /NP | Out-Null
+                if ($LASTEXITCODE -ge 8) { throw "robocopy failed for $rel" }
+            }
+        }
+    }
+}
+
 function Initialize-Worktree([string]$Name, [string]$Branch, [bool]$NewBranch) {
     $path = Join-Path $WorktreeRoot $Name
     if (Test-Path $path) {
         Write-Host "   worktree $path exists, reusing"
-        return $path
-    }
-    & git -C $MainRepo rev-parse --verify --quiet $Branch *> $null
-    $branchExists = ($LASTEXITCODE -eq 0)
-    if ($NewBranch -and -not $branchExists) {
-        Invoke-Step "git worktree add -b $Branch $path $BaseBranch" {
-            & git -C $MainRepo worktree add -b $Branch $path $BaseBranch
-            if ($LASTEXITCODE -ne 0) { throw "git worktree add failed for $Name" }
-        }
     } else {
-        Invoke-Step "git worktree add $path $Branch" {
-            & git -C $MainRepo worktree add $path $Branch
-            if ($LASTEXITCODE -ne 0) { throw "git worktree add failed for $Name" }
-        }
-    }
-    # Tệp không nằm trong git mà lane cần: key Gemini, ảnh benchmark, fixture Penn-Fudan
-    Invoke-Step "copy .env, data/real, penn_fudan into $Name" {
-        $envFile = Join-Path $MainRepo '.env'
-        if (Test-Path $envFile) { Copy-Item $envFile (Join-Path $path '.env') }
-        $pairs = @(
-            @('data\real', 'data\real'),
-            @('tests\fixtures\prompt_segmentation\penn_fudan', 'tests\fixtures\prompt_segmentation\penn_fudan')
-        )
-        foreach ($pair in $pairs) {
-            $src = Join-Path $MainRepo $pair[0]
-            if (Test-Path $src) {
-                & robocopy $src (Join-Path $path $pair[1]) /E /NFL /NDL /NJH /NJS /NP | Out-Null
-                if ($LASTEXITCODE -ge 8) { throw "robocopy failed for $($pair[0])" }
+        & git -C $MainRepo rev-parse --verify --quiet $Branch *> $null
+        $branchExists = ($LASTEXITCODE -eq 0)
+        if ($NewBranch -and -not $branchExists) {
+            Invoke-Step "git worktree add -b $Branch $path $BaseBranch" {
+                & git -C $MainRepo worktree add -b $Branch $path $BaseBranch | Out-Host
+                if ($LASTEXITCODE -ne 0) { throw "git worktree add failed for $Name" }
+            }
+        } else {
+            Invoke-Step "git worktree add $path $Branch" {
+                & git -C $MainRepo worktree add $path $Branch | Out-Host
+                if ($LASTEXITCODE -ne 0) { throw "git worktree add failed for $Name" }
             }
         }
     }
+    Copy-LocalAssets $path
     return $path
 }
 
