@@ -1,7 +1,7 @@
 {
-  "schema_version": 1,
-  "description": "Real-photo benchmark for the brain module (perceive + plan). Images are downloaded from Wikimedia Commons by data/download_real_benchmark.py into data/real/benchmark/.",
-  "annotation_status": "Reviewed at full size by Claude on 2026-10-23 before scoring the free-vision answers (backlit_04 excepted, marked ambiguous); still needs team review.",
+  "schema_version": 2,
+  "description": "Real-photo benchmark for the analysis pipeline (perceive + plan, Analysis v2 bench). Images are downloaded from Wikimedia Commons by data/download_real_benchmark.py into data/real/benchmark/ (and full-resolution originals of the noisy group into data/real/benchmark_fullres/). Each expected defect has a severity (0-3) and a region; min_severity is the lowest severity that counts as found.",
+  "annotation_status": "Schema v2 (2026-10-25): severity added to every expected defect and the intentional_style group extended to 10 images; fields with annotated_by=\"agent\" were set by the bench lane and still need team review. Earlier annotations (2026-10-23) were reviewed at full size by Claude; backlit_04 marked ambiguous.",
   "max_side": 1600,
   "images": [
     {
@@ -47,7 +47,9 @@
           {
             "type": "backlit_subject",
             "region": "face",
-            "min_severity": 1
+            "min_severity": 1,
+            "severity": 2,
+            "annotated_by": "agent"
           }
         ],
         "preserve": [],
@@ -126,7 +128,9 @@
           {
             "type": "underexposed",
             "region": "full",
-            "min_severity": 1
+            "min_severity": 1,
+            "severity": 1,
+            "annotated_by": "agent"
           }
         ],
         "preserve": [],
@@ -155,7 +159,9 @@
           {
             "type": "underexposed",
             "region": "full",
-            "min_severity": 2
+            "min_severity": 2,
+            "severity": 2,
+            "annotated_by": "agent"
           }
         ],
         "preserve": [],
@@ -184,7 +190,9 @@
           {
             "type": "underexposed",
             "region": "ground",
-            "min_severity": 1
+            "min_severity": 1,
+            "severity": 1,
+            "annotated_by": "agent"
           }
         ],
         "preserve": [],
@@ -213,12 +221,16 @@
           {
             "type": "color_cast_cool",
             "region": "full",
-            "min_severity": 1
+            "min_severity": 1,
+            "severity": 1,
+            "annotated_by": "agent"
           },
           {
             "type": "low_contrast",
             "region": "full",
-            "min_severity": 1
+            "min_severity": 1,
+            "severity": 1,
+            "annotated_by": "agent"
           }
         ],
         "preserve": [],
@@ -247,7 +259,9 @@
           {
             "type": "color_cast_cool",
             "region": "full",
-            "min_severity": 1
+            "min_severity": 1,
+            "severity": 1,
+            "annotated_by": "agent"
           }
         ],
         "preserve": [],
@@ -276,7 +290,9 @@
           {
             "type": "color_cast_warm",
             "region": "full",
-            "min_severity": 3
+            "min_severity": 3,
+            "severity": 3,
+            "annotated_by": "agent"
           }
         ],
         "preserve": [],
@@ -305,14 +321,17 @@
           {
             "type": "noise",
             "region": "full",
-            "min_severity": 2
+            "min_severity": 2,
+            "severity": 2,
+            "annotated_by": "agent"
           }
         ],
         "preserve": [],
         "empty_plan": false,
         "ambiguous": false
       },
-      "note": "NIND high-ISO church interior. Noise is easier to see at full size than in the thumbnail."
+      "note": "NIND high-ISO church interior. Noise is easier to see at full size than in the thumbnail.",
+      "fullres_file": "benchmark_fullres/noisy/noisy_01.jpg"
     },
     {
       "id": "noisy_02",
@@ -334,19 +353,24 @@
           {
             "type": "noise",
             "region": "full",
-            "min_severity": 2
+            "min_severity": 2,
+            "severity": 2,
+            "annotated_by": "agent"
           },
           {
             "type": "underexposed",
             "region": "full",
-            "min_severity": 1
+            "min_severity": 1,
+            "severity": 1,
+            "annotated_by": "agent"
           }
         ],
         "preserve": [],
         "empty_plan": false,
         "ambiguous": false
       },
-      "note": "NIND high-ISO dim chapel; denoise before any brightening."
+      "note": "NIND high-ISO dim chapel; denoise before any brightening.",
+      "fullres_file": "benchmark_fullres/noisy/noisy_02.jpg"
     },
     {
       "id": "noisy_03",
@@ -368,14 +392,17 @@
           {
             "type": "noise",
             "region": "full",
-            "min_severity": 1
+            "min_severity": 1,
+            "severity": 1,
+            "annotated_by": "agent"
           }
         ],
         "preserve": [],
         "empty_plan": false,
         "ambiguous": false
       },
-      "note": "NIND high-ISO museum object on a plain wall; noise shows in the flat background."
+      "note": "NIND high-ISO museum object on a plain wall; noise shows in the flat background.",
+      "fullres_file": "benchmark_fullres/noisy/noisy_03.jpg"
     },
     {
       "id": "multi_defect_01",
@@ -397,22 +424,30 @@
           {
             "type": "underexposed",
             "region": "full",
-            "min_severity": 1
+            "min_severity": 1,
+            "severity": 1,
+            "annotated_by": "agent"
           },
           {
             "type": "noise",
             "region": "full",
-            "min_severity": 1
+            "min_severity": 1,
+            "severity": 1,
+            "annotated_by": "agent"
           },
           {
             "type": "color_cast_cool",
             "region": "full",
-            "min_severity": 1
+            "min_severity": 1,
+            "severity": 1,
+            "annotated_by": "agent"
           },
           {
             "type": "blur",
             "region": "full",
-            "min_severity": 1
+            "min_severity": 1,
+            "severity": 1,
+            "annotated_by": "agent"
           }
         ],
         "preserve": [],
@@ -714,6 +749,165 @@
         "ambiguous": false
       },
       "note": "Family with horses on a farm; small figures, good exposure."
+    },
+    {
+      "id": "intentional_style_05",
+      "category": "intentional_style",
+      "file": "intentional_style/intentional_style_05.jpg",
+      "commons_title": "File:Sunset Silhouette (Imagicity 99).jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Sunset_Silhouette_(Imagicity_99).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/6/67/Sunset_Silhouette_%28Imagicity_99%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2000,
+        1102
+      ],
+      "author": "Graham Crumb",
+      "license": "CC BY-SA 3.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
+      "expected": {
+        "scene_type": "landscape",
+        "defects": [],
+        "preserve": [
+          "silhouette",
+          "warm_tone"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Fisherman silhouetted on water under a warm sunset sky. The dark figure and the warm sky are the look; lifting the shadows would ruin it.",
+      "annotated_by": "agent"
+    },
+    {
+      "id": "intentional_style_06",
+      "category": "intentional_style",
+      "file": "intentional_style/intentional_style_06.jpg",
+      "commons_title": "File:Low Key Portrait (29906320551).jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Low_Key_Portrait_(29906320551).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/2/2c/Low_Key_Portrait_%2829906320551%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        683,
+        1024
+      ],
+      "author": "Koshy Koshy from Faridabad, Haryana, India",
+      "license": "CC BY 2.0",
+      "license_url": "https://creativecommons.org/licenses/by/2.0",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [],
+        "preserve": [
+          "low_key"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Low-key portrait lit by a red rim light on black. The face is dark on purpose; expect no brightening (backlit false positive trap).",
+      "annotated_by": "agent"
+    },
+    {
+      "id": "intentional_style_07",
+      "category": "intentional_style",
+      "file": "intentional_style/intentional_style_07.jpg",
+      "commons_title": "File:Porto Alegre - Brazil Landscape-Night.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Porto_Alegre_-_Brazil_Landscape-Night.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/5/52/Porto_Alegre_-_Brazil_Landscape-Night.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        5554,
+        3117
+      ],
+      "author": "Felipe Valduga from Porto Alegre, Brazil",
+      "license": "CC BY 2.0",
+      "license_url": "https://creativecommons.org/licenses/by/2.0",
+      "expected": {
+        "scene_type": "cityscape",
+        "defects": [],
+        "preserve": [
+          "low_key"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Night view over a city. The dark sky and the lights are the night mood; no real defect beyond normal night contrast.",
+      "annotated_by": "agent"
+    },
+    {
+      "id": "intentional_style_08",
+      "category": "intentional_style",
+      "file": "intentional_style/intentional_style_08.jpg",
+      "commons_title": "File:Low-key photography - portrait of a young man.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Low-key_photography_-_portrait_of_a_young_man.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/5/5d/Low-key_photography_-_portrait_of_a_young_man.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        1200,
+        900
+      ],
+      "author": "Ponor",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [],
+        "preserve": [
+          "low_key"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Studio low-key portrait: face lit from one side against black. Must stay dark.",
+      "annotated_by": "agent"
+    },
+    {
+      "id": "intentional_style_09",
+      "category": "intentional_style",
+      "file": "intentional_style/intentional_style_09.jpg",
+      "commons_title": "File:Silhouette of a Kid Playing on the Beach at Sunset.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Silhouette_of_a_Kid_Playing_on_the_Beach_at_Sunset.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/1/16/Silhouette_of_a_Kid_Playing_on_the_Beach_at_Sunset.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2064,
+        3096
+      ],
+      "author": "Jsalatas",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [],
+        "preserve": [
+          "silhouette",
+          "warm_tone"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Child silhouetted against a bright low sun. Backlit silhouette is intentional; a dark figure here is not a defect.",
+      "annotated_by": "agent"
+    },
+    {
+      "id": "intentional_style_10",
+      "category": "intentional_style",
+      "file": "intentional_style/intentional_style_10.jpg",
+      "commons_title": "Arara caninde Ara ararauna bokeh.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Arara_caninde_Ara_ararauna_bokeh.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/8/86/Arara_caninde_Ara_ararauna_bokeh.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        1707,
+        3034
+      ],
+      "author": "EDUARDOFSLIMA",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0",
+      "expected": {
+        "scene_type": "animal",
+        "defects": [],
+        "preserve": [
+          "soft_focus",
+          "vivid_colors"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Macaw sharp in front of a dark, blurred background. The bokeh is intentional soft focus and the saturated blue and yellow are the subject.",
+      "annotated_by": "agent"
     }
   ]
 }
