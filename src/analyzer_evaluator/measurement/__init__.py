@@ -11,6 +11,7 @@ import numpy as np
 from .exposure import measure_exposure
 from .noise import measure_noise
 from .schemas import Estimate, MeasurementReport, MeasurementResult, RegionStats
+from .sharpness import measure_sharpness
 from .tiles import MAP_KEYS, aggregate
 
 __all__ = [
@@ -63,7 +64,8 @@ def measure_image(image: np.ndarray, *, tile_size: int = 64) -> MeasurementResul
     height, width = rgb.shape[:2]
     exposure = measure_exposure(rgb, tile_size)
     noise, sigma_luma = measure_noise(rgb, tile_size, grayscale=grayscale)
-    sections = {"exposure": exposure, "noise": noise}
+    sharpness = measure_sharpness(rgb, tile_size, sigma_luma)
+    sections = {"exposure": exposure, "noise": noise, "sharpness": sharpness}
 
     notes: List[str] = []
     for section in sections.values():
@@ -74,6 +76,7 @@ def measure_image(image: np.ndarray, *, tile_size: int = 64) -> MeasurementResul
         tile_size=tile_size,
         exposure=exposure.estimates,
         noise=noise.estimates,
+        sharpness=sharpness.estimates,
         notes=notes,
     )
     maps: Dict[str, np.ndarray] = {}
