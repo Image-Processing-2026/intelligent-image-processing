@@ -26,9 +26,9 @@
         "ambiguous": false
       },
       "note": "Pebble beach and mountains on a clear day; even exposure, neutral colour.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_good_02",
@@ -52,9 +52,9 @@
         "ambiguous": false
       },
       "note": "Late-afternoon village landscape, warm but natural light, sharp.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_good_03",
@@ -78,9 +78,9 @@
         "ambiguous": false
       },
       "note": "Aerial city view in daylight; detailed and well exposed.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_style_01",
@@ -106,9 +106,9 @@
         "ambiguous": false
       },
       "note": "Low-key studio portrait on black; the dark frame is intended.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_style_02",
@@ -135,9 +135,9 @@
         "ambiguous": false
       },
       "note": "Candles on black with bokeh; dark, warm and partly out of focus on purpose.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_style_03",
@@ -163,9 +163,9 @@
         "ambiguous": false
       },
       "note": "High-key white marble stairs; bright, low-contrast look is intended.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_style_04",
@@ -191,9 +191,9 @@
         "ambiguous": false
       },
       "note": "Silhouette of a person against a lake at dusk; the dark figure is intended.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_style_05",
@@ -219,9 +219,9 @@
         "ambiguous": false
       },
       "note": "Sunset beach under a tree; strong orange tone and dark trunk are intended.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_style_06",
@@ -247,9 +247,9 @@
         "ambiguous": false
       },
       "note": "Black-and-white analogue photo with visible film grain (Commons: film grain example).",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_backlit_01",
@@ -313,9 +313,9 @@
         "ambiguous": false
       },
       "note": "Street crowd against the light; people in the foreground are in shadow.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_noisy_01",
@@ -338,7 +338,7 @@
             "type": "noise",
             "region": "full",
             "severity": 2,
-            "min_severity": 1
+            "min_severity": 2
           }
         ],
         "preserve": [],
@@ -346,9 +346,9 @@
         "ambiguous": false
       },
       "note": "NIND chapel at high ISO (ISOH3); downscaled to 1600 px, so noise is weaker than full size.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_noisy_02",
@@ -379,9 +379,9 @@
         "ambiguous": false
       },
       "note": "NIND books at high ISO (ISOH2); downscaled to 1600 px.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_blur_01",
@@ -404,7 +404,7 @@
             "type": "blur",
             "region": "full",
             "severity": 3,
-            "min_severity": 1
+            "min_severity": 3
           }
         ],
         "preserve": [],
@@ -412,9 +412,9 @@
         "ambiguous": false
       },
       "note": "Whole frame out of focus (Commons: 'An example of an out of focus photograph').",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_blur_02",
@@ -445,9 +445,9 @@
         "ambiguous": false
       },
       "note": "Commons category 'Erroneous focus adjustment': focus behind the cats; mild.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_cast_01",
@@ -503,7 +503,7 @@
             "type": "color_cast_cool",
             "region": "full",
             "severity": 2,
-            "min_severity": 1
+            "min_severity": 2
           }
         ],
         "preserve": [],
@@ -511,9 +511,9 @@
         "ambiguous": false
       },
       "note": "Commons 'Blue color cast': white CD sleeve on paper looks cyan; may read as green.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_multi_01",
@@ -536,7 +536,7 @@
             "type": "underexposed",
             "region": "full",
             "severity": 2,
-            "min_severity": 1
+            "min_severity": 2
           },
           {
             "type": "noise",
@@ -550,9 +550,9 @@
         "ambiguous": false
       },
       "note": "Commons 'Underexposed images': dim room with toys; dark and grainy.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_multi_02",
@@ -589,9 +589,9 @@
         "ambiguous": false
       },
       "note": "Commons 'Blurred images': night street with motion blur and noise.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     }
   ]
 }
