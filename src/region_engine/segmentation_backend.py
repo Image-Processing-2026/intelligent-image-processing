@@ -9,6 +9,7 @@ inference.
 from __future__ import annotations
 
 import atexit
+import hashlib
 import math
 import os
 import threading
@@ -308,17 +309,45 @@ _SEGMENTATION_FACTORY: Callable[[], SegmentationBackend] = _create_default_backe
 _SEGMENTATION_CACHE: SegmentationBackend | None = None
 _SEGMENTATION_CACHE_KEY: tuple[int, str, str] | None = None
 _SEGMENTATION_LOCK = threading.RLock()
+# Digest của ảnh đang nằm trong encoder SAM. Encoder chạy một lần cho mỗi ảnh,
+# còn decoder chạy cho từng bbox. Chỉ đọc/ghi khi giữ _SEGMENTATION_LOCK.
+_ENCODER_DIGEST: str | None = None
+
+
+def _image_digest(image: np.ndarray) -> str:
+    digest = hashlib.blake2b(np.ascontiguousarray(image), digest_size=32)
+    digest.update(repr(image.shape).encode("ascii"))
+    return digest.hexdigest()
+
+
+def _ensure_encoder_locked(backend: SegmentationBackend, image: np.ndarray) -> None:
+    """Gọi ``set_image`` chỉ khi ảnh khác ảnh đang nằm trong encoder."""
+    global _ENCODER_DIGEST
+    digest = _image_digest(image)
+    if digest == _ENCODER_DIGEST:
+        return
+    _ENCODER_DIGEST = None
+    backend.set_image(image)
+    _ENCODER_DIGEST = digest
+
+
+def _reset_encoder_locked(backend: SegmentationBackend) -> None:
+    """Xóa trạng thái encoder; lần gọi sau sẽ chạy encoder lại."""
+    global _ENCODER_DIGEST
+    _ENCODER_DIGEST = None
+    backend.reset_image()
 
 
 def _get_backend_locked() -> SegmentationBackend:
     """Return the cached backend; caller must hold ``_SEGMENTATION_LOCK``."""
-    global _SEGMENTATION_CACHE, _SEGMENTATION_CACHE_KEY
+    global _SEGMENTATION_CACHE, _SEGMENTATION_CACHE_KEY, _ENCODER_DIGEST
     dino_path = _resolve_path(DINO_MODEL_ENV, DEFAULT_DINO_MODEL_PATH)
     sam_path = _resolve_path(MOBILE_SAM_CHECKPOINT_ENV, DEFAULT_MOBILE_SAM_CHECKPOINT)
     cache_key = (id(_SEGMENTATION_FACTORY), str(dino_path), str(sam_path))
     if _SEGMENTATION_CACHE is not None and _SEGMENTATION_CACHE_KEY == cache_key:
         return _SEGMENTATION_CACHE
     if _SEGMENTATION_CACHE is not None:
+        _ENCODER_DIGEST = None
         _SEGMENTATION_CACHE.close()
         _SEGMENTATION_CACHE = None
         _SEGMENTATION_CACHE_KEY = None
@@ -340,9 +369,10 @@ def _get_backend_locked() -> SegmentationBackend:
 
 def close_segmentation_backend() -> None:
     """Close and clear the process-local semantic backend cache."""
-    global _SEGMENTATION_CACHE, _SEGMENTATION_CACHE_KEY
+    global _SEGMENTATION_CACHE, _SEGMENTATION_CACHE_KEY, _ENCODER_DIGEST
     with _SEGMENTATION_LOCK:
         backend = _SEGMENTATION_CACHE
+        _ENCODER_DIGEST = None
         _SEGMENTATION_CACHE = None
         _SEGMENTATION_CACHE_KEY = None
         if backend is not None:
