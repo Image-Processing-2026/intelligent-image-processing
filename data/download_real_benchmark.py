@@ -6,10 +6,15 @@ Danh sách ảnh, nguồn, giấy phép và đáp án mong đợi nằm trong da
 `max_side` px trong manifest. Ảnh đã có sẵn thì bỏ qua. Ảnh có trường `fullres_file` (nhóm noisy)
 được tải thêm bản gốc độ phân giải đầy đủ vào data/real/benchmark_fullres/, không thu nhỏ.
 
+Bộ hold-out (data/holdout_manifest.json, chỉ để chấm kết quả cuối, không chỉnh trên đó) tải vào
+data/real/holdout/ bằng cờ --holdout.
+
 Chạy từ thư mục gốc repo:
     python data/download_real_benchmark.py
+    python data/download_real_benchmark.py --holdout
 """
 
+import argparse
 import json
 import logging
 import time
@@ -27,6 +32,8 @@ ROOT = Path(__file__).resolve().parent
 MANIFEST = ROOT / "real_benchmark_manifest.json"
 OUT_DIR = ROOT / "real" / "benchmark"
 FULLRES_DIR = ROOT / "real" / "benchmark_fullres"
+HOLDOUT_MANIFEST = ROOT / "holdout_manifest.json"
+HOLDOUT_DIR = ROOT / "real" / "holdout"
 API = "https://commons.wikimedia.org/w/api.php"
 # Wikimedia yêu cầu User-Agent mô tả rõ client
 USER_AGENT = "AIImageDoctor-benchmark/0.1 (university course project; python urllib)"
@@ -104,13 +111,13 @@ def download_fullres() -> int:
     return downloaded
 
 
-def download_all() -> int:
+def download_all(manifest_path: Path = MANIFEST, out_dir: Path = OUT_DIR) -> int:
     """Tải mọi ảnh trong manifest còn thiếu; trả về số ảnh tải mới."""
-    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     max_side = int(manifest.get("max_side", 1600))
     downloaded = 0
     for entry in manifest["images"]:
-        path = OUT_DIR / entry["file"]
+        path = out_dir / entry["file"]
         if path.exists():
             _fit_max_side(path, max_side)
             continue
@@ -128,7 +135,14 @@ def download_all() -> int:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Download benchmark images from Commons.")
+    parser.add_argument("--holdout", action="store_true", help="Tải bộ hold-out thay bộ benchmark")
+    args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    if args.holdout:
+        count = download_all(HOLDOUT_MANIFEST, HOLDOUT_DIR)
+        logger.info("Done: %d new image(s) in %s", count, HOLDOUT_DIR)
+        raise SystemExit(0)
     count = download_all()
     logger.info("Done: %d new image(s) in %s", count, OUT_DIR)
     fullres = download_fullres()

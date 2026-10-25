@@ -57,6 +57,9 @@ logger = logging.getLogger("benchmark_analysis")
 
 MANIFEST = Path("data/real_benchmark_manifest.json")
 REAL_IMAGE_DIR = Path("data/real/benchmark")
+# Bộ hold-out: chỉ chấm kết quả cuối, không chỉnh gì trên đó; nhãn cần người duyệt
+HOLDOUT_MANIFEST = Path("data/holdout_manifest.json")
+HOLDOUT_IMAGE_DIR = Path("data/real/holdout")
 SYNTHETIC_DIR = Path("data/synthetic/calibration")
 RESULTS_DIR = Path("data/real/benchmark_results")
 # Nhóm ảnh không có lỗi cần sửa: dùng để đo FP rate
@@ -185,17 +188,19 @@ def _load_api_key() -> None:
             os.environ["GEMINI_API_KEY"] = line.split("=", 1)[1].strip().strip('"')
 
 
-def load_real_cases() -> List[CaseInfo]:
+def load_real_cases(
+    manifest: Path = MANIFEST, image_dir: Path = REAL_IMAGE_DIR, dataset: str = "real"
+) -> List[CaseInfo]:
     """Các ca của bộ thật, đọc từ manifest (ảnh phải đã được tải bằng download_real_benchmark.py)."""
     cases = []
-    for entry in json.loads(MANIFEST.read_text(encoding="utf-8"))["images"]:
+    for entry in json.loads(manifest.read_text(encoding="utf-8"))["images"]:
         expected = entry["expected"]
         cases.append(
             CaseInfo(
                 case_id=entry["id"],
-                dataset="real",
+                dataset=dataset,
                 category=entry["category"],
-                image_path=REAL_IMAGE_DIR / entry["file"],
+                image_path=image_dir / entry["file"],
                 expected_defects=[
                     {
                         "type": d["type"],
@@ -210,6 +215,28 @@ def load_real_cases() -> List[CaseInfo]:
             )
         )
     return cases
+
+
+def unreviewed_holdout_ids(manifest: Optional[Path] = None) -> List[str]:
+    """Id các ảnh hold-out có nhãn chưa được người duyệt (label_status khác 'reviewed')."""
+    path = manifest or HOLDOUT_MANIFEST
+    images = json.loads(path.read_text(encoding="utf-8"))["images"]
+    return [e["id"] for e in images if e.get("label_status") != "reviewed"]
+
+
+def load_cases(dataset: str, *, allow_unreviewed: bool = False) -> List[CaseInfo]:
+    """Ca của một bộ. Hold-out có nhãn chưa duyệt thì dừng, trừ khi allow_unreviewed."""
+    if dataset == "real":
+        return load_real_cases()
+    if dataset == "synthetic":
+        return load_synthetic_cases()
+    unreviewed = unreviewed_holdout_ids()
+    if unreviewed and not allow_unreviewed:
+        raise SystemExit(
+            f"{len(unreviewed)} hold-out label(s) are unreviewed ({', '.join(unreviewed[:5])}...); "
+            "review data/holdout_manifest.json first or pass --allow-unreviewed."
+        )
+    return load_real_cases(HOLDOUT_MANIFEST, HOLDOUT_IMAGE_DIR, "holdout")
 
 
 def load_synthetic_cases() -> List[CaseInfo]:
@@ -423,9 +450,10 @@ def run_benchmark(
     model: str,
     case_retries: int,
     wait: int,
+    allow_unreviewed: bool = False,
 ) -> Dict[str, Any]:
     """Chạy một cấu hình trên một bộ, ghi results.json và report.md, trả về phần tổng hợp."""
-    cases = load_real_cases() if dataset == "real" else load_synthetic_cases()
+    cases = load_cases(dataset, allow_unreviewed=allow_unreviewed)
     if ids:
         cases = [c for c in cases if c.case_id in set(ids)]
     if limit is not None:
@@ -473,7 +501,9 @@ def run_benchmark(
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--set", dest="dataset", required=True, choices=["real", "synthetic"])
+    parser.add_argument(
+        "--set", dest="dataset", required=True, choices=["real", "synthetic", "holdout"]
+    )
     parser.add_argument("--config", required=True, choices=sorted(CONFIGS))
     parser.add_argument("--limit", type=int, help="Chỉ chạy N ca đầu tiên (kiểm thử nhanh)")
     parser.add_argument("--ids", nargs="*", help="Chỉ chạy các id này")
@@ -484,6 +514,11 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument(
         "--offline", action="store_true", help="Không gọi Gemini: chẩn đoán theo luật dự phòng"
     )
+    parser.add_argument(
+        "--allow-unreviewed",
+        action="store_true",
+        help="Cho chạy hold-out khi nhãn chưa được người duyệt (số chỉ mang tính tham khảo)",
+    )
     parser.add_argument("--case-retries", type=int, default=2)
     parser.add_argument("--wait", type=int, default=30, help="Giây chờ trước khi chạy lại ca lỗi")
     args = parser.parse_args(argv)
@@ -493,7 +528,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         os.environ.pop("GEMINI_API_KEY", None)
     else:
         _load_api_key()
-    if args.dataset == "real" and args.config != "measure_only" and not os.getenv("GEMINI_API_KEY"):
+    needs_key = args.dataset != "synthetic" and args.config != "measure_only"
+    if needs_key and not os.getenv("GEMINI_API_KEY"):
         raise SystemExit(
             "GEMINI_API_KEY is not set; the real set would only measure rule-based output."
         )
@@ -514,6 +550,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             model=model,
             case_retries=args.case_retries,
             wait=args.wait,
+            allow_unreviewed=args.allow_unreviewed,
         )
     except NotImplementedError as exc:
         raise SystemExit(str(exc)) from exc

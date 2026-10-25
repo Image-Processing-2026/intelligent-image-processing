@@ -61,6 +61,14 @@ merge `agent` theo thứ tự người dùng đặt; **chưa mở wave 3**, ch�
 5. D3: `PERCEIVE_SAMPLES` mặc định 1, ghi đè bằng env `PERCEIVE_SAMPLES`; giữ code gộp; config
    benchmark `vlm_only_n3`. Fusion đánh giá `rejected` làm bằng chứng yếu, kết luận trên hold-out.
 
+## Bộ hold-out (2026-10-25)
+
+19 ảnh Commons mới (`data/holdout_manifest.json`, hướng dẫn `holdout.md`): already_good 3,
+intentional_style 6 (low-key ×2, high-key, hoàng hôn ×2, hạt phim), backlit 2, noisy 2 (NIND), blur 2,
+color_cast 2, multi_defect 2. **Mọi nhãn `unreviewed`** (nháp của lead agent từ thumbnail), chờ người
+dùng hoặc thành viên nhóm duyệt. `benchmark_analysis.py --set holdout` từ chối nhãn chưa duyệt trừ khi
+có `--allow-unreviewed`. Chưa chạy config nào trên bộ này.
+
 ## Hoãn
 
 - Gradio (`frontend/app.py`) chưa nhận metadata: `gr.Image(type="numpy")` bỏ bytes file. Không

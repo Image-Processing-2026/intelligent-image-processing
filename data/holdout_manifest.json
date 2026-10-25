@@ -1,0 +1,597 @@
+{
+  "schema_version": 2,
+  "description": "Hold-out real-photo set for Analysis v2 (19 images from Wikimedia Commons, none used in data/real_benchmark_manifest.json, data/calibration_sources.json, the agent prompt revisions or calib). Use ONLY to score the final fusion result; never tune prompts, thresholds or rules on it. Images: python data/download_real_benchmark.py --holdout → data/real/holdout/ (gitignored).",
+  "annotation_status": "Every label is a DRAFT written by the lead agent from thumbnails (category name and a quick look) and has label_status='unreviewed'. A person (the user or a teammate) must check each image at full size, fix expected/defects/severity/preserve, then set label_status='reviewed' and reviewed_by. benchmark_analysis.py --set holdout refuses unreviewed labels unless --allow-unreviewed is given.",
+  "max_side": 1600,
+  "images": [
+    {
+      "id": "holdout_good_01",
+      "category": "already_good",
+      "file": "already_good/holdout_good_01.jpg",
+      "commons_title": "File:2014 Gagra, Plaża (02).jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:2014_Gagra,_Pla%C5%BCa_(02).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/5/58/2014_Gagra%2C_Pla%C5%BCa_%2802%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4427,
+        2490
+      ],
+      "author": "Hons084",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "landscape",
+        "defects": [],
+        "preserve": [],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Pebble beach and mountains on a clear day; even exposure, neutral colour.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_good_02",
+      "category": "already_good",
+      "file": "already_good/holdout_good_02.jpg",
+      "commons_title": "File:01 Magura, Romania - Piatra Craiului mountains.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:01_Magura,_Romania_-_Piatra_Craiului_mountains.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/9/98/01_Magura%2C_Romania_-_Piatra_Craiului_mountains.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3474,
+        2316
+      ],
+      "author": "Marek Ślusarczyk (Tupungato) Photo gallery",
+      "license": "CC BY 3.0",
+      "license_url": "https://creativecommons.org/licenses/by/3.0",
+      "expected": {
+        "scene_type": "landscape",
+        "defects": [],
+        "preserve": [],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Late-afternoon village landscape, warm but natural light, sharp.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_good_03",
+      "category": "already_good",
+      "file": "already_good/holdout_good_03.jpg",
+      "commons_title": "File:2016 Tbilisi, Widoki z Twierdzy Narikala (02).jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:2016_Tbilisi,_Widoki_z_Twierdzy_Narikala_(02).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/3/3f/2016_Tbilisi%2C_Widoki_z_Twierdzy_Narikala_%2802%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        5187,
+        3458
+      ],
+      "author": "Marcin Konsek",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "cityscape",
+        "defects": [],
+        "preserve": [],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Aerial city view in daylight; detailed and well exposed.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_style_01",
+      "category": "intentional_style",
+      "file": "intentional_style/holdout_style_01.jpg",
+      "commons_title": "File:Eddy Harris 2016.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Eddy_Harris_2016.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/8/87/Eddy_Harris_2016.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3653,
+        5472
+      ],
+      "author": "Eddyharris",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [],
+        "preserve": [
+          "low_key"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Low-key studio portrait on black; the dark frame is intended.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_style_02",
+      "category": "intentional_style",
+      "file": "intentional_style/holdout_style_02.jpg",
+      "commons_title": "File:Candles with a dark background.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Candles_with_a_dark_background.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/6/67/Candles_with_a_dark_background.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3895,
+        2367
+      ],
+      "author": "Jygle",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "night",
+        "defects": [],
+        "preserve": [
+          "low_key",
+          "warm_tone"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Candles on black with bokeh; dark, warm and partly out of focus on purpose.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_style_03",
+      "category": "intentional_style",
+      "file": "intentional_style/holdout_style_03.jpg",
+      "commons_title": "File:Curve in white marble stairs (Unsplash).jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Curve_in_white_marble_stairs_(Unsplash).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/5/57/Curve_in_white_marble_stairs_%28Unsplash%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        5184,
+        3888
+      ],
+      "author": "Daniel von Appen daniel_von_appen",
+      "license": "CC0",
+      "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "expected": {
+        "scene_type": "other",
+        "defects": [],
+        "preserve": [
+          "high_key"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "High-key white marble stairs; bright, low-contrast look is intended.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_style_04",
+      "category": "intentional_style",
+      "file": "intentional_style/holdout_style_04.jpg",
+      "commons_title": "File:(1)Centennial Park sunset-7.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:(1)Centennial_Park_sunset-7.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/7/7e/%281%29Centennial_Park_sunset-7.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3821,
+        2988
+      ],
+      "author": "Sardaka",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [],
+        "preserve": [
+          "silhouette"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Silhouette of a person against a lake at dusk; the dark figure is intended.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_style_05",
+      "category": "intentional_style",
+      "file": "intentional_style/holdout_style_05.jpg",
+      "commons_title": "File:-Lovebirds on Carmel Beach, at sunset (51540271068).jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:-Lovebirds_on_Carmel_Beach,_at_sunset_(51540271068).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/6/6d/-Lovebirds_on_Carmel_Beach%2C_at_sunset_%2851540271068%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        5184,
+        3456
+      ],
+      "author": "bluesbby from Mountain View, USA",
+      "license": "CC BY 2.0",
+      "license_url": "https://creativecommons.org/licenses/by/2.0",
+      "expected": {
+        "scene_type": "landscape",
+        "defects": [],
+        "preserve": [
+          "warm_tone"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Sunset beach under a tree; strong orange tone and dark trunk are intended.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_style_06",
+      "category": "intentional_style",
+      "file": "intentional_style/holdout_style_06.jpg",
+      "commons_title": "File:2014 Ziarno na fotografii analogowej.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:2014_Ziarno_na_fotografii_analogowej.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/6/63/2014_Ziarno_na_fotografii_analogowej.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4466,
+        2935
+      ],
+      "author": "Halicki",
+      "license": "CC BY 3.0",
+      "license_url": "https://creativecommons.org/licenses/by/3.0",
+      "expected": {
+        "scene_type": "landscape",
+        "defects": [],
+        "preserve": [
+          "film_grain"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "note": "Black-and-white analogue photo with visible film grain (Commons: film grain example).",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_backlit_01",
+      "category": "backlit",
+      "file": "backlit/holdout_backlit_01.jpg",
+      "commons_title": "File:500px photo (60166902).jpeg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:500px_photo_(60166902).jpeg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/7/76/500px_photo_%2860166902%29.jpeg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2048,
+        1365
+      ],
+      "author": "Anastasiya Kiseleva",
+      "license": "CC BY 3.0",
+      "license_url": "https://creativecommons.org/licenses/by/3.0",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [
+          {
+            "type": "backlit_subject",
+            "region": "person",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Child in snow facing the low sun; the figure is darker than the sunlit snow.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_backlit_02",
+      "category": "backlit",
+      "file": "backlit/holdout_backlit_02.jpg",
+      "commons_title": "File:'Occupy Paradeplatz' in Zürich 2011-10-22 15-36-16.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:%27Occupy_Paradeplatz%27_in_Z%C3%BCrich_2011-10-22_15-36-16.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/c/c5/%27Occupy_Paradeplatz%27_in_Z%C3%BCrich_2011-10-22_15-36-16.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4000,
+        2667
+      ],
+      "author": "Roland zh",
+      "license": "CC BY-SA 3.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
+      "expected": {
+        "scene_type": "group",
+        "defects": [
+          {
+            "type": "backlit_subject",
+            "region": "person",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Street crowd against the light; people in the foreground are in shadow.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_noisy_01",
+      "category": "noisy",
+      "file": "noisy/holdout_noisy_01.jpg",
+      "commons_title": "File:NIND chapel ISOH3.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:NIND_chapel_ISOH3.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/f/f1/NIND_chapel_ISOH3.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4831,
+        3220
+      ],
+      "author": "Trougnouf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0",
+      "expected": {
+        "scene_type": "indoor",
+        "defects": [
+          {
+            "type": "noise",
+            "region": "full",
+            "severity": 2,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "NIND chapel at high ISO (ISOH3); downscaled to 1600 px, so noise is weaker than full size.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_noisy_02",
+      "category": "noisy",
+      "file": "noisy/holdout_noisy_02.jpg",
+      "commons_title": "File:NIND books ISOH2.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:NIND_books_ISOH2.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/e/e6/NIND_books_ISOH2.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4936,
+        3296
+      ],
+      "author": "Trougnouf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0",
+      "expected": {
+        "scene_type": "indoor",
+        "defects": [
+          {
+            "type": "noise",
+            "region": "full",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "NIND books at high ISO (ISOH2); downscaled to 1600 px.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_blur_01",
+      "category": "blur",
+      "file": "blur/holdout_blur_01.jpg",
+      "commons_title": "File:An example of an out of focus photograph.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:An_example_of_an_out_of_focus_photograph.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/4/4e/An_example_of_an_out_of_focus_photograph.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3888,
+        2592
+      ],
+      "author": "Artem Katranzhi from Bakashikha, Russia",
+      "license": "CC BY-SA 2.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/2.0",
+      "expected": {
+        "scene_type": "other",
+        "defects": [
+          {
+            "type": "blur",
+            "region": "full",
+            "severity": 3,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Whole frame out of focus (Commons: 'An example of an out of focus photograph').",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_blur_02",
+      "category": "blur",
+      "file": "blur/holdout_blur_02.jpg",
+      "commons_title": "File:2020-06-29 Katzen Bayern 71.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:2020-06-29_Katzen_Bayern_71.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/6/61/2020-06-29_Katzen_Bayern_71.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        5184,
+        3456
+      ],
+      "author": "Geoprofi Lars",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "animal",
+        "defects": [
+          {
+            "type": "blur",
+            "region": "cats",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Commons category 'Erroneous focus adjustment': focus behind the cats; mild.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_cast_01",
+      "category": "color_cast",
+      "file": "color_cast/holdout_cast_01.jpg",
+      "commons_title": "File:Schmiddis2009.JPG",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Schmiddis2009.JPG",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/2/23/Schmiddis2009.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3072,
+        2304
+      ],
+      "author": "Bene16",
+      "license": "CC BY-SA 3.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
+      "expected": {
+        "scene_type": "landscape",
+        "defects": [
+          {
+            "type": "color_cast_cool",
+            "region": "full",
+            "severity": 2,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Commons 'Wrong white balance': snowy track rendered strongly blue.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_cast_02",
+      "category": "color_cast",
+      "file": "color_cast/holdout_cast_02.jpg",
+      "commons_title": "File:Blue color cast - Paper sleeve with CD - 1.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Blue_color_cast_-_Paper_sleeve_with_CD_-_1.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/9/95/Blue_color_cast_-_Paper_sleeve_with_CD_-_1.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4608,
+        3456
+      ],
+      "author": "Fructibus",
+      "license": "CC0",
+      "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "expected": {
+        "scene_type": "product",
+        "defects": [
+          {
+            "type": "color_cast_cool",
+            "region": "full",
+            "severity": 2,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Commons 'Blue color cast': white CD sleeve on paper looks cyan; may read as green.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_multi_01",
+      "category": "multi_defect",
+      "file": "multi_defect/holdout_multi_01.jpg",
+      "commons_title": "File:23rd We Will Not Stop! protest (42) -.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:23rd_We_Will_Not_Stop!_protest_(42)_-.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/9/9c/23rd_We_Will_Not_Stop%21_protest_%2842%29_-.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4608,
+        3456
+      ],
+      "author": "Envagyokabela",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "expected": {
+        "scene_type": "indoor",
+        "defects": [
+          {
+            "type": "underexposed",
+            "region": "full",
+            "severity": 2,
+            "min_severity": 1
+          },
+          {
+            "type": "noise",
+            "region": "full",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Commons 'Underexposed images': dim room with toys; dark and grainy.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
+      "id": "holdout_multi_02",
+      "category": "multi_defect",
+      "file": "multi_defect/holdout_multi_02.jpg",
+      "commons_title": "File:'Brigade Road ,Bangalore' at Night(sunday 8-3-2009).JPG",
+      "source_page": "https://commons.wikimedia.org/wiki/File:%27Brigade_Road_,Bangalore%27_at_Night(sunday_8-3-2009).JPG",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/b/bc/%27Brigade_Road_%2CBangalore%27_at_Night%28sunday_8-3-2009%29.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3264,
+        2448
+      ],
+      "author": "Rudolph.A.furtado",
+      "license": "Public domain",
+      "license_url": "",
+      "expected": {
+        "scene_type": "night",
+        "defects": [
+          {
+            "type": "blur",
+            "region": "full",
+            "severity": 1,
+            "min_severity": 1
+          },
+          {
+            "type": "noise",
+            "region": "full",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Commons 'Blurred images': night street with motion blur and noise.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    }
+  ]
+}
