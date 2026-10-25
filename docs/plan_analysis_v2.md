@@ -304,13 +304,16 @@ poster, còn mask của SAM bám biên tốt hơn GrabCut rõ rệt (IoU giữa 
 **Thứ tự phân giải vùng** (resolver mới `region_engine.resolve_subject_mask`, dùng chung cho
 perception và executor):
 1. `face` → MediaPipe (giữ nguyên).
-2. Vùng do Perceive liệt kê (`{name, box_2d}`), **có model** (`region_engine.capabilities()`):
+2. Vùng do Perceive liệt kê (`{name, box_2d}`), **có model** (`region_engine.subject_capabilities()`):
    a. DINO chạy riêng từng tên vùng (**không gộp prompt**: gộp làm mất nhãn ở 4/8 ảnh, không nhanh hơn).
    b. Giữ detection DINO có IoU ≥ 0.3 với bbox Gemini; bỏ bbox DINO phủ ≥ 90 % khung (coi là trượt).
    c. Có detection khớp → bbox DINO → MobileSAM. Không khớp → bbox Gemini → MobileSAM, hạ confidence.
 3. **Không có model** (CI, máy thành viên khác) → bbox Gemini → GrabCut trên ảnh thu về 1024 px,
    upscale mask → feather. Confidence thấp hơn bước 2.
-4. **Không có API** (rule-based) → quadrant heuristic theo từ khóa (giữ làm phương án cuối).
+4. **Không có bbox** (rule-based, hoặc VLM không trả `box_2d`): có model → DINO theo tên vùng, bỏ
+   bbox phủ ≥ 90 % khung, lấy detection điểm cao nhất → MobileSAM, confidence chặn ở 0.5
+   (`UNANCHORED_DINO_CONFIDENCE`); không có detection hợp lệ hoặc không model → quadrant heuristic
+   theo từ khóa → full (phương án cuối). Chốt 2026-10-25, `analysis_v2/contract-changes.md` mục 2.
 
 Mọi mask đi qua `mask_utils.create_soft_mask` (ADR-003). Mỗi `RegionStats` ghi `mask_source`
 (`dino_sam` / `gemini_sam` / `gemini_grabcut` / `quadrant`) và `mask_confidence`.

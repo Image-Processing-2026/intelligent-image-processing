@@ -11,7 +11,19 @@ merge. Đọc trước: `CLAUDE.md` (đặc biệt phần mock Gemini), `docs/pl
    (phần bù hợp các subject). `cache_key` = hash ảnh gốc của lượt chạy, dùng lại ở vòng 2–3.
 3. `executor.resolve_region_mask` dùng chung resolver (giữ đường face/full/quadrant cũ khi không có bbox).
 4. `DiagnosisReport.measurement`, `.region_stats` được điền; ẩn `maps` khỏi JSON/HistoryItem.
-5. Nạp sẵn model phân vùng lúc khởi động API/Gradio khi `capabilities()["semantic_models"]`.
+5. Nạp sẵn model phân vùng lúc khởi động API/Gradio khi `subject_capabilities()["semantic_models"]`
+   (import `from src.region_engine import subject_capabilities`; `region_engine.capabilities` là API
+   cũ của controller, không dùng — `contract-changes.md` mục 1).
+   `box_2d=None` vẫn có thể ra `dino_sam` (confidence ≤ 0.5), xem `contracts.md` §C2.
+
+## Thêm từ review wave 1 (lead, 2026-10-25)
+- **Metadata cho phiên tương tác** (người dùng duyệt): `session.start_session` nhận
+  `image_metadata: Optional[ImageMetadata] = None` và truyền vào `initial_doctor_state`; route
+  `create_session` (`src/api/workspace.py`) đọc bytes upload bằng `read_metadata`. Phạm vi lane mở
+  rộng sang `src/agent/session.py` và route đó. Có unit test.
+- Gradio (`frontend/app.py`) **không** đổi sang `type="filepath"` (hoãn); UI chưa có metadata.
+- Kiểm tra skin locus trên vùng mặt (plan §1.4, lệch 6 của `measure`): làm ở `perception` sau khi
+  có mask mặt, ghi vào `RegionStats.values` bằng key mới có default.
 
 ## P5 — bằng chứng cho VLM
 6. `src/agent/evidence.py`: `select_evidence(image, measurement, region_masks) -> List[EvidenceCrop]`

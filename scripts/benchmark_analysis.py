@@ -4,7 +4,8 @@ Benchmark chẩn đoán theo hợp đồng C5 (docs/analysis_v2/contracts.md).
 Mỗi cấu hình là một hàm nhận (ảnh RGB uint8, thông tin ca) và trả về DiagnosisReport:
 - baseline: luồng hiện tại, analyze_image → perceive (VLM + lỗi đo được);
 - vlm_only: như baseline nhưng bỏ các defect origin="measured" (chỉ lời VLM);
-- measure_only, fused: chưa có; để NotImplementedError cho tới khi lane agent/fusion điền vào.
+- measure_only: số đo toàn ảnh (P1) → severity theo calibration (C4); cần lane calib đã merge;
+- fused: chưa có; để NotImplementedError cho tới khi lane fusion điền vào.
 
 Hai bộ dữ liệu:
 - real: data/real_benchmark_manifest.json (ảnh Wikimedia Commons, đáp án do con người/agent đặt);
@@ -42,9 +43,10 @@ sys.path.insert(0, os.path.abspath("."))
 from scripts.benchmark_scoring import aggregate, score_image  # noqa: E402
 from src.agent import perception  # noqa: E402
 from src.agent.perception import perceive  # noqa: E402
-from src.agent.state import DiagnosisReport  # noqa: E402
+from src.agent.state import DEFECT_TYPES, Defect, DiagnosisReport  # noqa: E402
 from src.agent.vlm_diagnostician import DEFAULT_GEMINI_MODEL  # noqa: E402
 from src.analyzer_evaluator import analyze_image  # noqa: E402
+from src.analyzer_evaluator.measurement import measure_image  # noqa: E402
 
 logger = logging.getLogger("benchmark_analysis")
 
@@ -86,6 +88,36 @@ def _vlm_only(image: np.ndarray, case: CaseInfo) -> DiagnosisReport:
     return report
 
 
+def _measure_only(image: np.ndarray, case: CaseInfo) -> DiagnosisReport:
+    """Chỉ số đo toàn ảnh (P1) → severity theo bảng hiệu chỉnh C4; không gọi VLM.
+
+    Chưa có `measurement.calibration` (lane calib) thì báo NotImplementedError. Sai số ước lượng
+    thô (σ nhiễu, σ mờ, góc) xem scripts/benchmark_measurement.py.
+    """
+    try:
+        from src.analyzer_evaluator.measurement.calibration import severity_from_measurement
+    except ImportError as exc:
+        raise NotImplementedError(
+            "Config 'measure_only' needs src/analyzer_evaluator/measurement/calibration.py "
+            "(calib lane, contracts.md §C4); use scripts/benchmark_measurement.py for raw errors."
+        ) from exc
+    report = measure_image(image).report
+    defects = []
+    for defect_type in DEFECT_TYPES:
+        severity, confidence = severity_from_measurement(defect_type, report)
+        if severity >= 1:
+            defects.append(
+                Defect(
+                    type=defect_type,
+                    region="full",
+                    severity=severity,
+                    evidence=f"measured, confidence {confidence:.2f}",
+                    origin="measured",
+                )
+            )
+    return DiagnosisReport(defects=defects, source="rule_based")
+
+
 def _not_implemented(name: str, owner: str) -> ConfigFn:
     """Cấu hình chưa có: báo rõ lane nào sẽ điền vào."""
 
@@ -101,7 +133,7 @@ def _not_implemented(name: str, owner: str) -> ConfigFn:
 CONFIGS: Dict[str, ConfigFn] = {
     "baseline": _baseline,
     "vlm_only": _vlm_only,
-    "measure_only": _not_implemented("measure_only", "the measurement and agent lanes (P1, P4b)"),
+    "measure_only": _measure_only,
     "fused": _not_implemented("fused", "the fusion lane (P6, P7)"),
 }
 
@@ -417,7 +449,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         os.environ.pop("GEMINI_API_KEY", None)
     else:
         _load_api_key()
-    if args.dataset == "real" and not os.getenv("GEMINI_API_KEY"):
+    if args.dataset == "real" and args.config != "measure_only" and not os.getenv("GEMINI_API_KEY"):
         raise SystemExit(
             "GEMINI_API_KEY is not set; the real set would only measure rule-based output."
         )

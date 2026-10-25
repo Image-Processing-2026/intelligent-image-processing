@@ -28,8 +28,8 @@ Mỗi lane có worktree riêng ở `..\iip-wt\<lane>` (cạnh repo chính), mộ
 | 1 | `measure` | P1 | `src/analyzer_evaluator/measurement/**`, `tests/unit/test_measurement_*.py` | — |
 | 1 | `region` | P4a | `src/region_engine/**`, `tests/unit/test_region_*.py`, `tests/integration/test_prompt_segmentation_model.py`, `requirements-semantic.txt`, `scripts/fetch_segmentation_models.py`, `.gitignore`, `tests/fixtures/prompt_segmentation/assets.json` | — |
 | 1 | `meta` | P3 | `src/analyzer_evaluator/metadata.py`, `tests/unit/test_metadata*.py`, plumbing `image_metadata` (graph, state `DoctorState`, `src/api/`, `frontend/app.py`) | — |
-| 2 | `calib` | P2 | `measurement/calibration.py`, `calibration.yaml`, `scripts/calibrate_severity.py`, ngưỡng trong `analyzer.py`, `knowledge/engine.py` (chỉ chỗ đọc ngưỡng) | bench (bộ synthetic), measure |
-| 2 | `agent` | P4b + P5 | `src/agent/perception.py`, `state.py`, `vlm_diagnostician.py`, `executor.py` (resolve mask), `src/agent/evidence.py`, test tương ứng | measure, region, meta |
+| 2 | `calib` | P2 | `measurement/calibration.py`, `calibration.yaml`, `scripts/calibrate_severity.py`, ngưỡng trong `analyzer.py`, `knowledge/engine.py` (chỉ chỗ đọc ngưỡng), phần motion của `measurement/sharpness.py`, chọn pixel trung tính trong `measurement/color.py` | bench (bộ synthetic), measure |
+| 2 | `agent` | P4b + P5 | `src/agent/perception.py`, `state.py`, `vlm_diagnostician.py`, `executor.py` (resolve mask), `src/agent/evidence.py`, `session.py` + route `create_session` (metadata), test tương ứng | measure, region, meta |
 | 3 | `fusion` | P6 + P7 | `src/agent/fusion.py`, `measurement/diff.py`, `state.py`, `perception.py`, `planner.py`, `intent.py`, `graph.py` (`decide_node`), knowledge cards, `SYSTEM_PROMPT` | agent, calib |
 | cuối | lead | P8 | ADR-005, `docs/interfaces.md`, `CLAUDE.md` | tất cả |
 

@@ -106,7 +106,10 @@ class SubjectMask:
     confidence: float           # 0..1
     box: Optional[BoxXYXY]      # bbox cuối cùng đã dùng
 
-def capabilities() -> Dict[str, bool]:
+# Export từ package dưới tên `subject_capabilities` (cài ở subject.capabilities).
+# `region_engine.capabilities` là API cũ (controller, dict lồng nhau), giữ nguyên.
+# Quyết định 2026-10-25, contract-changes.md mục 1 (A).
+def subject_capabilities() -> Dict[str, bool]:
     """{"face": ..., "semantic_models": ...} — không nạp model nặng, chỉ kiểm tra file/gói."""
 
 def box2d_to_xyxy(box_2d: Box2D, image_shape: Tuple[int, int]) -> BoxXYXY: ...
@@ -123,8 +126,12 @@ def resolve_subject_mask(image: np.ndarray, name: str, box_2d: Optional[Box2D] =
                          cache_key: Optional[str] = None) -> SubjectMask:
     """Thứ tự (plan P4): face → MediaPipe; có model → DINO theo `name`, giữ detection IoU ≥ 0.3
     với bbox Gemini, loại bbox phủ ≥ 90 % khung → SAM; không khớp → SAM trên bbox Gemini;
-    không model → GrabCut trên bbox Gemini; không bbox → quadrant theo từ khóa → full.
-    `use_semantic=None` = tự theo capabilities(). Cache trong process theo
+    không model → GrabCut trên bbox Gemini.
+    Không bbox (`box_2d=None`): có model → DINO theo `name`, loại bbox phủ ≥ 90 % khung, lấy
+    detection điểm cao nhất → SAM, `source="dino_sam"`, confidence ≤ UNANCHORED_DINO_CONFIDENCE
+    (0.5); không detection hợp lệ hoặc không model → quadrant theo từ khóa → full
+    (contract-changes.md mục 2).
+    `use_semantic=None` = tự theo subject_capabilities(). Cache trong process theo
     (cache_key, name, box_2d) khi cache_key khác None."""
 
 def clear_subject_mask_cache() -> None: ...
