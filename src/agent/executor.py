@@ -3,8 +3,9 @@ Bộ điều phối và thực thi công cụ (Tool Dispatcher & Executor).
 Kết nối kế hoạch điều trị từ Agent với Module 2 (Region Engine) và Module 3 (Processing Engine).
 """
 
+import hashlib
 import logging
-from typing import Any, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
 
@@ -20,8 +21,9 @@ from src.region_engine.controller import (
 )
 from src.region_engine.controller import resolve_region as resolve_module_region
 from src.region_engine.face_detector import detect_faces
+from src.region_engine.subject import resolve_subject_mask
 
-from .regions import FACE_TARGETS, FULL_TARGETS, SPATIAL_TARGETS
+from .regions import FACE_TARGETS, FULL_TARGETS, SPATIAL_TARGETS, canonical_region
 from .state import RegionOperation, TreatmentPlan
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,27 @@ _HEURISTIC_QUADRANTS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("ground", "floor", "đất"), "bottom"),
     (("center", "centre", "giữa"), "center"),
 )
+
+
+# bbox Gemini (ymin, xmin, ymax, xmax) 0..1000 theo tên subject, do Perceive trả về
+SubjectBoxes = Mapping[str, Sequence[int]]
+
+
+def image_cache_key(image: np.ndarray) -> str:
+    """Khóa cache mask theo nội dung ảnh gốc của lượt chạy (blake2b trên shape, dtype, bytes)."""
+    array = np.ascontiguousarray(image)
+    digest = hashlib.blake2b(digest_size=16)
+    digest.update(f"{array.shape}|{array.dtype}".encode())
+    digest.update(array.tobytes())
+    return digest.hexdigest()
+
+
+def subject_cache_key(base: str, shape: Sequence[int]) -> str:
+    """
+    Khóa cache của region_engine.resolve_subject_mask cho một kích thước ảnh: cùng ảnh gốc
+    nhưng ảnh preview (phiên bản phong cách) có kích thước khác thì không được trúng cache.
+    """
+    return f"{base}:{int(shape[0])}x{int(shape[1])}"
 
 
 def _validate_mask(mask: Any, image_shape: tuple) -> bool:
@@ -200,20 +223,74 @@ def _resolve_action_region(
     return True, region.mask, backend
 
 
+def _subject_box(
+    action: RegionOperation, subject_boxes: Optional[SubjectBoxes]
+) -> Optional[tuple[int, int, int, int]]:
+    """bbox Perceive của vùng ngữ nghĩa trong action (khớp theo tên chuẩn hóa); None nếu không có."""
+    if not subject_boxes or _infer_region_kind(action) != "semantic":
+        return None
+    box = subject_boxes.get(canonical_region(action.target_prompt))
+    if box is None or len(box) != 4:
+        return None
+    ymin, xmin, ymax, xmax = (int(value) for value in box)
+    return ymin, xmin, ymax, xmax
+
+
+def _resolve_subject_region(
+    image: np.ndarray,
+    action: RegionOperation,
+    box_2d: tuple[int, int, int, int],
+    cache_key: Optional[str],
+) -> tuple[bool, Optional[np.ndarray], Optional[str]]:
+    """
+    Vùng ngữ nghĩa Perceive đã định vị bằng bbox: dùng chung resolver với Perceive
+    (region_engine.resolve_subject_mask, C2), nên mask xử lý trùng mask đã đo và trúng cache.
+    Resolver rơi về 'full' (không định vị được) → bỏ qua action (D1, không xử lý toàn ảnh).
+    """
+    key = subject_cache_key(cache_key, image.shape) if cache_key else None
+    target = canonical_region(action.target_prompt)
+    subject = resolve_subject_mask(_as_rgb_for_detection(image), target, box_2d, cache_key=key)
+    if subject.source == "full" or not _validate_mask(subject.mask, image.shape):
+        logger.warning(
+            "Subject '%s' could not be located (source %s). Skipping action '%s'.",
+            action.region_id,
+            subject.source,
+            action.operation,
+        )
+        return False, None, None
+    logger.info("Region '%s' resolved by subject resolver '%s'.", action.region_id, subject.source)
+    return True, subject.mask, subject.source
+
+
 def _resolve_action_mask(
-    image: np.ndarray, action: RegionOperation
+    image: np.ndarray,
+    action: RegionOperation,
+    subject_boxes: Optional[SubjectBoxes] = None,
+    cache_key: Optional[str] = None,
 ) -> tuple[bool, Optional[np.ndarray]]:
-    """(proceed, mask) của _resolve_action_region, dùng khi thực thi kế hoạch."""
-    proceed, mask, _ = _resolve_action_region(image, action)
+    """
+    (proceed, mask) cho một action khi thực thi kế hoạch. Vùng ngữ nghĩa có bbox từ Perceive
+    → resolver chung; còn lại (face/full/quadrant, hoặc không có bbox) → đường cũ qua controller.
+    """
+    box_2d = _subject_box(action, subject_boxes)
+    if box_2d is not None:
+        proceed, mask, _ = _resolve_subject_region(image, action, box_2d, cache_key)
+    else:
+        proceed, mask, _ = _resolve_action_region(image, action)
     return proceed, mask
 
 
 def resolve_region_mask(
-    image: np.ndarray, target_prompt: str, feather_radius: int = 15
+    image: np.ndarray,
+    target_prompt: str,
+    feather_radius: int = 15,
+    box_2d: Optional[Sequence[int]] = None,
+    cache_key: Optional[str] = None,
 ) -> tuple[bool, Optional[np.ndarray], Optional[str]]:
     """
-    Tạo mặt nạ cho một vùng theo tên (dùng để đo số liệu theo vùng ở giai đoạn Perceive).
-    Đi cùng đường phân giải với execute_plan (face/full/quadrant/semantic, heuristic D1).
+    Tạo mặt nạ cho một vùng theo tên, cùng đường phân giải với execute_plan: vùng ngữ nghĩa có
+    box_2d (bbox Gemini 0..1000) → resolver chung resolve_subject_mask; không có → face/full/
+    quadrant/semantic qua controller (heuristic D1).
 
     Returns:
         (found, mask, backend): found=False → không xác định được vùng; mask=None → toàn ảnh.
@@ -226,10 +303,19 @@ def resolve_region_mask(
         detected_issue="region_measurement",
         operation="measure",
     )
+    boxes = {canonical_region(target_prompt): box_2d} if box_2d is not None else None
+    box = _subject_box(probe, boxes)
+    if box is not None:
+        return _resolve_subject_region(image, probe, box, cache_key)
     return _resolve_action_region(image, probe)
 
 
-def execute_plan(image: np.ndarray, plan: TreatmentPlan) -> np.ndarray:
+def execute_plan(
+    image: np.ndarray,
+    plan: TreatmentPlan,
+    subject_boxes: Optional[SubjectBoxes] = None,
+    cache_key: Optional[str] = None,
+) -> np.ndarray:
     """
     Thực thi tuần tự các hành động trong kế hoạch điều trị trên ảnh.
     Mỗi action được bọc riêng trong try...except — một action lỗi không làm sập cả pipeline.
@@ -237,6 +323,9 @@ def execute_plan(image: np.ndarray, plan: TreatmentPlan) -> np.ndarray:
     Args:
         image: Ảnh đầu vào ở vòng lặp hiện tại (RGB, uint8).
         plan: Kế hoạch điều trị đã được chuẩn hóa.
+        subject_boxes: bbox Perceive theo tên subject (DiagnosisReport.subject_boxes); vùng
+            ngữ nghĩa có bbox dùng resolver chung với Perceive.
+        cache_key: image_cache_key của ảnh gốc của lượt chạy, để dùng lại mask đã phân giải.
 
     Returns:
         np.ndarray: Ảnh sau khi đã áp dụng toàn bộ các thao tác (RGB, uint8).
@@ -249,7 +338,7 @@ def execute_plan(image: np.ndarray, plan: TreatmentPlan) -> np.ndarray:
     for action in plan.actions:
         try:
             # 1. Tạo mặt nạ vùng thông qua Module 2
-            proceed, mask = _resolve_action_mask(current_img, action)
+            proceed, mask = _resolve_action_mask(current_img, action, subject_boxes, cache_key)
             if not proceed:
                 continue
 

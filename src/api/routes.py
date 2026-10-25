@@ -69,7 +69,7 @@ def health_check():
 def _diagnose(img: np.ndarray, metadata: ImageMetadata) -> DiagnoseResponse:
     """Chỉ số kỹ thuật → chẩn đoán (Perceive) → kế hoạch điều trị, không xử lý ảnh."""
     metrics = analyze_image(img).model_dump()
-    diagnosis = perceive(img, metrics, iteration=1)
+    diagnosis = perceive(img, metrics, iteration=1, metadata=metadata)
     plan = plan_treatment(img, metrics, diagnosis, iteration=1)
     return DiagnoseResponse(
         technical_metrics=metrics,

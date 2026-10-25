@@ -9,6 +9,7 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, TypedDict
 import numpy as np
 from pydantic import BaseModel, Field
 
+from src.analyzer_evaluator.measurement import MeasurementReport, RegionStats
 from src.analyzer_evaluator.metadata import ImageMetadata
 
 PlanSource = Literal["vlm", "rule_based", "vlm_fallback"]
@@ -56,6 +57,15 @@ PRESERVE_ASPECTS: tuple[str, ...] = (
 )
 
 
+class Evidence(BaseModel):
+    """Một bằng chứng cho lỗi: số đo, quan sát của VLM, EXIF hoặc lời người dùng (C6)."""
+
+    source: Literal["measured", "vlm", "exif", "user"]
+    metric: str = ""
+    value: Optional[float] = None
+    text: str = ""
+
+
 class Defect(BaseModel):
     """Một lỗi kỹ thuật được chẩn đoán trên một vùng."""
 
@@ -66,6 +76,12 @@ class Defect(BaseModel):
     # vlm: VLM chẩn đoán; rule: luật từ metric toàn cục; measured: suy ra từ số đo theo vùng;
     # user: người dùng yêu cầu sửa (Phase 4)
     origin: Literal["vlm", "rule", "measured", "user"] = "vlm"
+    # Analysis v2 (C6): độ tin cậy (VLM: tỉ lệ đồng thuận self-consistency), bằng chứng có cấu
+    # trúc, lỗi toolbox sửa được hay không, và điều cần tránh khi xử lý
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    evidence_items: List[Evidence] = Field(default_factory=list)
+    fixable: bool = True
+    contraindications: List[str] = Field(default_factory=list)
 
 
 class PreserveItem(BaseModel):
@@ -104,6 +120,19 @@ class DiagnosisReport(BaseModel):
     summary: str = ""
     region_metrics: Dict[str, RegionMetrics] = Field(default_factory=dict)
     source: PlanSource = "vlm"
+    # Analysis v2 (C6). rejected: giả thuyết bị loại (ví dụ không đủ đồng thuận); ask_user: cần
+    # hỏi người dùng; measurement: tóm tắt đo toàn ảnh; region_stats: số đo gộp theo vùng
+    # (luôn có 'full' và 'background' khi đo được)
+    rejected: List[Defect] = Field(default_factory=list)
+    ask_user: List[Defect] = Field(default_factory=list)
+    measurement: Optional[MeasurementReport] = None
+    region_stats: Dict[str, RegionStats] = Field(default_factory=dict)
+    # bbox Gemini (ymin, xmin, ymax, xmax) 0..1000 của từng subject; executor dùng lại để phân
+    # giải cùng mask. Không đưa vào prompt Plan (prompt Plan cấm bbox)
+    subject_boxes: Dict[str, List[int]] = Field(default_factory=dict)
+    # Bản đồ tile của lần đo (MAP_KEYS → np.ndarray): chỉ dùng trong tiến trình, không
+    # serialize ra JSON/HistoryItem/API
+    measurement_maps: Optional[Any] = Field(default=None, exclude=True, repr=False)
 
     @property
     def actionable_defects(self) -> List[Defect]:
@@ -264,5 +293,5 @@ class DoctorState(TypedDict):
     user_id: str  # Chủ của các ca trong bộ nhớ (Phase 5)
     # Vì sao phiên bản được đề xuất: "intent" | "preference" | "critic" | "score"
     recommended_reason: Optional[str]
-    # Metadata EXIF/JPEG của file gốc (Phase 3); None khi không có. Chưa dùng trong perceive.
+    # Metadata EXIF/JPEG của file gốc (Phase 3); None khi không có. Perceive đưa prior vào prompt.
     image_metadata: Optional[ImageMetadata]

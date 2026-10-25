@@ -339,19 +339,21 @@ def _encode_image(image: Image.Image, budget: int) -> Tuple[bytes, str]:
 
 def _encode_contents(contents: List[Any]) -> List[Any]:
     """
-    Thay mỗi ảnh PIL trong nội dung bằng Part đã mã hóa; ngân sách VLM_INLINE_IMAGE_BUDGET
-    chia đều cho các ảnh (vòng 2 gửi 2 ảnh, critic gửi nhiều phiên bản).
+    Thay mỗi ảnh PIL trong nội dung bằng Part đã mã hóa, chung ngân sách
+    VLM_INLINE_IMAGE_BUDGET. Ảnh nhỏ (crop, overlay) được mã hóa trước; phần ngân sách còn lại
+    chia đều cho các ảnh lớn hơn, nên crop 512 px không làm ảnh toàn khung mất ngân sách.
     """
-    count = sum(isinstance(part, Image.Image) for part in contents)
-    if count == 0:
+    images = [index for index, part in enumerate(contents) if isinstance(part, Image.Image)]
+    if not images:
         return contents
-    budget = VLM_INLINE_IMAGE_BUDGET // count
-    encoded: List[Any] = []
-    for part in contents:
-        if isinstance(part, Image.Image):
-            data, mime_type = _encode_image(part, budget)
-            part = genai_types.Part.from_bytes(data=data, mime_type=mime_type)
-        encoded.append(part)
+    encoded: List[Any] = list(contents)
+    remaining = VLM_INLINE_IMAGE_BUDGET
+    by_size = sorted(images, key=lambda index: contents[index].width * contents[index].height)
+    for position, index in enumerate(by_size):
+        budget = remaining // (len(by_size) - position)
+        data, mime_type = _encode_image(contents[index], budget)
+        remaining = max(0, remaining - len(data))
+        encoded[index] = genai_types.Part.from_bytes(data=data, mime_type=mime_type)
     return encoded
 
 
@@ -370,6 +372,18 @@ def image_parts(
     return parts
 
 
+# Trường DiagnosisReport không đưa vào prompt Plan
+_PLAN_DIAGNOSIS_EXCLUDE = {
+    "source",
+    "iteration",
+    "measurement",
+    "region_stats",
+    "subject_boxes",
+    "rejected",
+    "ask_user",
+}
+
+
 def _build_contents(
     image: np.ndarray,
     metrics: Dict[str, Any],
@@ -385,7 +399,8 @@ def _build_contents(
     """
     prompt = f"Chỉ số kỹ thuật hiện tại:\n{json.dumps(metrics, indent=2, default=str)}\n"
     if diagnosis is not None:
-        diagnosis_json = diagnosis.model_dump(mode="json", exclude={"source", "iteration"})
+        # Bỏ số đo v2 (dài, đã tóm vào region_metrics) và bbox subject: prompt Plan cấm bbox
+        diagnosis_json = diagnosis.model_dump(mode="json", exclude=_PLAN_DIAGNOSIS_EXCLUDE)
         prompt += (
             "CHẨN ĐOÁN (giai đoạn 1, kèm region_metrics đo thực tế theo vùng):\n"
             f"{json.dumps(diagnosis_json, indent=2, ensure_ascii=False)}\n"
@@ -411,11 +426,16 @@ def _parse_json_text(text: Optional[str]) -> Any:
 
 
 def call_gemini_json(
-    api_key: str, system_prompt: str, contents: List[Any], schema: Dict[str, Any]
+    api_key: str,
+    system_prompt: str,
+    contents: List[Any],
+    schema: Dict[str, Any],
+    temperature: Optional[float] = None,
 ) -> Any:
     """
     Gọi Gemini với structured output (JSON theo schema) và trả về JSON đã parse.
     Dùng chung cho giai đoạn Perceive và Plan; mọi lỗi được ném ra để bên gọi fallback.
+    temperature: None = mặc định của model; Perceive self-consistency dùng 0.7.
     """
     if genai is None or genai_types is None:
         raise RuntimeError("google-genai is not installed")
@@ -432,6 +452,7 @@ def call_gemini_json(
             automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(disable=True),
             # Ngân sách token ảnh lớn nhất: model tự lấy mẫu lại ảnh theo ngân sách này
             media_resolution=genai_types.MediaResolution.MEDIA_RESOLUTION_HIGH,
+            temperature=temperature,
         ),
     )
     return _parse_json_text(response.text)
