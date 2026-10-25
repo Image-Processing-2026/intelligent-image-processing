@@ -35,6 +35,7 @@ PRE_SMOOTH_MIN_NOISE = 3.0
 # Độ rộng 10–90 % của cạnh Gaussian σ là 2·1.2816·σ.
 GAUSSIAN_WIDTH_10_90 = 2.5631
 PROFILE_RADIUS = 12
+REMAP_CHUNK = 20_000
 MIN_AMPLITUDE = 10.0
 MIN_EDGES = 30
 FULL_CONFIDENCE_EDGES = 200
@@ -86,8 +87,18 @@ def _edge_widths(
     image: np.ndarray, ys: np.ndarray, xs: np.ndarray, nx: np.ndarray, ny: np.ndarray
 ) -> np.ndarray:
     """Độ rộng cạnh 10–90 % dọc pháp tuyến; NaN ở điểm không đo được."""
-    if ys.size == 0:
-        return np.empty(0, dtype=np.float64)
+    widths = np.empty(ys.size, dtype=np.float64)
+    # cv2.remap giới hạn số hàng của bản đồ (SHRT_MAX), nên lấy mẫu profile theo khối.
+    for start in range(0, ys.size, REMAP_CHUNK):
+        block = slice(start, start + REMAP_CHUNK)
+        widths[block] = _profile_widths(image, ys[block], xs[block], nx[block], ny[block])
+    return widths
+
+
+def _profile_widths(
+    image: np.ndarray, ys: np.ndarray, xs: np.ndarray, nx: np.ndarray, ny: np.ndarray
+) -> np.ndarray:
+    """Độ rộng 10–90 % cho một khối điểm cạnh."""
     offsets = np.arange(-PROFILE_RADIUS, PROFILE_RADIUS + 1, dtype=np.float32)
     map_x = (xs[:, None] + offsets[None, :] * nx[:, None]).astype(np.float32)
     map_y = (ys[:, None] + offsets[None, :] * ny[:, None]).astype(np.float32)
