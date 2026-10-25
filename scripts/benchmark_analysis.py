@@ -103,6 +103,16 @@ def _vlm_only_n1(image: np.ndarray, case: CaseInfo) -> DiagnosisReport:
         perception.PERCEIVE_SAMPLES = previous
 
 
+def _vlm_only_n3(image: np.ndarray, case: CaseInfo) -> DiagnosisReport:
+    """vlm_only với PERCEIVE_SAMPLES = 3 (self-consistency, D3) để so với mặc định N = 1."""
+    previous = perception.PERCEIVE_SAMPLES
+    perception.PERCEIVE_SAMPLES = 3
+    try:
+        return _vlm_only(image, case)
+    finally:
+        perception.PERCEIVE_SAMPLES = previous
+
+
 def _vlm_only_frame1024(image: np.ndarray, case: CaseInfo) -> DiagnosisReport:
     """vlm_only với ảnh toàn khung gửi VLM thu về cạnh dài 1024 px (crop vẫn 100 %)."""
     previous = perception.FULL_FRAME_MAX_SIDE
@@ -159,6 +169,7 @@ CONFIGS: Dict[str, ConfigFn] = {
     "baseline": _baseline,
     "vlm_only": _vlm_only,
     "vlm_only_n1": _vlm_only_n1,
+    "vlm_only_n3": _vlm_only_n3,
     "vlm_only_frame1024": _vlm_only_frame1024,
     "measure_only": _measure_only,
     "fused": _not_implemented("fused", "the fusion lane (P6, P7)"),

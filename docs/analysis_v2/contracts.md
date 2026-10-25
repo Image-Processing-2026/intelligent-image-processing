@@ -179,10 +179,13 @@ Plumbing: `run_pipeline(..., image_metadata: Optional[ImageMetadata] = None)`;
 `src/analyzer_evaluator/measurement/calibration.py` + `calibration.yaml`:
 
 ```python
-def severity_from_measurement(defect_type: str, stats: Union[RegionStats, MeasurementReport]
-                              ) -> Tuple[int, float]:
+def severity_from_measurement(defect_type: str, stats: Union[RegionStats, MeasurementReport],
+                              *, long_side: Optional[int] = None) -> Tuple[int, float]:
     """(severity 0..3, confidence 0..1). defect_type nằm trong DEFECT_TYPES (kể cả defect mới
-    của P6); defect không đo được → (0, 0.0)."""
+    của P6); defect không đo được → (0, 0.0).
+    `long_side`: cạnh dài ảnh gốc (px) để quy σ mờ về 1024 px. MeasurementReport tự lấy
+    max(width, height); RegionStats cần truyền vào (không truyền → không quy đổi).
+    Người dùng duyệt 2026-10-25, contract-changes.md mục 5."""
 
 def calibration_version() -> str: ...
 ```

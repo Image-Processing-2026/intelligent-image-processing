@@ -43,13 +43,14 @@ def _no_case_memory(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def _single_perceive_sample(monkeypatch: pytest.MonkeyPatch):
     """
-    Perceive self-consistency mặc định gọi Gemini PERCEIVE_SAMPLES = 3 lần; các test mock
-    một phản hồi Perceive cho mỗi vòng nên chạy với 1 lần. Test self-consistency tự đặt lại.
+    Các test mock một phản hồi Perceive cho mỗi vòng nên luôn chạy với 1 lần, kể cả khi máy đặt
+    biến môi trường PERCEIVE_SAMPLES. Test self-consistency tự đặt lại.
     Cache mask chủ thể của region_engine là toàn process: xóa trước mỗi test.
     """
     from src.agent import perception
     from src.region_engine import clear_subject_mask_cache
 
+    monkeypatch.delenv(perception.PERCEIVE_SAMPLES_ENV, raising=False)
     monkeypatch.setattr(perception, "PERCEIVE_SAMPLES", 1)
     clear_subject_mask_cache()
     yield

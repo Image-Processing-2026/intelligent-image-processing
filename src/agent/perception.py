@@ -82,8 +82,11 @@ BACKLIT_GAP = 40.0
 BACKLIT_MAX_MEAN = 100.0
 # Phần còn lại nhỏ hơn tỉ lệ này → không so sánh vùng với phần còn lại
 MIN_REST_RATIO = 0.05
-# Self-consistency (plan D3): số lần quan sát mở, temperature, tỉ lệ đồng thuận tối thiểu
-PERCEIVE_SAMPLES = 3
+# Self-consistency (plan D3): số lần quan sát mở, temperature, tỉ lệ đồng thuận tối thiểu.
+# Mặc định 1 (người dùng chốt 2026-10-25: N = 3 không cho lợi ích đo được trên bộ thật mà tốn
+# gấp 3 lần gọi Gemini); ghi đè bằng biến môi trường PERCEIVE_SAMPLES.
+PERCEIVE_SAMPLES = 1
+PERCEIVE_SAMPLES_ENV = "PERCEIVE_SAMPLES"
 PERCEIVE_TEMPERATURE = 0.7
 CONSENSUS_FRACTION = 2.0 / 3.0
 # Ảnh toàn khung gửi VLM: None = độ phân giải gốc. Câu hỏi mở plan §7 (đo ở P5); ghi đè bằng
@@ -791,6 +794,17 @@ def _full_frame_max_side() -> Optional[int]:
     return FULL_FRAME_MAX_SIDE
 
 
+def _perceive_samples() -> int:
+    """Số lần gọi Perceive (self-consistency), cho phép ghi đè bằng env; tối thiểu 1."""
+    raw = os.getenv(PERCEIVE_SAMPLES_ENV, "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            logger.warning("Ignoring invalid %s=%r.", PERCEIVE_SAMPLES_ENV, raw)
+    return max(1, int(PERCEIVE_SAMPLES))
+
+
 def _priors_text(metadata: Optional[ImageMetadata]) -> str:
     """Khối gợi ý từ EXIF (metadata_priors, C3); rỗng nếu không có prior."""
     if metadata is None:
@@ -879,7 +893,7 @@ def _sample_diagnoses(api_key: str, contents: List[Any], iteration: int) -> List
     Gọi Perceive PERCEIVE_SAMPLES lần song song (temperature PERCEIVE_TEMPERATURE khi N > 1).
     Lần lỗi (mạng, parse, mọi defect sai) bị bỏ; tất cả lỗi → raise lỗi cuối để fallback luật.
     """
-    samples = max(1, int(PERCEIVE_SAMPLES))
+    samples = _perceive_samples()
     temperature = PERCEIVE_TEMPERATURE if samples > 1 else None
 
     def one(_: int) -> DiagnosisReport:

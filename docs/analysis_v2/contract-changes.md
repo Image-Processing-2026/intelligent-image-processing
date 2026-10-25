@@ -66,9 +66,8 @@ Lane ghi đề xuất ở đây; lead quyết định cùng người dùng và g
 - **Đề xuất cho lead:** ghi tham số này vào `contracts.md` §C4; lane `agent`/`fusion` truyền
   `long_side` của ảnh gốc khi tính severity vùng. Phương án khác: thêm trường có default
   `image_long_side` vào `RegionStats` (schema của lane `measure`).
-- **Quyết định (lead, 2026-10-25): đề xuất chấp nhận, chờ người dùng xác nhận.** Tham số tùy chọn,
-  lời gọi theo C4 gốc không đổi. Khi được duyệt: ghi vào `contracts.md` §C4; `fusion` truyền
-  `long_side` của ảnh gốc khi tính severity vùng.
+- **Quyết định (người dùng duyệt, 2026-10-25): chấp nhận.** Đã ghi vào `contracts.md` §C4; `fusion`
+  truyền `long_side` của ảnh gốc khi tính severity vùng.
 
 ## 6. [calib] Thông báo (không đổi chữ ký)
 
@@ -110,6 +109,6 @@ thiểu. Không đổi chữ ký hiện có: mọi tham số mới đều tùy c
    `resolve_region_mask(..., box_2d=None, cache_key=None)`,
    `call_gemini_json(..., temperature=None)`.
 
-- **Quyết định (lead, 2026-10-25): chấp nhận.** Mọi tham số mới tùy chọn, có default; plumbing đúng
+- **Quyết định (lead đã review, người dùng duyệt, 2026-10-25): chấp nhận.** Mọi tham số mới tùy chọn, có default; plumbing đúng
   brief. `feather_radius` của action bị bỏ qua khi dùng resolver chung (mask C2 feather 15 px): chấp
   nhận, ghi cho `fusion`.

@@ -210,6 +210,15 @@ class TestMergeSamples:
             perceive(np.full((64, 64, 3), 128, dtype=np.uint8), {})
         assert calls[0]["config"].temperature is None
 
+    def test_env_overrides_sample_count(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Mặc định D3 = 1 lần (người dùng chốt 2026-10-25); env PERCEIVE_SAMPLES ghi đè
+        monkeypatch.setenv(perception.PERCEIVE_SAMPLES_ENV, "3")
+        assert perception._perceive_samples() == 3
+        monkeypatch.setenv(perception.PERCEIVE_SAMPLES_ENV, "0")
+        assert perception._perceive_samples() == 1
+        monkeypatch.setenv(perception.PERCEIVE_SAMPLES_ENV, "abc")
+        assert perception._perceive_samples() == perception.PERCEIVE_SAMPLES
+
 
 # ============================================================
 # Schema và prompt
