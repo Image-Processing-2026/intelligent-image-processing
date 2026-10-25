@@ -224,19 +224,29 @@ def unreviewed_holdout_ids(manifest: Optional[Path] = None) -> List[str]:
     return [e["id"] for e in images if e.get("label_status") != "reviewed"]
 
 
-def load_cases(dataset: str, *, allow_unreviewed: bool = False) -> List[CaseInfo]:
-    """Ca của một bộ. Hold-out có nhãn chưa duyệt thì dừng, trừ khi allow_unreviewed."""
+def load_cases(
+    dataset: str, *, allow_unreviewed: bool = False, reviewed_only: bool = False
+) -> List[CaseInfo]:
+    """Ca của một bộ. Hold-out có nhãn chưa duyệt thì dừng, trừ khi allow_unreviewed.
+
+    `reviewed_only` bỏ hẳn các ảnh hold-out chưa duyệt (không chạy, không chấm) thay vì dừng.
+    """
     if dataset == "real":
         return load_real_cases()
     if dataset == "synthetic":
         return load_synthetic_cases()
     unreviewed = unreviewed_holdout_ids()
-    if unreviewed and not allow_unreviewed:
+    if unreviewed and not (allow_unreviewed or reviewed_only):
         raise SystemExit(
             f"{len(unreviewed)} hold-out label(s) are unreviewed ({', '.join(unreviewed[:5])}...); "
-            "review data/holdout_manifest.json first or pass --allow-unreviewed."
+            "review data/holdout_manifest.json first, or pass --reviewed-only to skip them "
+            "or --allow-unreviewed to score them anyway."
         )
-    return load_real_cases(HOLDOUT_MANIFEST, HOLDOUT_IMAGE_DIR, "holdout")
+    cases = load_real_cases(HOLDOUT_MANIFEST, HOLDOUT_IMAGE_DIR, "holdout")
+    if reviewed_only and unreviewed:
+        logger.warning("Skipping unreviewed hold-out images: %s", ", ".join(unreviewed))
+        cases = [c for c in cases if c.case_id not in set(unreviewed)]
+    return cases
 
 
 def load_synthetic_cases() -> List[CaseInfo]:
@@ -451,9 +461,10 @@ def run_benchmark(
     case_retries: int,
     wait: int,
     allow_unreviewed: bool = False,
+    reviewed_only: bool = False,
 ) -> Dict[str, Any]:
     """Chạy một cấu hình trên một bộ, ghi results.json và report.md, trả về phần tổng hợp."""
-    cases = load_cases(dataset, allow_unreviewed=allow_unreviewed)
+    cases = load_cases(dataset, allow_unreviewed=allow_unreviewed, reviewed_only=reviewed_only)
     if ids:
         cases = [c for c in cases if c.case_id in set(ids)]
     if limit is not None:
@@ -514,10 +525,16 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument(
         "--offline", action="store_true", help="Không gọi Gemini: chẩn đoán theo luật dự phòng"
     )
-    parser.add_argument(
+    review = parser.add_mutually_exclusive_group()
+    review.add_argument(
         "--allow-unreviewed",
         action="store_true",
         help="Cho chạy hold-out khi nhãn chưa được người duyệt (số chỉ mang tính tham khảo)",
+    )
+    review.add_argument(
+        "--reviewed-only",
+        action="store_true",
+        help="Hold-out: bỏ qua ảnh có nhãn chưa duyệt, chỉ chạy và chấm ảnh đã duyệt",
     )
     parser.add_argument("--case-retries", type=int, default=2)
     parser.add_argument("--wait", type=int, default=30, help="Giây chờ trước khi chạy lại ca lỗi")
@@ -551,6 +568,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             case_retries=args.case_retries,
             wait=args.wait,
             allow_unreviewed=args.allow_unreviewed,
+            reviewed_only=args.reviewed_only,
         )
     except NotImplementedError as exc:
         raise SystemExit(str(exc)) from exc

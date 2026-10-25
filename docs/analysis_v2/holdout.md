@@ -8,10 +8,16 @@ này.
 - Manifest (file cần duyệt): **`data/holdout_manifest.json`**
 - Ảnh: `python data/download_real_benchmark.py --holdout` → `data/real/holdout/<nhóm>/` (gitignored,
   cạnh dài 1600 px như bộ benchmark). Đã tải sẵn trong worktree tích hợp.
-- Chấm: `python scripts/benchmark_analysis.py --set holdout --config fused` (lead chạy sau khi
-  `fusion` xong). Script **từ chối** khi còn nhãn `unreviewed`, trừ khi có `--allow-unreviewed`.
+- Chấm: `python scripts/benchmark_analysis.py --set holdout --config fused --reviewed-only` (lead
+  chạy sau khi `fusion` xong). Không có cờ thì script **từ chối** khi còn nhãn `unreviewed`;
+  `--reviewed-only` bỏ hẳn ảnh chưa duyệt, `--allow-unreviewed` chấm cả chúng (chỉ để tham khảo).
 
-## Nhãn hiện tại là NHÁP
+## Trạng thái duyệt
+
+17/19 ảnh đã được Tiên duyệt. `holdout_backlit_01` và `holdout_cast_01` vẫn `unreviewed`. Bảng dưới
+là nhãn nháp ban đầu; nhãn đã duyệt nằm trong manifest.
+
+## Nhãn nháp
 
 Lead agent đặt nhãn từ thumbnail và tên category Commons; đây là gợi ý, không phải đáp án.
 Mỗi ảnh có `label_status: "unreviewed"`. Khi duyệt một ảnh:

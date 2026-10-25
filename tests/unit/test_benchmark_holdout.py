@@ -48,3 +48,12 @@ def test_holdout_loads_when_reviewed_or_allowed(
         lambda manifest, image_dir, dataset: [manifest, dataset],
     )
     assert load_cases("holdout", allow_unreviewed=True) == [path, "holdout"]
+
+
+def test_holdout_reviewed_only_skips_unreviewed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _manifest(tmp_path, ["reviewed", "unreviewed", "reviewed"])
+    monkeypatch.setattr(benchmark_analysis, "HOLDOUT_MANIFEST", path)
+    cases = load_cases("holdout", reviewed_only=True)
+    assert [c.case_id for c in cases] == ["h0", "h2"]

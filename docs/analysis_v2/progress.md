@@ -65,9 +65,15 @@ merge `agent` theo thứ tự người dùng đặt; **chưa mở wave 3**, ch�
 
 19 ảnh Commons mới (`data/holdout_manifest.json`, hướng dẫn `holdout.md`): already_good 3,
 intentional_style 6 (low-key ×2, high-key, hoàng hôn ×2, hạt phim), backlit 2, noisy 2 (NIND), blur 2,
-color_cast 2, multi_defect 2. **Mọi nhãn `unreviewed`** (nháp của lead agent từ thumbnail), chờ người
-dùng hoặc thành viên nhóm duyệt. `benchmark_analysis.py --set holdout` từ chối nhãn chưa duyệt trừ khi
-có `--allow-unreviewed`. Chưa chạy config nào trên bộ này.
+color_cast 2, multi_defect 2. Nhãn nháp do lead agent đặt từ thumbnail.
+
+Người dùng (Tiên) đã duyệt 17/19 ảnh (reporter ghi vào manifest). Còn `unreviewed`:
+`holdout_backlit_01`, `holdout_cast_01`. Sửa so với nháp: `min_severity` nâng lên bằng `severity` ở 4
+đáp án (noisy_01 noise 2, blur_01 blur 3, cast_02 color_cast_cool 2, multi_01 underexposed 2), nên
+các đáp án này chỉ tính là nhận ra khi dự đoán đủ mức đó. Chấm bằng
+`--set holdout --reviewed-only` (bỏ hẳn 2 ảnh chưa duyệt). Kết luận về backlit chỉ dựa trên **một**
+ảnh (`holdout_backlit_02`, severity 1, vùng person). Chưa chạy config nào trên bộ này; không chỉnh gì
+theo các nhãn này.
 
 ## Hoãn
 
