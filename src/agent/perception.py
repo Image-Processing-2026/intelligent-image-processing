@@ -1,13 +1,14 @@
 """
 Giai đoạn Perceive: hiểu cảnh và chẩn đoán lỗi theo vùng trước khi lập kế hoạch.
 1. Đo cục bộ toàn ảnh bằng Module 1 (measure_image, độ phân giải gốc): tóm tắt + bản đồ tile.
-2. VLM (hoặc luật dự phòng) trả về DiagnosisReport: loại cảnh, vùng quan trọng kèm bbox, lỗi
-   kèm mức độ, và các đặc điểm thẩm mỹ có chủ ý cần giữ (preserve). VLM nhận tóm tắt số đo, crop
-   100 % và overlay (evidence.py), prior EXIF; chạy PERCEIVE_SAMPLES lần (self-consistency) rồi
-   gộp theo đa số.
+2. VLM (hoặc luật dự phòng) trả về GIẢ THUYẾT: loại cảnh, vùng quan trọng kèm bbox, lỗi kèm mức
+   độ, và các đặc điểm thẩm mỹ có chủ ý cần giữ (preserve). VLM nhận tóm tắt số đo, crop 100 % và
+   overlay (evidence.py), prior EXIF; chạy PERCEIVE_SAMPLES lần (self-consistency) rồi gộp.
 3. Phân giải mask từng vùng bằng region_engine.resolve_subject_mask (dùng chung với executor,
    cache theo ảnh gốc), gộp bản đồ đo theo mask → RegionStats; giữ RegionMetrics cũ (độ sáng).
-4. Bổ sung lỗi đo được mà VLM bỏ sót (ví dụ khuôn mặt tối do ngược sáng).
+4. Hợp nhất tất định (fusion.fuse, P6): ghép lời VLM với severity hiệu chỉnh của số đo, preserve
+   và prior EXIF; hỏi Gemini verify bằng câu hỏi đóng khi bảng quyết định yêu cầu. Lỗi đo được
+   không bao giờ được phát ra một mình khi có VLM.
 """
 
 import json
@@ -15,7 +16,7 @@ import logging
 import math
 import os
 import threading
-from collections import Counter
+from collections import Counter, OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -24,14 +25,6 @@ import cv2
 import numpy as np
 from pydantic import ValidationError
 
-from src.analyzer_evaluator.analyzer import (
-    _BRIGHTNESS_HIGH,
-    _BRIGHTNESS_LOW,
-    _HIGHLIGHT_CLIP_RATIO_THRESH,
-    _HIGHLIGHT_CLIP_THRESH,
-    _SHADOW_CLIP_RATIO_THRESH,
-    _SHADOW_CLIP_THRESH,
-)
 from src.analyzer_evaluator.measurement import (
     Estimate,
     MeasurementResult,
@@ -39,6 +32,9 @@ from src.analyzer_evaluator.measurement import (
     aggregate,
     measure_image,
 )
+from src.analyzer_evaluator.measurement.calibration import severity_from_measurement
+from src.analyzer_evaluator.measurement.diff import DiffReport, compare
+from src.analyzer_evaluator.measurement.exposure import CLIP_HIGH, CLIP_LOW
 from src.analyzer_evaluator.metadata import ImageMetadata, metadata_priors
 from src.region_engine import SubjectMask, resolve_subject_mask, subject_capabilities
 
@@ -51,6 +47,18 @@ from .evidence import (
     summarize_measurement,
 )
 from .executor import image_cache_key, subject_cache_key
+from .fusion import (
+    CONFLICTING_DEFECTS,
+    VERIFY_PROMPT,
+    VERIFY_RESPONSE_SCHEMA,
+    VerifyAnswer,
+    VerifyQuestion,
+    drop_preserved_defects,
+    fuse,
+    measure_hypothesis,
+    parse_verify_answers,
+    verify_prompt_text,
+)
 from .imaging import PREVIEW_MAX_SIDE, downscale
 from .knowledge import diagnose_from_metrics
 from .regions import canonical_region
@@ -77,9 +85,6 @@ logger = logging.getLogger(__name__)
 MAX_SUBJECTS = 4
 # RegionMetrics cũ (độ sáng) tính trên ảnh thu nhỏ: thống kê độ sáng không cần độ phân giải gốc
 MEASURE_MAX_SIDE = PREVIEW_MAX_SIDE
-# Vùng tối hơn phần còn lại ít nhất chừng này mức xám (và bản thân tối) → ngược sáng
-BACKLIT_GAP = 40.0
-BACKLIT_MAX_MEAN = 100.0
 # Phần còn lại nhỏ hơn tỉ lệ này → không so sánh vùng với phần còn lại
 MIN_REST_RATIO = 0.05
 # Self-consistency (plan D3): số lần quan sát mở, temperature, tỉ lệ đồng thuận tối thiểu.
@@ -103,21 +108,13 @@ SKIN_MIN_LUMA = 30.0
 SKIN_MAX_CHANNEL = 250
 # Đủ chừng này pixel (theo trọng số mask) thì độ tin cậy kiểm tra skin locus đạt tối đa
 SKIN_FULL_CONFIDENCE_PIXELS = 2000.0
-# Preserve làm cho vùng tối/sáng là chủ ý → không tự thêm lỗi phơi sáng đo được
-_DARK_PRESERVES = frozenset(("low_key", "silhouette"))
-_BRIGHT_PRESERVES = frozenset(("high_key",))
-# Lỗi mâu thuẫn với một đặc điểm cần giữ (VLM đôi khi liệt kê cả hai)
-_CONFLICTING_DEFECTS: Dict[str, frozenset[str]] = {
-    "warm_tone": frozenset(("color_cast_warm",)),
-    "cool_tone": frozenset(("color_cast_cool",)),
-    "low_key": frozenset(("underexposed", "backlit_subject")),
-    "silhouette": frozenset(("underexposed", "backlit_subject")),
-    "high_key": frozenset(("overexposed",)),
-    "film_grain": frozenset(("noise",)),
-    "soft_focus": frozenset(("blur",)),
-    "muted_colors": frozenset(("undersaturated",)),
-    "vivid_colors": frozenset(("oversaturated",)),
-}
+# Lỗi mâu thuẫn với một đặc điểm cần giữ (bảng nằm trong fusion, giữ tên cũ cho bên dùng)
+_CONFLICTING_DEFECTS = CONFLICTING_DEFECTS
+# Kiểm chứng bằng Gemini verify (câu hỏi đóng, P6). Unit test tắt mặc định (tests/conftest.py)
+# vì các test cũ mock đúng số phản hồi Perceive/Plan; test fusion tự bật lại.
+VERIFY_ENABLED = True
+# Hợp nhất P6; benchmark vlm_only tắt để đo riêng lời VLM
+FUSION_ENABLED = True
 
 PERCEIVE_PROMPT = """
 Bạn là "AI Image Doctor" - GIAI ĐOẠN 1: QUAN SÁT & CHẨN ĐOÁN (chưa lập kế hoạch xử lý).
@@ -137,6 +134,10 @@ Trả về bản chẩn đoán JSON gồm:
    của một subject), severity (0 không đáng kể, 1 nhẹ, 2 rõ, 3 nặng), evidence (bằng chứng ngắn,
    nêu số đo nếu dùng) và crops (nhãn crop/overlay bạn đã nhìn để kết luận, ví dụ ["A", "C"]).
    Dùng "backlit_subject" khi chủ thể tối vì nguồn sáng phía sau.
+   Lỗi toolbox không sửa được nhưng cần biết để không xử lý sai: "motion_blur" (vệt mờ theo
+   một hướng do rung máy/chuyển động), "jpeg_artifacts" (khối vuông 8×8, răng cưa do nén),
+   "haze" (sương/khói làm bạc màu, mất tương phản xa), "highlight_clipping" (vùng QUAN TRỌNG
+   cháy trắng mất chi tiết; không dùng cho trời/đèn/nguồn sáng phía sau chủ thể).
    Chỉ báo lỗi khi THẤY rõ trên ảnh hoặc crop. Ảnh tốt thì trả "defects": [] — "không có lỗi"
    là câu trả lời đúng và được khuyến khích khi ảnh ổn; đừng cố tìm lỗi.
    Mờ do xóa phông/chuyển động có chủ ý, hạt film, tông màu nghệ thuật KHÔNG phải lỗi.
@@ -223,11 +224,27 @@ def _luma(image: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(image, cv2.COLOR_RGB2GRAY).astype(np.float64)
 
 
-def _brightness_level(mean: float) -> str:
-    """Phân loại phơi sáng theo cùng ngưỡng với Module 1."""
-    if mean < _BRIGHTNESS_LOW:
+def _luma_to_lightness(mean: float) -> float:
+    """Luma trung bình 0–255 (sRGB) → L* CIELAB xấp xỉ, để dùng bảng hiệu chỉnh phơi sáng."""
+    value = max(0.0, min(255.0, float(mean))) / 255.0
+    linear = value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+    return 903.3 * linear if linear <= 0.008856 else 116.0 * linear ** (1.0 / 3.0) - 16.0
+
+
+def _brightness_level(mean: float, stats: Optional[RegionStats] = None) -> str:
+    """
+    Phân loại phơi sáng của vùng theo bảng hiệu chỉnh (C4, một nguồn ngưỡng với Module 1):
+    dùng RegionStats của vùng nếu có, không thì L* suy từ luma trung bình.
+    """
+    if stats is None or "exposure.mean_l" not in stats.values:
+        stats = RegionStats(
+            region="region",
+            area_fraction=1.0,
+            values={"exposure.mean_l": Estimate(value=_luma_to_lightness(mean), confidence=1.0)},
+        )
+    if severity_from_measurement("underexposed", stats)[0] >= 1:
         return "underexposed"
-    if mean > _BRIGHTNESS_HIGH:
+    if severity_from_measurement("overexposed", stats)[0] >= 1:
         return "overexposed"
     return "normal"
 
@@ -248,8 +265,8 @@ def compute_region_metrics(
     luma = _luma(image)
     mean = float((weights * luma).sum() / total)
     std = math.sqrt(float((weights * (luma - mean) ** 2).sum() / total))
-    highlight = float((weights * (luma >= _HIGHLIGHT_CLIP_THRESH)).sum() / total)
-    shadow = float((weights * (luma <= _SHADOW_CLIP_THRESH)).sum() / total)
+    highlight = float((weights * (luma >= CLIP_HIGH)).sum() / total)
+    shadow = float((weights * (luma <= CLIP_LOW)).sum() / total)
 
     rest = 1.0 - weights
     rest_total = float(rest.sum())
@@ -395,6 +412,9 @@ def measure_regions(
                 else cv2.resize(_mask2d(mask), small_size, interpolation=cv2.INTER_AREA)
             )
             metrics = compute_region_metrics(small, small_mask, name, subject.source)
+            if metrics is not None and name in result.stats:
+                level = _brightness_level(metrics.brightness_mean, result.stats[name])
+                metrics = metrics.model_copy(update={"brightness_level": level})
         except Exception as exc:
             logger.warning("Could not measure region '%s': %s", name, exc)
             continue
@@ -423,115 +443,40 @@ def measure_regions(
     return result
 
 
+# Cache kết quả đo theo nội dung ảnh (vòng ≥ 2 so với ảnh gốc đã đo ở vòng 1, không đo lại)
+MEASURE_CACHE_SIZE = 4
+_MEASURE_CACHE: "OrderedDict[str, MeasurementResult]" = OrderedDict()
+_MEASURE_LOCK = threading.Lock()
+
+
 def _measure(image: np.ndarray) -> Optional[MeasurementResult]:
-    """Đo cục bộ toàn ảnh (Module 1, C1); lỗi đo không làm hỏng Perceive."""
+    """Đo cục bộ toàn ảnh (Module 1, C1), cache theo nội dung ảnh; lỗi đo không làm hỏng Perceive."""
+    key = image_cache_key(image)
+    with _MEASURE_LOCK:
+        if key in _MEASURE_CACHE:
+            _MEASURE_CACHE.move_to_end(key)
+            return _MEASURE_CACHE[key]
     try:
-        return measure_image(image, tile_size=MEASURE_TILE_SIZE)
+        result = measure_image(image, tile_size=MEASURE_TILE_SIZE)
     except Exception as exc:
         logger.warning("Local measurement failed: %s", exc)
         return None
+    with _MEASURE_LOCK:
+        _MEASURE_CACHE[key] = result
+        while len(_MEASURE_CACHE) > MEASURE_CACHE_SIZE:
+            _MEASURE_CACHE.popitem(last=False)
+    return result
 
 
-def _preserved_aspects(report: DiagnosisReport, region: str) -> set[str]:
-    """Các aspect cần giữ áp dụng cho một vùng (kể cả preserve trên toàn ảnh)."""
-    return {
-        item.aspect for item in report.preserve if canonical_region(item.region) in (region, "full")
-    }
+def clear_measurement_cache() -> None:
+    """Xóa cache kết quả đo (test)."""
+    with _MEASURE_LOCK:
+        _MEASURE_CACHE.clear()
 
 
 def _drop_preserved_defects(report: DiagnosisReport) -> List[Defect]:
     """Bỏ lỗi mâu thuẫn với preserve trên cùng vùng (hoặc preserve toàn ảnh): chủ ý thắng."""
-    kept: List[Defect] = []
-    for defect in report.defects:
-        conflicts = {
-            item.aspect
-            for item in report.preserve
-            if item.region in (defect.region, "full")
-            and defect.type in _CONFLICTING_DEFECTS[item.aspect]
-        }
-        if conflicts:
-            logger.info(
-                "Dropping defect '%s' on '%s': conflicts with preserved %s.",
-                defect.type,
-                defect.region,
-                sorted(conflicts),
-            )
-            continue
-        kept.append(defect)
-    return kept
-
-
-def _measured_defects(report: DiagnosisReport) -> List[Defect]:
-    """
-    Suy ra lỗi phơi sáng theo vùng từ số đo thực tế mà chẩn đoán chưa nêu,
-    trừ khi vùng đó tối/sáng là chủ ý (preserve).
-    Chỉ khuôn mặt có mức sáng "đúng" tuyệt đối (da ở vùng trung tính). Vùng khác có thể tối
-    hoặc sáng tự nhiên (trời, tuyết, mèo đen) nên cần bằng chứng: tối hơn hẳn phần còn lại
-    (ngược sáng), hoặc bệt đen / cháy trắng thật theo ngưỡng clipping của Module 1.
-    """
-    existing = {(defect.region, defect.type) for defect in report.defects}
-    added: List[Defect] = []
-    for region, measured in report.region_metrics.items():
-        preserved = _preserved_aspects(report, region)
-        mean = measured.brightness_mean
-        gap = measured.brightness_vs_rest
-        is_face = region == "face"
-        is_backlit = gap is not None and gap <= -BACKLIT_GAP and mean < BACKLIT_MAX_MEAN
-        is_dark = (
-            is_backlit
-            or (is_face and measured.brightness_level == "underexposed")
-            or measured.shadow_clip_ratio >= _SHADOW_CLIP_RATIO_THRESH
-        )
-        is_bright = (
-            is_face and measured.brightness_level == "overexposed"
-        ) or measured.highlight_clip_ratio >= _HIGHLIGHT_CLIP_RATIO_THRESH
-
-        if is_dark and not (preserved & _DARK_PRESERVES):
-            if (region, "underexposed") in existing or (region, "backlit_subject") in existing:
-                continue
-            defect_type = "backlit_subject" if is_backlit else "underexposed"
-            gap_text = f", tối hơn phần còn lại {abs(gap):.0f} mức" if gap is not None else ""
-            added.append(
-                Defect(
-                    type=defect_type,
-                    region=region,
-                    severity=3 if mean < 40 else 2,
-                    evidence=f"Đo được: độ sáng vùng {mean:.0f}/255{gap_text}.",
-                    origin="measured",
-                    evidence_items=[
-                        Evidence(source="measured", metric="brightness_mean", value=mean),
-                        *(
-                            [Evidence(source="measured", metric="brightness_vs_rest", value=gap)]
-                            if gap is not None
-                            else []
-                        ),
-                    ],
-                )
-            )
-        elif is_bright and not (preserved & _BRIGHT_PRESERVES):
-            if (region, "overexposed") in existing:
-                continue
-            added.append(
-                Defect(
-                    type="overexposed",
-                    region=region,
-                    severity=2,
-                    evidence=(
-                        f"Đo được: độ sáng vùng {mean:.0f}/255, "
-                        f"cháy sáng {measured.highlight_clip_ratio:.0%}."
-                    ),
-                    origin="measured",
-                    evidence_items=[
-                        Evidence(source="measured", metric="brightness_mean", value=mean),
-                        Evidence(
-                            source="measured",
-                            metric="highlight_clip_ratio",
-                            value=measured.highlight_clip_ratio,
-                        ),
-                    ],
-                )
-            )
-    return added
+    return drop_preserved_defects(report)
 
 
 # ---------------------------------------------------------
@@ -944,8 +889,11 @@ def _vlm_diagnosis(
     measurement: Optional[MeasurementResult],
     metadata: Optional[ImageMetadata],
     cache_key: str,
-) -> DiagnosisReport:
-    """Chẩn đoán VLM v2: bằng chứng (crop, overlay, số đo, EXIF) + self-consistency."""
+) -> Tuple[DiagnosisReport, List[EvidenceCrop]]:
+    """
+    Chẩn đoán VLM v2: bằng chứng (crop, overlay, số đo, EXIF) + self-consistency.
+    Trả về (giả thuyết đã gộp, crop đã gửi) — crop được dùng lại cho câu hỏi verify.
+    """
     crops: List[EvidenceCrop] = []
     overlays: List[EvidenceOverlay] = []
     face_stats: Optional[RegionStats] = None
@@ -974,37 +922,80 @@ def _vlm_diagnosis(
         metadata,
         face_stats,
     )
-    return merge_samples(_sample_diagnoses(api_key, contents, iteration), iteration)
+    return merge_samples(_sample_diagnoses(api_key, contents, iteration), iteration), crops
 
 
-def perceive(
+# ---------------------------------------------------------
+# Kiểm chứng (P6): câu hỏi đóng cho các giả thuyết mơ hồ
+# ---------------------------------------------------------
+# Loại crop nên xem cho từng loại lỗi (nhãn được đưa vào câu hỏi)
+_VERIFY_CROP_KINDS: Dict[str, Tuple[str, ...]] = {
+    "noise": ("flat", "noisy"),
+    "blur": ("edge_subject", "edge_background"),
+    "motion_blur": ("edge_subject", "edge_background"),
+    "jpeg_artifacts": ("flat", "edge_subject"),
+    "overexposed": ("clip", "face"),
+    "highlight_clipping": ("clip", "face"),
+    "underexposed": ("face",),
+    "backlit_subject": ("face",),
+}
+
+
+def _crops_for(crops: Sequence[EvidenceCrop]) -> Any:
+    """(loại lỗi, vùng) → nhãn crop liên quan (theo loại crop, hoặc crop nằm trong vùng)."""
+
+    def pick(defect_type: str, region: str) -> List[str]:
+        kinds = _VERIFY_CROP_KINDS.get(defect_type, ())
+        return [
+            crop.label
+            for crop in crops
+            if crop.kind in kinds or (region not in ("full", "") and crop.region == region)
+        ]
+
+    return pick
+
+
+def verify_hypotheses(
+    api_key: str,
+    image: np.ndarray,
+    crops: Sequence[EvidenceCrop],
+    questions: List[VerifyQuestion],
+) -> Dict[str, VerifyAnswer]:
+    """
+    Một lần gọi Gemini verify (plan §Phase 6): ảnh toàn khung + các crop 100 % đã gửi Perceive,
+    câu hỏi đóng theo mã giả thuyết. Lỗi gọi/parse được ném ra để fusion tự quyết không có verify.
+    """
+    max_side = _full_frame_max_side()
+    frame = downscale(image, max_side) if max_side else image
+    contents: List[Any] = [verify_prompt_text(questions), "ẢNH TOÀN KHUNG:", to_vlm_image(frame)]
+    wanted = {label for question in questions for label in question.crops}
+    for crop in crops:
+        if crop.label in wanted:
+            contents += [f"Crop {crop.label}: {crop.description}", to_vlm_image(crop.image)]
+    data = call_gemini_json(api_key, VERIFY_PROMPT, contents, VERIFY_RESPONSE_SCHEMA)
+    return parse_verify_answers(data)
+
+
+def _perceive_fresh(
     image: np.ndarray,
     metrics: Dict[str, Any],
-    iteration: int = 1,
-    history: Optional[List[HistoryItem]] = None,
-    original_image: Optional[np.ndarray] = None,
-    metadata: Optional[ImageMetadata] = None,
-    cache_key: Optional[str] = None,
+    iteration: int,
+    history: Optional[List[HistoryItem]],
+    original_image: Optional[np.ndarray],
+    metadata: Optional[ImageMetadata],
+    base_key: str,
 ) -> DiagnosisReport:
-    """
-    Giai đoạn Perceive: đo cục bộ, chẩn đoán (VLM v2 hoặc luật), đo theo vùng và bổ sung lỗi
-    đo được.
-    - Không có GEMINI_API_KEY → chẩn đoán rule-based (source="rule_based").
-    - Lỗi gọi/parse Gemini ở mọi lần quan sát → chẩn đoán rule-based (source="vlm_fallback").
-    metadata: EXIF của file gốc; prior được đưa vào prompt như gợi ý.
-    cache_key: khóa cache mask (image_cache_key của ảnh gốc của lượt chạy); None → tự tính từ
-    original_image (hoặc image) để vòng 2–3 dùng lại mask của vòng 1.
-    """
-    base_key = cache_key or image_cache_key(original_image if original_image is not None else image)
+    """Chẩn đoán đầy đủ: đo, giả thuyết VLM (hoặc luật), đo theo vùng, hợp nhất P6."""
     mask_key = subject_cache_key(base_key, image.shape)
     measurement = _measure(image)
 
     api_key = os.getenv("GEMINI_API_KEY")
+    crops: List[EvidenceCrop] = []
     if not api_key:
         report = diagnose_from_metrics(metrics, iteration, source="rule_based")
     else:
         try:
-            report = _vlm_diagnosis(
+            report, crops = _vlm_diagnosis(
                 api_key,
                 image,
                 metrics,
@@ -1032,8 +1023,173 @@ def perceive(
     if measurement is not None:
         report.measurement = measurement.report
         report.measurement_maps = measurement.maps
-    report.defects = report.defects + _measured_defects(report)
+    if not FUSION_ENABLED:
+        return report
+
+    verifier = None
+    if api_key and report.source == "vlm" and VERIFY_ENABLED:
+
+        def verifier(questions: List[VerifyQuestion]) -> Dict[str, VerifyAnswer]:
+            return verify_hypotheses(api_key, image, crops, questions)
+
+    fused = fuse(
+        report,
+        report.measurement,
+        report.region_stats,
+        metadata_priors(metadata) if metadata is not None else [],
+        verifier=verifier,
+        long_side=max(image.shape[:2]),
+        crops_for=_crops_for(crops),
+    )
+    fused.measurement_maps = report.measurement_maps
+    return fused
+
+
+# ---------------------------------------------------------
+# Vòng ≥ 2 (P7): đo lại + phân tích khác biệt so với ảnh gốc
+# ---------------------------------------------------------
+# Tác dụng phụ (diff) → loại lỗi tương ứng cần VLM phân xử ở vòng sau
+SIDE_EFFECT_DEFECTS: Dict[str, str] = {
+    "dark_noise": "noise",
+    "oversaturation": "oversaturated",
+    "channel_clipping": "highlight_clipping",
+}
+
+
+def _followup_diff(
+    image: np.ndarray,
+    original_image: np.ndarray,
+    previous: DiagnosisReport,
+    current: MeasurementResult,
+    original: MeasurementResult,
+    regions: RegionMeasurement,
+) -> DiffReport:
+    """So ảnh hiện tại với ảnh gốc: trạng thái từng lỗi đã xác nhận + tác dụng phụ."""
+    long_side = max(original_image.shape[:2])
+
+    def assess(
+        defect_type: str, region: str, report: Any, stats: Dict[str, RegionStats]
+    ) -> Optional[Tuple[int, float]]:
+        measured = measure_hypothesis(defect_type, region, report, stats, long_side)
+        return None if measured is None else (measured.severity, measured.confidence)
+
+    return compare(
+        original_image,
+        image,
+        {name: subject.mask for name, subject in regions.masks.items()},
+        defects=[(d.type, canonical_region(d.region)) for d in previous.defects],
+        original_measurement=original,
+        current_measurement=current,
+        assess=assess,
+    )
+
+
+def _perceive_followup(
+    image: np.ndarray,
+    metrics: Dict[str, Any],
+    iteration: int,
+    history: List[HistoryItem],
+    original_image: np.ndarray,
+    metadata: Optional[ImageMetadata],
+    base_key: str,
+    previous: DiagnosisReport,
+) -> DiagnosisReport:
+    """
+    Vòng ≥ 2 (plan §Phase 7): đo lại ảnh hiện tại và so với ảnh gốc (measurement.diff).
+    Lỗi đo được: resolved → bỏ, còn lại giữ với severity đo sau xử lý. Chỉ gọi lại VLM (+ hợp
+    nhất) khi còn lỗi ngữ nghĩa mở (không đo được, hoặc số đo chưa từng thấy) hoặc có tác dụng
+    phụ cần phân xử; ngược lại không tốn lời gọi Gemini nào.
+    """
+    mask_key = subject_cache_key(base_key, image.shape)
+    current, original = _measure(image), _measure(original_image)
+    if current is None or original is None:
+        return _perceive_fresh(
+            image, metrics, iteration, history, original_image, metadata, base_key
+        )
+    regions = measure_regions(
+        image,
+        previous.subjects,
+        previous.subject_boxes,
+        measurement=current,
+        cache_key=mask_key,
+    )
+    diff = _followup_diff(image, original_image, previous, current, original, regions)
+
+    remaining: List[Defect] = []
+    open_defects: List[Defect] = []
+    notes: List[str] = []
+    for defect in previous.defects:
+        change = diff.status_of(defect.type, canonical_region(defect.region))
+        if change is None or change.before == 0:
+            open_defects.append(defect)
+            notes.append(f"{defect.type}@{defect.region}: not tracked by measurement → open")
+            continue
+        notes.append(
+            f"{defect.type}@{defect.region}: {change.before} → {change.after} ({change.status})"
+        )
+        if change.status != "resolved" and change.after >= 1:
+            remaining.append(defect.model_copy(update={"severity": change.after}))
+    arbitration = [e for e in diff.side_effects if e.kind in SIDE_EFFECT_DEFECTS]
+
+    if open_defects or arbitration:
+        report = _perceive_fresh(
+            image, metrics, iteration, history, original_image, metadata, base_key
+        )
+        report.fusion_notes = notes + report.fusion_notes
+    else:
+        report = previous.model_copy(
+            update={
+                "iteration": iteration,
+                "defects": remaining,
+                "rejected": [],
+                "ask_user": [],
+                "region_metrics": regions.metrics,
+                "region_stats": regions.stats,
+                "measurement": current.report,
+                "fusion_notes": notes,
+                "summary": (
+                    f"Vòng {iteration}: đo lại so với ảnh gốc, còn {len(remaining)} lỗi "
+                    "(không cần hỏi lại VLM)."
+                ),
+            }
+        )
+        report.measurement_maps = current.maps
+    report.diff = diff.model_dump()
     return report
+
+
+def perceive(
+    image: np.ndarray,
+    metrics: Dict[str, Any],
+    iteration: int = 1,
+    history: Optional[List[HistoryItem]] = None,
+    original_image: Optional[np.ndarray] = None,
+    metadata: Optional[ImageMetadata] = None,
+    cache_key: Optional[str] = None,
+) -> DiagnosisReport:
+    """
+    Giai đoạn Perceive: đo cục bộ, sinh giả thuyết (VLM v2 hoặc luật), đo theo vùng, rồi hợp nhất
+    tất định với số đo đã hiệu chỉnh (fusion.fuse, P6). Từ vòng 2 (P7): đo lại + so với ảnh gốc,
+    chỉ gọi lại VLM khi còn lỗi ngữ nghĩa mở hoặc tác dụng phụ cần phân xử.
+    - Không có GEMINI_API_KEY → giả thuyết rule-based (source="rule_based").
+    - Lỗi gọi/parse Gemini ở mọi lần quan sát → rule-based (source="vlm_fallback").
+    metadata: EXIF của file gốc; prior được đưa vào prompt như gợi ý và dịch confidence khi hợp nhất.
+    cache_key: khóa cache mask (image_cache_key của ảnh gốc của lượt chạy); None → tự tính từ
+    original_image (hoặc image) để vòng 2–3 dùng lại mask của vòng 1.
+    """
+    base_key = cache_key or image_cache_key(original_image if original_image is not None else image)
+    previous = history[-1].diagnosis if history else None
+    if (
+        iteration >= 2
+        and FUSION_ENABLED
+        and previous is not None
+        and original_image is not None
+        and original_image.shape == image.shape
+    ):
+        return _perceive_followup(
+            image, metrics, iteration, history, original_image, metadata, base_key, previous
+        )
+    return _perceive_fresh(image, metrics, iteration, history, original_image, metadata, base_key)
 
 
 # ---------------------------------------------------------

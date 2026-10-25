@@ -71,6 +71,12 @@ Nhiệm vụ của bạn:
 7. Nếu có CHẨN ĐOÁN (giai đoạn 1): chỉ lập kế hoạch cho các defect có severity >= 1,
    dùng region của defect làm target_prompt và type của defect làm detected_issue;
    cường độ tham số tỉ lệ với severity (1 nhẹ tay, 3 mạnh tay).
+   Defect có "fixable": false (motion_blur, jpeg_artifacts, haze, highlight_clipping) là lỗi
+   toolbox KHÔNG sửa được: không lập action cho chúng, chỉ dùng để tránh làm nặng thêm.
+   Tôn trọng "contraindications" của defect: "no_sharpen" → không dùng sharpen;
+   "no_brighten" → không gamma_correct > 1.0 trên toàn ảnh. Thao tác vi phạm sẽ bị loại bỏ.
+   Nếu có "diff" (vòng ≥ 2): đó là so sánh đo đạc với ảnh gốc (trạng thái lỗi cũ, tác dụng phụ
+   như halo, nhiễu vùng tối tăng); tránh lặp lại thao tác đã gây tác dụng phụ.
    Dùng region_metrics (số đo thật theo vùng) để chọn tham số cho từng vùng.
    TUYỆT ĐỐI giữ nguyên các đặc điểm trong "preserve"; thao tác vi phạm sẽ bị hệ thống loại bỏ.
 8. Nếu có TRI THỨC CHUYÊN MÔN: tham số trong playbook đã được hiệu chỉnh bằng đo đạc trên chính
@@ -381,6 +387,7 @@ _PLAN_DIAGNOSIS_EXCLUDE = {
     "subject_boxes",
     "rejected",
     "ask_user",
+    "fusion_notes",
 }
 
 

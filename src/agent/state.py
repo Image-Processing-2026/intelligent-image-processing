@@ -14,8 +14,9 @@ from src.analyzer_evaluator.metadata import ImageMetadata
 
 PlanSource = Literal["vlm", "rule_based", "vlm_fallback"]
 
-# Từ vựng chẩn đoán (giai đoạn Perceive). Chỉ gồm lỗi mà toolbox 5 công cụ xử lý được
-# hoặc cần nhận diện để KHÔNG xử lý sai.
+# Từ vựng chẩn đoán (giai đoạn Perceive). Gồm lỗi mà toolbox 5 công cụ xử lý được và lỗi cần
+# nhận diện để KHÔNG xử lý sai (D2: motion_blur, jpeg_artifacts, haze, highlight_clipping có
+# fixable=False — báo người dùng, sinh contraindication, không lập action).
 DEFECT_TYPES: tuple[str, ...] = (
     "underexposed",
     "overexposed",
@@ -28,6 +29,10 @@ DEFECT_TYPES: tuple[str, ...] = (
     "color_cast_green",
     "oversaturated",
     "undersaturated",
+    "motion_blur",
+    "jpeg_artifacts",
+    "haze",
+    "highlight_clipping",
 )
 SCENE_TYPES: tuple[str, ...] = (
     "portrait",
@@ -133,11 +138,15 @@ class DiagnosisReport(BaseModel):
     # Bản đồ tile của lần đo (MAP_KEYS → np.ndarray): chỉ dùng trong tiến trình, không
     # serialize ra JSON/HistoryItem/API
     measurement_maps: Optional[Any] = Field(default=None, exclude=True, repr=False)
+    # Nhật ký bảng quyết định hợp nhất (P6), mỗi giả thuyết một dòng: để giải thích và benchmark
+    fusion_notes: List[str] = Field(default_factory=list)
+    # Phân tích khác biệt so với ảnh gốc ở vòng ≥ 2 (P7, measurement.diff.DiffReport dạng dict)
+    diff: Optional[Dict[str, Any]] = None
 
     @property
     def actionable_defects(self) -> List[Defect]:
-        """Các lỗi có severity >= 1 (cần lập kế hoạch xử lý)."""
-        return [defect for defect in self.defects if defect.severity >= 1]
+        """Các lỗi có severity >= 1 mà toolbox sửa được (cần lập kế hoạch xử lý)."""
+        return [defect for defect in self.defects if defect.severity >= 1 and defect.fixable]
 
 
 class RegionOperation(BaseModel):
@@ -219,6 +228,10 @@ class HistoryItem(BaseModel):
     )
     rolled_back: bool = Field(
         default=False, description="True nếu vòng này suy thoái và đã rollback về ảnh trước đó"
+    )
+    side_effects: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Tác dụng phụ do xử lý của vòng này (measurement.diff.SideEffect dạng dict)",
     )
 
 

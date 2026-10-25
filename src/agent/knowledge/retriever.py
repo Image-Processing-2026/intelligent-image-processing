@@ -201,7 +201,9 @@ def match_cards(
     """Mọi card áp dụng được cho chẩn đoán, xếp hạng giảm dần."""
     kb = kb or get_knowledge_base()
     metrics = metrics or {}
-    defects = diagnosis.actionable_defects
+    # Mọi lỗi mức ≥ 1, kể cả lỗi toolbox không sửa được (D2): card của chúng chỉ tư vấn
+    # (không có recipe/auto_apply) và mang mục "Tránh" cho prompt Plan
+    defects = [defect for defect in diagnosis.defects if defect.severity >= 1]
     text_scores = _normalized(
         BM25([_card_text(card) for card in kb.cards]).scores(_query_tokens(diagnosis))
     )
