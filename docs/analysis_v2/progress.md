@@ -67,13 +67,12 @@ merge `agent` theo thứ tự người dùng đặt; **chưa mở wave 3**, ch�
 intentional_style 6 (low-key ×2, high-key, hoàng hôn ×2, hạt phim), backlit 2, noisy 2 (NIND), blur 2,
 color_cast 2, multi_defect 2. Nhãn nháp do lead agent đặt từ thumbnail.
 
-Người dùng (Tiên) đã duyệt 17/19 ảnh (reporter ghi vào manifest). Còn `unreviewed`:
-`holdout_backlit_01`, `holdout_cast_01`. Sửa so với nháp: `min_severity` nâng lên bằng `severity` ở 4
-đáp án (noisy_01 noise 2, blur_01 blur 3, cast_02 color_cast_cool 2, multi_01 underexposed 2), nên
-các đáp án này chỉ tính là nhận ra khi dự đoán đủ mức đó. Chấm bằng
-`--set holdout --reviewed-only` (bỏ hẳn 2 ảnh chưa duyệt). Kết luận về backlit chỉ dựa trên **một**
-ảnh (`holdout_backlit_02`, severity 1, vùng person). Chưa chạy config nào trên bộ này; không chỉnh gì
-theo các nhãn này.
+Người dùng (Tiên) đã duyệt cả 19 ảnh ban đầu. `holdout_backlit_01` và `holdout_cast_01` thành ca
+"không sửa" (không có lỗi mong đợi). `min_severity` giữ bằng 1 như nháp (bản xuất từ công cụ duyệt
+từng đặt nhầm bằng severity, đã hoàn lại). Thêm `holdout_backlit_03` (chân dung ngược sáng rõ, CC0),
+còn `unreviewed`. Chấm bằng `--set holdout --reviewed-only` (bỏ hẳn ảnh chưa duyệt). Khi chưa duyệt
+backlit_03, kết luận về backlit chỉ dựa trên **một** ảnh có lỗi (`holdout_backlit_02`, severity 1,
+vùng person). Chưa chạy config nào trên bộ này; không chỉnh gì theo các nhãn này.
 
 ## Hoãn
 

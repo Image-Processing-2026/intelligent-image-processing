@@ -311,6 +311,39 @@
       "reviewed_by": "Tiên"
     },
     {
+      "id": "holdout_backlit_03",
+      "category": "backlit",
+      "file": "backlit/holdout_backlit_03.jpg",
+      "commons_title": "File:Shadowy Me Needs Fill Flash (3016793674).jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Shadowy_Me_Needs_Fill_Flash_(3016793674).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/2/2a/Shadowy_Me_Needs_Fill_Flash_%283016793674%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2000,
+        1500
+      ],
+      "author": "cogdogblog",
+      "license": "CC0",
+      "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [
+          {
+            "type": "backlit_subject",
+            "region": "person",
+            "severity": 2,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "note": "Tourist in front of a sunlit waterfall; face and body in shadow against bright spray and sky. Commons title says it needs fill flash.",
+      "label_status": "unreviewed",
+      "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
+      "reviewed_by": null
+    },
+    {
       "id": "holdout_noisy_01",
       "category": "noisy",
       "file": "noisy/holdout_noisy_01.jpg",

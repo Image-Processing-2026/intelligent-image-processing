@@ -14,8 +14,10 @@ này.
 
 ## Trạng thái duyệt
 
-17/19 ảnh đã được Tiên duyệt. `holdout_backlit_01` và `holdout_cast_01` vẫn `unreviewed`. Bảng dưới
-là nhãn nháp ban đầu; nhãn đã duyệt nằm trong manifest.
+19 ảnh ban đầu đã được Tiên duyệt. `holdout_backlit_01` (dáng tối có vẻ chủ ý) và `holdout_cast_01`
+(màu xanh là cảnh thật) thành ca "không sửa": không có lỗi mong đợi. `min_severity` giữ bằng 1 như
+nháp. Ảnh thêm sau, chờ duyệt: `holdout_backlit_03` (khách du lịch trước thác nước nắng, mặt và người
+tối; nháp backlit_subject@person:2). Bảng dưới là nhãn nháp; nhãn đã duyệt nằm trong manifest.
 
 ## Nhãn nháp
 
@@ -46,6 +48,7 @@ Severity: 0 không đáng kể, 1 nhẹ (sửa thì đẹp hơn), 2 rõ, 3 nặn
 | holdout_style_06 | intentional_style | preserve film_grain | ảnh minh họa hạt phim B&W |
 | holdout_backlit_01 | backlit | backlit_subject@person:1 | mặt quay đi; có thể là chủ ý |
 | holdout_backlit_02 | backlit | backlit_subject@person:1 | đám đông ngược sáng; có thể ambiguous |
+| holdout_backlit_03 | backlit | backlit_subject@person:2 | thêm sau; tiêu đề Commons ghi "cần đèn flash bù sáng" |
 | holdout_noisy_01 | noisy | noise@full:2 | NIND ISOH3, đã thu về 1600 px |
 | holdout_noisy_02 | noisy | noise@full:1 | NIND ISOH2, đã thu về 1600 px |
 | holdout_blur_01 | blur | blur@full:3 | mất nét toàn khung |
