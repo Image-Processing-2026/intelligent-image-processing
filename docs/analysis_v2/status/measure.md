@@ -25,6 +25,8 @@ Không sửa `analyze_image` / `TechnicalMetrics`.
 Các commit (tăng dần, mỗi bước test xanh):
 
 ```
+a799e39 docs(eval): record measure lane status for analysis v2
+2ac1b5b fix(eval): chunk cv2.remap in edge-width sampling for large images
 f37fa75 feat(eval): add JPEG blockiness and dark-channel haze measurements
 feca772 feat(eval): add colour measurement with neutral-pixel illuminant and chroma
 34ff741 feat(eval): add sharpness measurement with edge width, defocus and motion
@@ -33,7 +35,7 @@ dc21008 feat(eval): add Liu 2013 noise estimator with sigma(I), chroma and Immer
 951d145 feat(eval): add measurement schemas, tile grid and mask aggregate
 ```
 
-Thay đổi chưa commit ở thời điểm ghi: `sharpness.py` (chia khối `cv2.remap`, xem Lỗi đã sửa). Commit cùng file này.
+Commit sau đó: `2ac1b5b` (chia khối `cv2.remap`, xem Lỗi đã sửa) và file này (`a799e39`, cập nhật thêm ở commit kế tiếp).
 
 Test (offline, synthetic trong test): `tests/unit/test_measurement_{tiles,noise,exposure,sharpness,color,compression_haze}.py`,
 tổng 70 test, tất cả xanh.
