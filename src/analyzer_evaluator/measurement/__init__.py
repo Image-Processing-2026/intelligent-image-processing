@@ -8,6 +8,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
+from .exposure import measure_exposure
 from .noise import measure_noise
 from .schemas import Estimate, MeasurementReport, MeasurementResult, RegionStats
 from .tiles import MAP_KEYS, aggregate
@@ -60,8 +61,9 @@ def measure_image(image: np.ndarray, *, tile_size: int = 64) -> MeasurementResul
         raise ValueError(f"tile_size must be >= 1, got {tile_size}")
     rgb, grayscale = _to_rgb_uint8(image)
     height, width = rgb.shape[:2]
+    exposure = measure_exposure(rgb, tile_size)
     noise, sigma_luma = measure_noise(rgb, tile_size, grayscale=grayscale)
-    sections = {"noise": noise}
+    sections = {"exposure": exposure, "noise": noise}
 
     notes: List[str] = []
     for section in sections.values():
@@ -70,6 +72,7 @@ def measure_image(image: np.ndarray, *, tile_size: int = 64) -> MeasurementResul
         width=width,
         height=height,
         tile_size=tile_size,
+        exposure=exposure.estimates,
         noise=noise.estimates,
         notes=notes,
     )
