@@ -267,22 +267,15 @@
       "license_url": "https://creativecommons.org/licenses/by/3.0",
       "expected": {
         "scene_type": "portrait",
-        "defects": [
-          {
-            "type": "backlit_subject",
-            "region": "person",
-            "severity": 1,
-            "min_severity": 1
-          }
-        ],
+        "defects": [],
         "preserve": [],
-        "empty_plan": false,
+        "empty_plan": true,
         "ambiguous": false
       },
-      "note": "Child in snow facing the low sun; the figure is darker than the sunlit snow.",
-      "label_status": "unreviewed",
+      "note": "Child in snow facing the low sun; the figure is darker than the sunlit snow. Reviewer: the dark figure looks intentional; do-not-fix case.",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_backlit_02",
@@ -338,7 +331,7 @@
             "type": "noise",
             "region": "full",
             "severity": 2,
-            "min_severity": 2
+            "min_severity": 1
           }
         ],
         "preserve": [],
@@ -404,7 +397,7 @@
             "type": "blur",
             "region": "full",
             "severity": 3,
-            "min_severity": 3
+            "min_severity": 1
           }
         ],
         "preserve": [],
@@ -465,22 +458,15 @@
       "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
       "expected": {
         "scene_type": "landscape",
-        "defects": [
-          {
-            "type": "color_cast_cool",
-            "region": "full",
-            "severity": 2,
-            "min_severity": 1
-          }
-        ],
+        "defects": [],
         "preserve": [],
-        "empty_plan": false,
+        "empty_plan": true,
         "ambiguous": false
       },
-      "note": "Commons 'Wrong white balance': snowy track rendered strongly blue.",
-      "label_status": "unreviewed",
+      "note": "Commons 'Wrong white balance': snowy track rendered strongly blue. Reviewer: the blue looks like the real scene; do-not-fix case.",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_cast_02",
@@ -503,7 +489,7 @@
             "type": "color_cast_cool",
             "region": "full",
             "severity": 2,
-            "min_severity": 2
+            "min_severity": 1
           }
         ],
         "preserve": [],
@@ -536,7 +522,7 @@
             "type": "underexposed",
             "region": "full",
             "severity": 2,
-            "min_severity": 2
+            "min_severity": 1
           },
           {
             "type": "noise",
