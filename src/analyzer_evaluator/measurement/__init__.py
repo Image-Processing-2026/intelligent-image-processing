@@ -9,7 +9,9 @@ from typing import Dict, List, Tuple
 import numpy as np
 
 from .color import measure_color
+from .compression import measure_compression
 from .exposure import measure_exposure
+from .haze import measure_haze
 from .noise import measure_noise
 from .schemas import Estimate, MeasurementReport, MeasurementResult, RegionStats
 from .sharpness import measure_sharpness
@@ -67,7 +69,16 @@ def measure_image(image: np.ndarray, *, tile_size: int = 64) -> MeasurementResul
     noise, sigma_luma = measure_noise(rgb, tile_size, grayscale=grayscale)
     sharpness = measure_sharpness(rgb, tile_size, sigma_luma)
     color = measure_color(rgb, tile_size)
-    sections = {"exposure": exposure, "noise": noise, "sharpness": sharpness, "color": color}
+    compression = measure_compression(rgb)
+    haze = measure_haze(rgb)
+    sections = {
+        "exposure": exposure,
+        "noise": noise,
+        "sharpness": sharpness,
+        "color": color,
+        "compression": compression,
+        "haze": haze,
+    }
 
     notes: List[str] = []
     for section in sections.values():
@@ -80,6 +91,8 @@ def measure_image(image: np.ndarray, *, tile_size: int = 64) -> MeasurementResul
         noise=noise.estimates,
         sharpness=sharpness.estimates,
         color=color.estimates,
+        compression=compression.estimates,
+        haze=haze.estimates,
         notes=notes,
     )
     maps: Dict[str, np.ndarray] = {}
