@@ -27,7 +27,7 @@ from src.analyzer_evaluator.metadata import ImageMetadata
 from src.analyzer_evaluator.no_reference_eval import evaluate_no_reference
 from src.analyzer_evaluator.reference_eval import evaluate_reference
 
-from .executor import execute_plan
+from .executor import execute_plan, image_cache_key
 from .imaging import downscale
 from .intent import apply_intent, build_questions, intent_from_answers, intent_prompt
 from .memory import DEFAULT_USER, experience_prompt, get_case_memory
@@ -76,6 +76,7 @@ def perceive_node(state: DoctorState) -> Dict[str, Any]:
         iteration=state["iteration"],
         history=state.get("history", []),
         original_image=state.get("original_image"),
+        metadata=state.get("image_metadata"),
     )
     # Ý định người dùng (đã hỏi ở vòng 1) ghi đè chẩn đoán của mọi vòng
     return {"diagnosis": apply_intent(diagnosis, state.get("intent"))}
@@ -189,7 +190,14 @@ def process_node(state: DoctorState) -> Dict[str, Any]:
     if not state.get("treatment_plan") or not state["treatment_plan"].actions:
         return {"current_image": state["current_image"], "previous_image": prev_img}
 
-    processed_img = execute_plan(state["current_image"], state["treatment_plan"])
+    # Vùng Perceive đã định vị bằng bbox dùng lại mask đã đo (cache theo ảnh gốc của lượt chạy)
+    diagnosis = state.get("diagnosis")
+    processed_img = execute_plan(
+        state["current_image"],
+        state["treatment_plan"],
+        subject_boxes=diagnosis.subject_boxes if diagnosis is not None else None,
+        cache_key=image_cache_key(state["original_image"]),
+    )
     return {"current_image": processed_img, "previous_image": prev_img}
 
 

@@ -17,6 +17,8 @@ import numpy as np
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
+from src.analyzer_evaluator.metadata import ImageMetadata
+
 from .graph import build_doctor_graph, initial_doctor_state
 from .intent import Question
 from .memory import DEFAULT_USER
@@ -83,9 +85,11 @@ def start_session(
     num_variants: int = 3,
     session_id: Optional[str] = None,
     user_id: str = DEFAULT_USER,
+    image_metadata: Optional[ImageMetadata] = None,
 ) -> SessionResult:
     """
     Bắt đầu một phiên tương tác: phân tích và chẩn đoán vòng 1 rồi dừng để hỏi ý định.
+    image_metadata: metadata EXIF/JPEG của file gốc (read_metadata), đưa vào state cho Perceive.
     """
     session_id = session_id or uuid.uuid4().hex
     _remember(session_id)
@@ -95,6 +99,7 @@ def start_session(
         num_variants=num_variants,
         interactive=True,
         user_id=user_id,
+        image_metadata=image_metadata,
     )
     return _result(session_id, _APP.invoke(state, _config(session_id)))
 

@@ -66,7 +66,9 @@ Lane ghi đề xuất ở đây; lead quyết định cùng người dùng và g
 - **Đề xuất cho lead:** ghi tham số này vào `contracts.md` §C4; lane `agent`/`fusion` truyền
   `long_side` của ảnh gốc khi tính severity vùng. Phương án khác: thêm trường có default
   `image_long_side` vào `RegionStats` (schema của lane `measure`).
-- **Quyết định:** _chờ lead_.
+- **Quyết định (lead, 2026-10-25): đề xuất chấp nhận, chờ người dùng xác nhận.** Tham số tùy chọn,
+  lời gọi theo C4 gốc không đổi. Khi được duyệt: ghi vào `contracts.md` §C4; `fusion` truyền
+  `long_side` của ảnh gốc khi tính severity vùng.
 
 ## 6. [calib] Thông báo (không đổi chữ ký)
 
@@ -80,3 +82,34 @@ Lane ghi đề xuất ở đây; lead quyết định cùng người dùng và g
    vẫn import `_BRIGHTNESS_LOW/HIGH`, `_*_CLIP_*` từ `analyzer.py` (để nguyên vì `perception.py`
    thuộc lane `agent`). Đề xuất lane `fusion` (P6) chuyển sang `severity_from_measurement` trên
    `RegionStats` (`underexposed`/`overexposed` đo được theo vùng qua `exposure.mean_l`).
+- **Ghi nhận (lead):** mục 6.3 giao lane `fusion` (P6). Checkpoint sau calib cho thấy 11/17 FP
+  còn lại là `backlit_subject` từ các ngưỡng này (`checkpoint_calib.md`).
+
+## 7. [agent] Sửa nhỏ ngoài phạm vi lane (cần lead duyệt)
+
+Lane `agent` sửa các file sau ngoài danh sách sở hữu, vì brief yêu cầu hoặc vì cần plumbing tối
+thiểu. Không đổi chữ ký hiện có: mọi tham số mới đều tùy chọn, có default.
+
+1. `src/agent/graph.py` (2 chỗ):
+   - `perceive_node` truyền `metadata=state.get("image_metadata")` vào `perceive` (brief mục 7:
+     prior EXIF vào prompt).
+   - `process_node` truyền `subject_boxes=diagnosis.subject_boxes` và
+     `cache_key=image_cache_key(original_image)` vào `execute_plan` (brief mục 3: executor dùng
+     chung resolver và cache mask của Perceive).
+2. `src/api/routes.py`: `/diagnose` truyền metadata đã đọc vào `perceive`.
+3. `src/api/main.py` (lifespan) và `frontend/app.py` (`__main__`): gọi
+   `perception.preload_region_models()` (brief mục 5). Nạp ở luồng nền, không chặn khởi động.
+4. `tests/conftest.py`: fixture autouse đặt `perception.PERCEIVE_SAMPLES = 1` (các test cũ mock một
+   phản hồi Perceive mỗi vòng) và xóa cache mask chủ thể của `region_engine` trước/sau mỗi test.
+   Test self-consistency tự đặt lại 3.
+5. Thêm trường có default (được phép theo quy tắc): `DiagnosisReport.subject_boxes`
+   (bbox Gemini theo tên subject, không đưa vào prompt Plan) và `DiagnosisReport.measurement_maps`
+   (`exclude=True`, không ra JSON/HistoryItem/API).
+6. Chữ ký mở rộng (tham số tùy chọn): `perceive(..., metadata=None, cache_key=None)`,
+   `execute_plan(image, plan, subject_boxes=None, cache_key=None)`,
+   `resolve_region_mask(..., box_2d=None, cache_key=None)`,
+   `call_gemini_json(..., temperature=None)`.
+
+- **Quyết định (lead, 2026-10-25): chấp nhận.** Mọi tham số mới tùy chọn, có default; plumbing đúng
+  brief. `feather_radius` của action bị bỏ qua khi dùng resolver chung (mask C2 feather 15 px): chấp
+  nhận, ghi cho `fusion`.

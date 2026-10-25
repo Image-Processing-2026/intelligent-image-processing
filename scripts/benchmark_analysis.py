@@ -2,8 +2,13 @@
 Benchmark chẩn đoán theo hợp đồng C5 (docs/analysis_v2/contracts.md).
 
 Mỗi cấu hình là một hàm nhận (ảnh RGB uint8, thông tin ca) và trả về DiagnosisReport:
-- baseline: luồng hiện tại, analyze_image → perceive (VLM + lỗi đo được);
-- vlm_only: như baseline nhưng bỏ các defect origin="measured" (chỉ lời VLM);
+- baseline: luồng hiện tại, analyze_image → perceive (VLM + lỗi đo được). Từ lane agent (P4b+P5)
+  perceive là bản v2: số đo cục bộ, crop 100 %, overlay, prior EXIF, self-consistency N = 3;
+  số của luồng v1 nằm trong docs/analysis_v2/baseline.md;
+- vlm_only: như baseline nhưng bỏ các defect origin="measured" (chỉ lời VLM, perceive v2);
+- vlm_only_n1: vlm_only với một lần quan sát (tách hiệu ứng của self-consistency);
+- vlm_only_frame1024: vlm_only nhưng ảnh toàn khung thu về cạnh dài 1024 px, crop vẫn 100 %
+  (câu hỏi mở plan §7: có cần ảnh toàn khung full-res khi đã có crop);
 - measure_only: số đo toàn ảnh (P1) → severity theo calibration (C4); cần lane calib đã merge;
 - fused: chưa có; để NotImplementedError cho tới khi lane fusion điền vào.
 
@@ -88,6 +93,26 @@ def _vlm_only(image: np.ndarray, case: CaseInfo) -> DiagnosisReport:
     return report
 
 
+def _vlm_only_n1(image: np.ndarray, case: CaseInfo) -> DiagnosisReport:
+    """vlm_only với PERCEIVE_SAMPLES = 1 (không self-consistency)."""
+    previous = perception.PERCEIVE_SAMPLES
+    perception.PERCEIVE_SAMPLES = 1
+    try:
+        return _vlm_only(image, case)
+    finally:
+        perception.PERCEIVE_SAMPLES = previous
+
+
+def _vlm_only_frame1024(image: np.ndarray, case: CaseInfo) -> DiagnosisReport:
+    """vlm_only với ảnh toàn khung gửi VLM thu về cạnh dài 1024 px (crop vẫn 100 %)."""
+    previous = perception.FULL_FRAME_MAX_SIDE
+    perception.FULL_FRAME_MAX_SIDE = 1024
+    try:
+        return _vlm_only(image, case)
+    finally:
+        perception.FULL_FRAME_MAX_SIDE = previous
+
+
 def _measure_only(image: np.ndarray, case: CaseInfo) -> DiagnosisReport:
     """Chỉ số đo toàn ảnh (P1) → severity theo bảng hiệu chỉnh C4; không gọi VLM.
 
@@ -133,6 +158,8 @@ def _not_implemented(name: str, owner: str) -> ConfigFn:
 CONFIGS: Dict[str, ConfigFn] = {
     "baseline": _baseline,
     "vlm_only": _vlm_only,
+    "vlm_only_n1": _vlm_only_n1,
+    "vlm_only_frame1024": _vlm_only_frame1024,
     "measure_only": _measure_only,
     "fused": _not_implemented("fused", "the fusion lane (P6, P7)"),
 }
@@ -249,10 +276,16 @@ def run_case(
             "region": d.region,
             "severity": d.severity,
             "origin": d.origin,
+            "confidence": d.confidence,
         }
         for d in report.defects
     ]
     record["predicted_defects"] = predicted
+    # Giả thuyết bị loại do không đủ đồng thuận (self-consistency): không chấm, chỉ để xem
+    record["rejected_defects"] = [
+        {"type": d.type, "region": d.region, "severity": d.severity, "confidence": d.confidence}
+        for d in report.rejected
+    ]
     record["predicted_preserve"] = [p.aspect for p in report.preserve]
     record["summary"] = report.summary
     if not _fell_back(report):

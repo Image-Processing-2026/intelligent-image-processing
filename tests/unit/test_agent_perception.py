@@ -32,6 +32,7 @@ from src.agent.state import (
     TreatmentPlan,
 )
 from src.agent.vlm_diagnostician import diagnose_and_plan
+from src.region_engine import SubjectMask
 
 FAKE_KEY = {"GEMINI_API_KEY": "fake-key-for-test"}
 
@@ -232,7 +233,7 @@ class TestPreservedDefects:
         data = dict(VLM_DIAGNOSIS)
         data["defects"] = [{"type": "color_cast_warm", "region": "full", "severity": 2}]
         _mock_models(mock_genai, json.dumps(data))
-        with patch("src.agent.perception.resolve_region_mask", side_effect=_fake_resolver({})):
+        with patch("src.agent.perception.resolve_subject_mask", side_effect=_fake_resolver({})):
             report = perceive(_backlit_image(), {})
         assert report.defects == []
         assert [p.aspect for p in report.preserve] == ["warm_tone"]
@@ -341,13 +342,20 @@ class TestReportFromVlmJson:
 # perceive(): VLM, fallback và đo vùng
 # ============================================================
 def _fake_resolver(found_regions: dict):
-    """resolve_region_mask giả: trả mask cho các vùng trong found_regions."""
+    """resolve_subject_mask giả: trả mask cho các vùng trong found_regions, còn lại 'full'."""
 
-    def resolve(image: np.ndarray, target_prompt: str, feather_radius: int = 15):
-        mask = found_regions.get(target_prompt)
+    def resolve(
+        image: np.ndarray,
+        name: str,
+        box_2d: Optional[tuple] = None,
+        *,
+        use_semantic: Optional[bool] = None,
+        cache_key: Optional[str] = None,
+    ) -> SubjectMask:
+        mask = found_regions.get(name)
         if mask is None:
-            return False, None, None
-        return True, mask, "test"
+            return SubjectMask(np.ones(image.shape[:2], np.float32), "full", 0.1, None)
+        return SubjectMask(mask, "test", 0.9, None)
 
     return resolve
 
@@ -355,7 +363,7 @@ def _fake_resolver(found_regions: dict):
 class TestPerceive:
     def test_offline_measures_face_and_adds_backlit_defect(self):
         with patch(
-            "src.agent.perception.resolve_region_mask",
+            "src.agent.perception.resolve_subject_mask",
             side_effect=_fake_resolver({"face": _center_mask()}),
         ):
             report = perceive(_backlit_image(), {"brightness_level": "normal"})
@@ -367,12 +375,12 @@ class TestPerceive:
         ]
 
     def test_unresolved_region_is_skipped(self):
-        with patch("src.agent.perception.resolve_region_mask", side_effect=_fake_resolver({})):
+        with patch("src.agent.perception.resolve_subject_mask", side_effect=_fake_resolver({})):
             report = perceive(_backlit_image(), {})
         assert report.region_metrics == {}
 
     def test_measurement_error_does_not_break_perception(self):
-        with patch("src.agent.perception.resolve_region_mask", side_effect=RuntimeError("boom")):
+        with patch("src.agent.perception.resolve_subject_mask", side_effect=RuntimeError("boom")):
             report = perceive(_backlit_image(), {"noise_level": "severe"})
         assert report.region_metrics == {}
         assert [d.type for d in report.defects] == ["noise"]
@@ -381,7 +389,7 @@ class TestPerceive:
     @patch("src.agent.vlm_diagnostician.genai")
     def test_vlm_diagnosis_uses_perceive_schema(self, mock_genai):
         models = _mock_models(mock_genai, json.dumps(VLM_DIAGNOSIS))
-        with patch("src.agent.perception.resolve_region_mask", side_effect=_fake_resolver({})):
+        with patch("src.agent.perception.resolve_subject_mask", side_effect=_fake_resolver({})):
             report = perceive(_backlit_image(), {"noise_level": "medium"})
 
         assert report.source == "vlm"
@@ -393,7 +401,7 @@ class TestPerceive:
     @patch("src.agent.vlm_diagnostician.genai")
     def test_vlm_failure_falls_back_to_rules(self, mock_genai):
         _mock_models(mock_genai, "không phải JSON")
-        with patch("src.agent.perception.resolve_region_mask", side_effect=_fake_resolver({})):
+        with patch("src.agent.perception.resolve_subject_mask", side_effect=_fake_resolver({})):
             report = perceive(_backlit_image(), {"noise_level": "severe"})
 
         assert report.source == "vlm_fallback"
@@ -403,7 +411,7 @@ class TestPerceive:
     @patch("src.agent.vlm_diagnostician.genai")
     def test_later_iteration_sends_original_image(self, mock_genai):
         models = _mock_models(mock_genai, json.dumps(VLM_DIAGNOSIS))
-        with patch("src.agent.perception.resolve_region_mask", side_effect=_fake_resolver({})):
+        with patch("src.agent.perception.resolve_subject_mask", side_effect=_fake_resolver({})):
             perceive(
                 _backlit_image(),
                 {},
@@ -412,7 +420,10 @@ class TestPerceive:
             )
 
         contents = models.generate_content.call_args.kwargs["contents"]
-        assert len([c for c in contents if not isinstance(c, str)]) == 2
+        original_at = contents.index("ẢNH GỐC (trước mọi xử lý):")
+        current_at = contents.index("ẢNH HIỆN TẠI (cần chẩn đoán):")
+        assert not isinstance(contents[original_at + 1], str)
+        assert not isinstance(contents[current_at + 1], str)
 
 
 # ============================================================
@@ -561,7 +572,7 @@ class TestPlanTreatment:
 class TestPipelineWithPerception:
     def test_offline_pipeline_records_diagnosis(self):
         with patch(
-            "src.agent.perception.resolve_region_mask",
+            "src.agent.perception.resolve_subject_mask",
             side_effect=_fake_resolver({"face": _center_mask()}),
         ):
             state = run_pipeline(_backlit_image(), max_iterations=1)
@@ -573,19 +584,31 @@ class TestPipelineWithPerception:
         assert ("gamma_correct", "face") in operations
 
 
-def test_regions_are_measured_on_a_downscaled_image():
-    """Đo vùng (và phát hiện khuôn mặt) chạy trên ảnh ≤ MEASURE_MAX_SIDE, không phải ảnh gốc."""
-    from src.agent.perception import MEASURE_MAX_SIDE, measure_regions
+def test_masks_are_full_resolution_and_legacy_metrics_downscaled():
+    """
+    Mask được phân giải ở độ phân giải gốc (dùng chung cache với executor); RegionMetrics cũ
+    tính trên ảnh thu nhỏ ≤ MEASURE_MAX_SIDE; RegionStats luôn có 'full' và 'background'.
+    """
+    from src.agent.perception import measure_regions
+    from src.analyzer_evaluator.measurement import measure_image
 
     seen = []
 
-    def resolve(image: np.ndarray, target_prompt: str, feather_radius: int = 15):
-        seen.append(image.shape)
-        return True, np.ones(image.shape[:2], dtype=np.float32), "test"
+    def resolve(image: np.ndarray, name: str, box_2d=None, *, use_semantic=None, cache_key=None):
+        seen.append((image.shape, cache_key))
+        mask = np.zeros(image.shape[:2], dtype=np.float32)
+        mask[:, : image.shape[1] // 2] = 1.0
+        return SubjectMask(mask, "test", 0.8, None)
 
     big = np.full((1500, 3000, 3), 100, dtype=np.uint8)
-    with patch("src.agent.perception.resolve_region_mask", side_effect=resolve):
-        measured = measure_regions(big, ["face"])
+    with patch("src.agent.perception.resolve_subject_mask", side_effect=resolve):
+        measured = measure_regions(big, ["face"], measurement=measure_image(big), cache_key="k")
 
-    assert seen == [(MEASURE_MAX_SIDE // 2, MEASURE_MAX_SIDE, 3)]
-    assert measured["face"].brightness_mean == pytest.approx(100)
+    assert seen == [((1500, 3000, 3), "k")]
+    assert measured.metrics["face"].brightness_mean == pytest.approx(100)
+    assert measured.metrics["face"].area_ratio == pytest.approx(0.5, abs=0.01)
+    assert set(measured.stats) == {"face", "full", "background"}
+    assert measured.stats["face"].mask_source == "test"
+    assert measured.stats["face"].mask_confidence == pytest.approx(0.8)
+    assert measured.stats["background"].area_fraction == pytest.approx(0.5, abs=0.01)
+    assert measured.stats["full"].area_fraction == pytest.approx(1.0)

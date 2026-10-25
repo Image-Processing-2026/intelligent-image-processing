@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.agent.memory import DEFAULT_MEMORY_PATH, MEMORY_ENV, configure_case_memory
+from src.agent.perception import preload_region_models
 
 from .auth import router as auth_router
 from .config import settings_from_env
@@ -33,8 +34,12 @@ settings = settings_from_env()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Mở CSDL web app khi khởi động (tạo bảng, đánh dấu phiên bị ngắt giữa chừng)."""
+    """
+    Mở CSDL web app khi khởi động (tạo bảng, đánh dấu phiên bị ngắt giữa chừng) và nạp sẵn
+    model phân vùng ở luồng nền khi đã cài (không chặn khởi động).
+    """
     get_database()
+    preload_region_models()
     yield
 
 
