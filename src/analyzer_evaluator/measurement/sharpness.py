@@ -44,6 +44,17 @@ NORM_LONG_SIDE = 1000.0
 DEFOCUS_SIGMA0 = 1.0
 DEFOCUS_MAX = 10.0
 EPSILON = 1e-6
+# Xác nhận mờ chuyển động: σ defocus theo hướng pháp tuyến cạnh. Mờ chuyển động làm rộng cạnh có
+# pháp tuyến song song hướng chuyển động, cạnh vuông góc giữ nguyên; mờ Gaussian và ảnh sạch gần
+# đẳng hướng. MOTION_BINS hướng cách đều trên [0, 180), mỗi bin lấy cửa sổ ±MOTION_BIN_HALF_WIDTH độ.
+MOTION_BINS = 12
+MOTION_BIN_HALF_WIDTH = 11.25
+MOTION_MIN_BIN_SAMPLES = 50
+MOTION_FULL_CONFIDENCE_SAMPLES = 100
+# Bin vuông góc thiếu (cạnh theo hướng đó biến mất) thì lấy bin gần nhất trong ±MOTION_PERP_SEARCH.
+MOTION_PERP_SEARCH = 2
+# σ defocus bin vuông góc dưới mức này là sàn do làm mịn nhiễu, tỉ số không còn ý nghĩa.
+MOTION_MIN_PERP_SIGMA = 0.2
 
 
 def _pre_smooth_sigma(sigma: Optional[float]) -> float:
@@ -196,6 +207,73 @@ def _motion(section: Section, gx: np.ndarray, gy: np.ndarray, strong: np.ndarray
     put_estimate(section, "motion_angle_deg", angle, confidence, n_strong)
 
 
+def _orientation_medians(
+    values: np.ndarray, normal_deg: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Trung vị σ defocus và số mẫu theo MOTION_BINS hướng pháp tuyến; NaN ở bin ít mẫu."""
+    centers = np.arange(MOTION_BINS) * (180.0 / MOTION_BINS)
+    medians = np.full(MOTION_BINS, np.nan)
+    counts = np.zeros(MOTION_BINS, dtype=np.int64)
+    for index, center in enumerate(centers):
+        distance = np.abs((normal_deg - center + 90.0) % 180.0 - 90.0)
+        selected = values[distance <= MOTION_BIN_HALF_WIDTH]
+        counts[index] = selected.size
+        if selected.size >= MOTION_MIN_BIN_SAMPLES:
+            medians[index] = float(np.median(selected))
+    return medians, counts
+
+
+def _motion_anisotropy(
+    section: Section, defocus: np.ndarray, normal_deg: np.ndarray, noisy: bool
+) -> None:
+    """Dị hướng σ defocus theo hướng pháp tuyến cạnh: bằng chứng hướng mờ chuyển động.
+
+    Ghi `motion_anisotropy` (σ bin rộng nhất / σ bin vuông góc), `motion_extent_sigma`
+    (sqrt(σ_max² − σ_vuông²), px, cỡ σ tương đương của phần mờ theo một hướng) và
+    `motion_blur_angle_deg` (hướng chuyển động, 0–180, trung bình góc kép có trọng số quanh bin
+    rộng nhất). Coherence của structure tensor không dùng được một mình vì ảnh sạch có texture có
+    hướng (cỏ, phong cảnh) đã có coherence ~0.75. Ảnh nhiễu (đã làm mịn trước) giảm độ tin cậy.
+    """
+    finite = np.isfinite(defocus)
+    medians, counts = _orientation_medians(defocus[finite], normal_deg[finite])
+    if np.count_nonzero(np.isfinite(medians)) < 2:
+        return
+    widest = int(np.nanargmax(medians))
+    perpendicular = (widest + MOTION_BINS // 2) % MOTION_BINS
+    if not math.isfinite(medians[perpendicular]):
+        nearby = [
+            (perpendicular + k) % MOTION_BINS
+            for k in range(-MOTION_PERP_SEARCH, MOTION_PERP_SEARCH + 1)
+            if math.isfinite(medians[(perpendicular + k) % MOTION_BINS])
+        ]
+        if not nearby:
+            return
+        perpendicular = min(nearby, key=lambda index: medians[index])
+    perp_sigma = float(medians[perpendicular])
+    if perp_sigma < MOTION_MIN_PERP_SIGMA:
+        return
+    max_sigma = float(medians[widest])
+    extent = math.sqrt(max(max_sigma * max_sigma - perp_sigma * perp_sigma, 0.0))
+
+    centers = np.radians(np.arange(MOTION_BINS) * (360.0 / MOTION_BINS))
+    weights = np.where(np.isfinite(medians), medians - np.nanmin(medians), 0.0)
+    angle = (
+        math.degrees(
+            0.5
+            * math.atan2(
+                float((weights * np.sin(centers)).sum()), float((weights * np.cos(centers)).sum())
+            )
+        )
+        % 180.0
+    )
+
+    samples = int(min(counts[widest], counts[perpendicular]))
+    confidence = min(1.0, samples / MOTION_FULL_CONFIDENCE_SAMPLES) * (0.5 if noisy else 1.0)
+    put_estimate(section, "motion_anisotropy", max_sigma / perp_sigma, confidence, samples)
+    put_estimate(section, "motion_extent_sigma", extent, confidence, samples)
+    put_estimate(section, "motion_blur_angle_deg", angle, confidence, samples)
+
+
 def _edges(
     section: Section,
     image: np.ndarray,
@@ -246,6 +324,8 @@ def _edges(
     put_estimate(
         section, "defocus_sigma", sigma, min(1.0, n_sigma / FULL_CONFIDENCE_EDGES), n_sigma
     )
+    normal_deg = np.degrees(np.arctan2(ny, nx)) % 180.0
+    _motion_anisotropy(section, defocus, normal_deg, noisy=pre_sigma > 0.0)
     if min(n_width, n_sigma) < MIN_EDGES:
         section.notes.append(f"few edges for sharpness estimate (n={min(n_width, n_sigma)})")
 
