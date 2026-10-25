@@ -8,7 +8,7 @@ có patch trung tính).
 """
 
 import math
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -32,6 +32,12 @@ GRAY_EDGE_SIGMA = 2.0
 # gradient cạnh) cộng sai phân Sobel, có dư 2 px.
 GRADIENT_CONTEXT = 2 * (math.ceil(4 * GRAY_EDGE_SIGMA) + 2) + 1
 MIN_EDGE_GRADIENT = 1e-3
+# Chọn pixel trung tính lặp: tối đa số vòng bù–lọc lại, dừng khi ước lượng đổi < ngưỡng (độ).
+# Pixel chỉ được nhận lại nếu C* gốc < CAST_MAX_CHROMA: xám dưới ám mạnh nhất cần đo (≈ 3000 K)
+# có C* ≤ ~32, còn màu thật bão hòa (cỏ: C* ≥ 32 ở phân vị 1) không thể "trôi" vào tập trung tính.
+CAST_MAX_CHROMA = 30.0
+NEUTRAL_ITERATIONS = 6
+NEUTRAL_CONVERGED_DEG = 0.25
 _NEUTRAL_UNIT = np.full(3, 1.0 / math.sqrt(3.0))
 
 
@@ -91,26 +97,77 @@ def _gradient_magnitude(linear: np.ndarray) -> np.ndarray:
     return np.stack(channels, axis=2)
 
 
-def _illuminant(section: Section, linear_all: np.ndarray, neutral: np.ndarray) -> None:
-    """Nguồn sáng ước lượng, độ lệch so trung tính, độ đồng thuận giữa thuật toán."""
-    count = int(neutral.sum())
-    if count < MIN_NEUTRAL_PIXELS:
-        section.notes.append(f"few neutral pixels for illuminant estimate (n={count})")
-    if count == 0:
-        return
+def _consensus(
+    linear_all: np.ndarray, gradient_all: np.ndarray, neutral: np.ndarray
+) -> Optional[Tuple[np.ndarray, float]]:
+    """Nguồn sáng đồng thuận (vector đơn vị) và độ lệch góc lớn nhất giữa các thuật toán.
+
+    Trả None khi tập pixel trung tính rỗng hoặc có ít hơn hai ước lượng hợp lệ.
+    """
+    if not neutral.any():
+        return None
     linear = linear_all[neutral].astype(np.float64)
-    gradient_all = _gradient_magnitude(linear_all)
     # Chỉ dùng pixel có gradient thật: vùng phẳng chỉ có nhiễu số, làm hướng Gray-Edge bị ngẫu nhiên.
     edge_mask = _away_from_non_neutral(neutral) & (gradient_all.max(axis=2) > MIN_EDGE_GRADIENT)
     gradient = gradient_all[edge_mask].astype(np.float64) if edge_mask.any() else None
     units = [_unit(v) for v in _illuminant_estimates(linear, gradient)]
     units = [u for u in units if u is not None]
     if len(units) < 2:
-        return
+        return None
     spread = max(_angle_deg(a, b) for i, a in enumerate(units) for b in units[i + 1 :])
     consensus = _unit(np.mean(units, axis=0))
     if consensus is None:
+        return None
+    return consensus, spread
+
+
+def _neutral_after_correction(
+    linear_all: np.ndarray, illuminant: np.ndarray, usable: np.ndarray
+) -> np.ndarray:
+    """Pixel trung tính (C* < NEUTRAL_CHROMA) sau khi bù nguồn sáng kiểu von Kries.
+
+    Ám màu mạnh đẩy chính các pixel xám ra khỏi cổng C*; bù trước rồi mới lọc thì chúng quay lại.
+    `usable` đã chỉ gồm pixel có thể là xám bị ám (C* gốc < CAST_MAX_CHROMA).
+    """
+    gains = illuminant / float(np.mean(illuminant))
+    corrected = np.clip(linear_all / gains.astype(np.float32), 0.0, 1.0)
+    encoded = np.where(
+        corrected <= 0.0031308, corrected * 12.92, 1.055 * np.power(corrected, 1 / 2.4) - 0.055
+    ).astype(np.float32)
+    lab = cv2.cvtColor(encoded, cv2.COLOR_RGB2LAB)
+    chroma = np.sqrt(lab[..., 1] ** 2 + lab[..., 2] ** 2)
+    return usable & (chroma < NEUTRAL_CHROMA)
+
+
+def _illuminant(
+    section: Section, linear_all: np.ndarray, neutral: np.ndarray, usable: np.ndarray
+) -> None:
+    """Nguồn sáng ước lượng, độ lệch so trung tính, độ đồng thuận giữa thuật toán.
+
+    Chọn pixel trung tính lặp: ước lượng trên tập C* < 12 của ảnh gốc, bù ảnh theo ước lượng đó,
+    lọc lại C* trên ảnh đã bù rồi ước lượng lại trên pixel gốc, tới khi hội tụ. Bắt đầu từ tập
+    trung tính của ảnh gốc (không từ Gray-World) để cảnh ấm có patch xám không bị kéo lệch; chỉ
+    nhận lại pixel có C* gốc < CAST_MAX_CHROMA để màu thật bão hòa (cỏ) không bị coi là xám.
+    """
+    count = int(neutral.sum())
+    if count < MIN_NEUTRAL_PIXELS:
+        section.notes.append(f"few neutral pixels for illuminant estimate (n={count})")
+    gradient_all = _gradient_magnitude(linear_all) if count else None
+    estimate = _consensus(linear_all, gradient_all, neutral) if count else None
+    if estimate is None:
         return
+    for _ in range(NEUTRAL_ITERATIONS):
+        candidate = _neutral_after_correction(linear_all, estimate[0], usable)
+        if int(candidate.sum()) < max(1, count // 2):
+            break
+        refined = _consensus(linear_all, gradient_all, candidate)
+        if refined is None:
+            break
+        moved = _angle_deg(refined[0], estimate[0])
+        neutral, count, estimate = candidate, int(candidate.sum()), refined
+        if moved < NEUTRAL_CONVERGED_DEG:
+            break
+    consensus, spread = estimate
     chromaticity = consensus / float(consensus.sum())
     count_factor = min(1.0, count / FULL_CONFIDENCE_NEUTRAL)
     spread_factor = min(
@@ -137,12 +194,13 @@ def measure_color(rgb: np.ndarray, tile_size: int) -> Section:
     chroma = np.sqrt(lab[..., 1] ** 2 + lab[..., 2] ** 2)
 
     clipped = ((rgb >= CLIP_HIGH) | (rgb <= CLIP_LOW)).any(axis=2)
-    neutral = (~clipped) & (l_star > MIN_LIGHTNESS) & (chroma < NEUTRAL_CHROMA)
+    usable = (~clipped) & (l_star > MIN_LIGHTNESS)
+    neutral = usable & (chroma < NEUTRAL_CHROMA)
     p50, p95 = np.percentile(chroma, [50, 95])
     put_estimate(section, "chroma_p50", float(p50), 1.0, total)
     put_estimate(section, "chroma_p95", float(p95), 1.0, total)
     put_estimate(section, "neutral_fraction", float(neutral.mean()), 1.0, total)
     section.maps["color.chroma"] = tile_mean(chroma, tile_size)
 
-    _illuminant(section, srgb_to_linear(rgb01), neutral)
+    _illuminant(section, srgb_to_linear(rgb01), neutral, usable & (chroma < CAST_MAX_CHROMA))
     return section

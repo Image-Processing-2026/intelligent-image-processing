@@ -351,6 +351,30 @@ class TestEngine:
         assert used == ["noise-reduction"]
         assert diagnose_from_metrics({}).subjects == ["face"]
 
+    def test_calibrated_severity_is_used_when_present(self):
+        # D4: severity hiệu chỉnh (TechnicalMetrics.defect_severity) thắng mức suy từ level
+        metrics = {
+            "noise_level": "low",
+            "brightness_level": "underexposed",
+            "defect_severity": {"noise": 3, "underexposed": 0, "blur": 2, "color_cast_cool": 1},
+            "calibration_version": "p2-test",
+        }
+        defects = diagnose_from_metrics(metrics).defects
+        assert [(d.type, d.severity, d.origin) for d in defects] == [
+            ("noise", 3, "rule"),
+            ("blur", 2, "rule"),
+            ("color_cast_cool", 1, "rule"),
+        ]
+        assert "p2-test" in defects[0].evidence
+
+    def test_analyze_image_metrics_drive_rule_defects(self):
+        from src.analyzer_evaluator import analyze_image
+
+        dark = np.full((96, 96, 3), 30, dtype=np.uint8)
+        metrics = analyze_image(dark).model_dump()
+        types = {d.type: d.severity for d in diagnose_from_metrics(metrics).defects}
+        assert types["underexposed"] == metrics["defect_severity"]["underexposed"] >= 1
+
 
 # ============================================================
 # Tích hợp với giai đoạn Plan

@@ -8,19 +8,28 @@ RGB/HSV và phát hiện ám màu qua không gian màu CIE L*a*b*.
 Thiết kế theo ADR-001: Không dùng generative AI, chỉ dùng OpenCV/NumPy thuần túy.
 """
 
+import hashlib
 import logging
+from collections import OrderedDict
 from typing import Any, Dict, Optional, Tuple
 
 import cv2
 import numpy as np
 
+from .measurement import measure_image
+from .measurement.calibration import calibration_version, defect_severities, load_calibration
 from .schemas import TechnicalMetrics
 
 logger = logging.getLogger("img_doctor.analyzer_evaluator")
 
 # ---------------------------------------------------------------------------
-# Hằng số ngưỡng phân loại (Thresholds)
+# Ngưỡng phân loại (Thresholds)
 # ---------------------------------------------------------------------------
+# Các mức *_level suy ra từ bảng hiệu chỉnh severity (measurement/calibration.yaml, quyết định D4
+# của Analysis v2: một nguồn ngưỡng duy nhất), không còn ngưỡng tay ở đây.
+#
+# Hằng số độ sáng/clipping dưới đây CHỈ còn cho phép đo độ sáng theo vùng của
+# src/agent/perception.py (thuộc lane agent/fusion), sẽ chuyển sang calibration ở P6.
 _BRIGHTNESS_LOW = 70.0
 _BRIGHTNESS_HIGH = 185.0
 _SHADOW_CLIP_THRESH = 5
@@ -28,25 +37,29 @@ _HIGHLIGHT_CLIP_THRESH = 250
 _SHADOW_CLIP_RATIO_THRESH = 0.25
 _HIGHLIGHT_CLIP_RATIO_THRESH = 0.20
 
-_CONTRAST_LOW = 40.0
-_CONTRAST_HIGH = 80.0
+# Mức severity → nhãn level của TechnicalMetrics
+_NOISE_LEVELS = ("clean", "low", "medium", "severe")
+_COLOR_CAST_LEVELS = (
+    ("color_cast_warm", "warm"),
+    ("color_cast_cool", "cool"),
+    ("color_cast_green", "greenish"),
+)
+# Các lỗi mà TechnicalMetrics.defect_severity ghi lại (cùng tập lỗi các *_level biểu diễn)
+LEVEL_DEFECTS = (
+    "underexposed",
+    "overexposed",
+    "low_contrast",
+    "noise",
+    "blur",
+    "color_cast_warm",
+    "color_cast_cool",
+    "color_cast_green",
+)
 
-_NOISE_CLEAN = 3.0
-_NOISE_LOW = 8.0
-_NOISE_MEDIUM = 15.0
-
-_BLUR_SEVERE = 100.0
-_BLUR_MILD = 300.0
-
-# Ngưỡng ám màu LAB và RGB
-# Lưu ý: OpenCV LAB encode a*/b* trong [0, 255] với 128 = trung tính
-# a* < 128 = xanh lá | a* > 128 = đỏ
-# b* < 128 = xanh lam | b* > 128 = vàng/ấm
-_LAB_GREEN_A_THRESH = 110.0  # a* < 110 → thiên xanh lá rõ rệt
-_LAB_WARM_B_THRESH = 140.0  # b* > 140 → thiên vàng/ấm (chỉ khi a* bình thường)
-_LAB_COOL_B_THRESH = 118.0  # b* < 118 → thiên xanh lam/lạnh
-_RGB_CHANNEL_DIFF = 20.0
-_RGB_GREEN_DIFF = 15.0
+# Cache severity theo nội dung ảnh: pipeline gọi analyze_image 2–3 lần mỗi vòng trên cùng một
+# ảnh (analyze, evaluate ảnh hiện tại và ảnh trước), còn đo cục bộ tốn ~1 s/2 MP.
+_SEVERITY_CACHE_SIZE = 8
+_severity_cache: "OrderedDict[Tuple[Any, ...], Dict[str, int]]" = OrderedDict()
 
 # Kernel Immerkær Fast Noise Variance Estimator (float32 để giảm băng thông bộ nhớ;
 # các giá trị nguyên -2..4 biểu diễn chính xác tuyệt đối trong float32)
@@ -202,66 +215,70 @@ def _compute_gray_hist_stats(gray: np.ndarray) -> Dict[str, Any]:
     }
 
 
-def _classify_noise(sigma: float) -> str:
-    """Phân loại mức độ nhiễu dựa trên ngưỡng đã định nghĩa."""
-    if sigma < _NOISE_CLEAN:
-        return "clean"
-    elif sigma < _NOISE_LOW:
-        return "low"
-    elif sigma < _NOISE_MEDIUM:
-        return "medium"
-    return "severe"
+def _levels_from_severity(
+    severity: Dict[str, int], contrast_std: float, contrast_high_std: float
+) -> Dict[str, str]:
+    """Nhãn *_level của TechnicalMetrics từ severity đã hiệu chỉnh (D4).
 
-
-def _detect_color_cast(rgb: np.ndarray, bgr: Optional[np.ndarray] = None) -> str:
+    Phơi sáng lấy chiều có severity cao hơn; ám màu lấy hướng có severity cao nhất (hòa: ấm,
+    lạnh, xanh lá). "high" contrast không phải lỗi nên giữ ngưỡng prior trên độ lệch chuẩn xám
+    (đọc từ calibration.yaml, mục levels).
     """
-    Phát hiện ám màu chủ đạo của ảnh qua không gian màu CIE L*a*b*.
+    under, over = severity.get("underexposed", 0), severity.get("overexposed", 0)
+    if under >= 1 and under >= over:
+        brightness = "underexposed"
+    elif over >= 1:
+        brightness = "overexposed"
+    else:
+        brightness = "normal"
 
-    Chuyển ảnh RGB sang LAB, phân tích tâm trọng lực kênh a* và b* để xác định:
-    - warm   : Ám vàng/đỏ ấm (b* cao hoặc R >> B)
-    - cool   : Ám xanh lam lạnh (b* thấp hoặc B >> R)
-    - greenish: Ám xanh lá (a* thấp và G >> R)
-    - none   : Cân bằng màu tốt
+    if severity.get("low_contrast", 0) >= 1:
+        contrast = "low"
+    elif contrast_std > contrast_high_std:
+        contrast = "high"
+    else:
+        contrast = "normal"
 
-    Args:
-        rgb: Ảnh RGB uint8 (H, W, 3).
-        bgr: Ảnh BGR uint8 đã tính trước (tùy chọn). Nếu None, sẽ tính lại từ rgb.
+    blur = severity.get("blur", 0)
+    cast, cast_severity = "none", 0
+    for defect, label in _COLOR_CAST_LEVELS:
+        if severity.get(defect, 0) > cast_severity:
+            cast, cast_severity = label, severity[defect]
+    return {
+        "brightness_level": brightness,
+        "contrast_level": contrast,
+        "noise_level": _NOISE_LEVELS[min(severity.get("noise", 0), 3)],
+        "blur_level": "sharp" if blur == 0 else "mild_blur" if blur == 1 else "severe_blur",
+        "color_cast": cast,
+    }
 
-    Returns:
-        str: Loại ám màu ('warm', 'cool', 'greenish', 'none').
-    """
-    # Tái sử dụng BGR nếu đã được tính trước để tránh chuyển đổi trùng lặp
-    if bgr is None:
-        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-    # Lấy mean trực tiếp trên uint8 (tích lũy float64 pairwise, không cần sao chép float)
-    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
 
-    mu_a = float(np.mean(lab[:, :, 1]))  # Kênh a*: Trục Lục-Đỏ
-    mu_b = float(np.mean(lab[:, :, 2]))  # Kênh b*: Trục Lam-Vàng
+def clear_severity_cache() -> None:
+    """Xóa cache severity theo nội dung ảnh (dùng trong test và khi nạp lại calibration)."""
+    _severity_cache.clear()
 
-    # Tính mean RGB để hỗ trợ quyết định
-    mu_r = float(np.mean(rgb[:, :, 0]))
-    mu_g = float(np.mean(rgb[:, :, 1]))
-    mu_b_rgb = float(np.mean(rgb[:, :, 2]))
 
-    logger.debug(
-        "Color cast analysis: LAB a*=%.2f b*=%.2f | RGB R=%.2f G=%.2f B=%.2f",
-        mu_a,
-        mu_b,
-        mu_r,
-        mu_g,
-        mu_b_rgb,
+def _calibrated_severity(rgb: np.ndarray) -> Dict[str, int]:
+    """Severity hiệu chỉnh của các lỗi LEVEL_DEFECTS, cache theo băm nội dung ảnh."""
+    key = (
+        rgb.shape,
+        hashlib.blake2b(np.ascontiguousarray(rgb).tobytes(), digest_size=16).hexdigest(),
+        calibration_version(),
     )
-
-    # Thứ tự ưu tiên: greenish trước (a* là chỉ số rõ nhất),
-    # sau đó warm/cool theo b*
-    if mu_a < _LAB_GREEN_A_THRESH and (mu_g - mu_r) > _RGB_GREEN_DIFF:
-        return "greenish"
-    if mu_b > _LAB_WARM_B_THRESH or (mu_r - mu_b_rgb) > _RGB_CHANNEL_DIFF:
-        return "warm"
-    if mu_b < _LAB_COOL_B_THRESH or (mu_b_rgb - mu_r) > _RGB_CHANNEL_DIFF:
-        return "cool"
-    return "none"
+    cached = _severity_cache.get(key)
+    if cached is not None:
+        _severity_cache.move_to_end(key)
+        return dict(cached)
+    report = measure_image(rgb).report
+    severity = {
+        defect: level
+        for defect, (level, _) in defect_severities(report).items()
+        if defect in LEVEL_DEFECTS
+    }
+    _severity_cache[key] = severity
+    while len(_severity_cache) > _SEVERITY_CACHE_SIZE:
+        _severity_cache.popitem(last=False)
+    return dict(severity)
 
 
 def _compute_histogram_stats(
@@ -344,22 +361,19 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
     """
     Phân tích định lượng toàn diện các thuộc tính kỹ thuật của bức ảnh.
 
-    Thực hiện 6 phép đo theo kế hoạch Stage 1:
+    Các bước:
     1. Chuẩn hóa đầu vào và chuyển đổi không gian màu
-    2. Đo độ sáng và phân tích phơi sáng (Brightness & Exposure)
-    3. Phân tích độ tương phản và dải động (Contrast Dynamics)
-    4. Ước lượng mức độ nhiễu bằng Immerkær estimator
-    5. Đo độ sắc nét/mờ bằng Laplacian và Tenengrad
-    6. Phân tích histogram RGB/HSV và phát hiện ám màu CIE LAB
+    2. Độ sáng, độ tương phản (thống kê histogram xám)
+    3. Nhiễu Immerkær và độ nét Laplacian/Tenengrad (chỉ số thô, nhánh đánh giá vẫn dùng)
+    4. Histogram RGB/HSV
+    5. Các mức *_level và `defect_severity`: đo cục bộ (`measurement.measure_image`) rồi tra bảng
+       hiệu chỉnh severity (`measurement/calibration.yaml`, quyết định D4: một nguồn ngưỡng duy
+       nhất, `knowledge/engine._metric_defects` dùng lại cùng severity)
 
     Tối ưu hóa hiệu năng:
     - Mọi thống kê ảnh xám (mean, std, skewness, clipping, P1/P99) suy ra từ
-      MỘT histogram duy nhất (`_compute_gray_hist_stats`), loại bỏ sắp xếp
-      O(N log N) của percentile và mọi bản sao float của ảnh xám.
+      MỘT histogram duy nhất (`_compute_gray_hist_stats`).
     - Mean/std RGB lấy từ `cv2.meanStdDev` (một lần duyệt C, không sao chép).
-    - Tính BGR một lần, chia sẻ cho cả _detect_color_cast và _compute_histogram_stats
-      để loại bỏ chuyển đổi không gian màu trùng lặp.
-    - Immerkær/Sobel/LAB dùng float32 (đủ chính xác so với biên ngưỡng phân loại).
 
     Args:
         image: Ảnh đầu vào. Hỗ trợ: uint8 hoặc float32, RGB/Grayscale/RGBA.
@@ -375,71 +389,19 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
 
     logger.debug("analyze_image called: shape=%s dtype=%s", image.shape, image.dtype)
 
-    # -----------------------------------------------------------------------
-    # Bước 1: Chuẩn hóa đầu vào
-    # -----------------------------------------------------------------------
+    # Bước 1: Chuẩn hóa đầu vào; mọi thống kê xám tái sử dụng một histogram
     rgb, gray = _ensure_rgb_and_gray(image)
-
-    # -----------------------------------------------------------------------
-    # Single-pass histogram: mọi thống kê xám bên dưới tái sử dụng kết quả này
-    # -----------------------------------------------------------------------
     gray_stats = _compute_gray_hist_stats(gray)
 
-    # -----------------------------------------------------------------------
-    # Bước 2: Độ sáng và Phơi sáng (Brightness & Exposure Analysis)
-    # -----------------------------------------------------------------------
+    # Bước 2: Độ sáng và độ tương phản
     brightness_mean = gray_stats["mean"]
-    highlight_ratio = gray_stats["highlight_clip_ratio"]
-    shadow_ratio = gray_stats["shadow_clip_ratio"]
-
-    if brightness_mean < _BRIGHTNESS_LOW or shadow_ratio > _SHADOW_CLIP_RATIO_THRESH:
-        brightness_level = "underexposed"
-    elif brightness_mean > _BRIGHTNESS_HIGH or highlight_ratio > _HIGHLIGHT_CLIP_RATIO_THRESH:
-        brightness_level = "overexposed"
-    else:
-        brightness_level = "normal"
-
-    logger.debug(
-        "Brightness: mean=%.2f level=%s (highlight_ratio=%.3f shadow_ratio=%.3f)",
-        brightness_mean,
-        brightness_level,
-        highlight_ratio,
-        shadow_ratio,
-    )
-
-    # -----------------------------------------------------------------------
-    # Bước 3: Độ tương phản và Dải động (Contrast Dynamics)
-    # -----------------------------------------------------------------------
     contrast_std = gray_stats["std"]
 
-    if contrast_std < _CONTRAST_LOW:
-        contrast_level = "low"
-    elif contrast_std > _CONTRAST_HIGH:
-        contrast_level = "high"
-    else:
-        contrast_level = "normal"
-
-    logger.debug("Contrast: std=%.2f level=%s", contrast_std, contrast_level)
-
-    # -----------------------------------------------------------------------
-    # Bước 4: Ước lượng Nhiễu (Noise Estimation via Immerkær)
-    # -----------------------------------------------------------------------
+    # Bước 3: Chỉ số thô nhiễu (Immerkær) và độ nét (Laplacian; ảnh phẳng cho đúng 0 tuyệt đối)
     noise_variance = _estimate_noise_immerkaer(gray)
-    noise_level = _classify_noise(noise_variance)
-
-    logger.debug("Noise: variance=%.4f level=%s", noise_variance, noise_level)
-
-    # -----------------------------------------------------------------------
-    # Bước 5: Độ Sắc Nét / Mờ (Sharpness & Blur via Laplacian + Tenengrad)
-    # -----------------------------------------------------------------------
-    # Laplacian variance — phép đo chính (float32: ảnh phẳng cho đúng 0 tuyệt đối;
-    # ngưỡng phân loại 100/300 cách xa sai số tương đối ~1% của float32)
     laplacian = cv2.Laplacian(gray, cv2.CV_32F)
     sharpness_laplacian_var = float(laplacian.var())
-
-    # Tenengrad — bổ trợ phát hiện nhiễu giả sắc nét (chỉ dùng cho log debug,
-    # nên tính trên ảnh thu nhỏ 1/2 để tiết kiệm 3/4 chi phí tích chập Sobel;
-    # ảnh tí hon (< 4px) giữ nguyên để tránh kích thước 0 sau khi chia)
+    # Tenengrad chỉ dùng cho log debug, tính trên ảnh thu nhỏ 1/2 (ảnh < 4 px giữ nguyên)
     gh, gw = gray.shape
     if gh >= 4 and gw >= 4:
         small_gray = cv2.resize(gray, (gw // 2, gh // 2), interpolation=cv2.INTER_AREA)
@@ -449,47 +411,39 @@ def analyze_image(image: np.ndarray) -> TechnicalMetrics:
     sobely = cv2.Sobel(small_gray, cv2.CV_32F, 0, 1, ksize=3)
     tenengrad = float(np.mean(sobelx**2 + sobely**2))
 
-    if sharpness_laplacian_var < _BLUR_SEVERE:
-        blur_level = "severe_blur"
-    elif sharpness_laplacian_var < _BLUR_MILD:
-        blur_level = "mild_blur"
-    else:
-        blur_level = "sharp"
+    # Bước 4: Histogram RGB/HSV
+    histogram_stats = _compute_histogram_stats(rgb, gray, gray_stats=gray_stats)
+
+    # Bước 5: Severity đã hiệu chỉnh → *_level (D4)
+    severity = _calibrated_severity(rgb)
+    contrast_high_std = float(load_calibration().get("levels", {}).get("contrast_high_std", 80.0))
+    levels = _levels_from_severity(severity, contrast_std, contrast_high_std)
 
     logger.debug(
-        "Sharpness: laplacian_var=%.2f tenengrad=%.2f blur_level=%s",
+        "Raw metrics: brightness=%.2f contrast_std=%.2f immerkaer=%.4f laplacian_var=%.2f "
+        "tenengrad=%.2f",
+        brightness_mean,
+        contrast_std,
+        noise_variance,
         sharpness_laplacian_var,
         tenengrad,
-        blur_level,
     )
-
-    # -----------------------------------------------------------------------
-    # Bước 6: Histogram RGB/HSV và Ám Màu CIE LAB (Color Cast Detection)
-    # Tối ưu: tính BGR một lần, chia sẻ cho cả hai hàm con;
-    # thống kê xám tái sử dụng gray_stats (không duyệt ảnh lại)
-    # -----------------------------------------------------------------------
-    bgr_shared = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-    color_cast = _detect_color_cast(rgb, bgr=bgr_shared)
-    histogram_stats = _compute_histogram_stats(rgb, gray, bgr=bgr_shared, gray_stats=gray_stats)
-
     logger.info(
         "Image diagnosed: brightness=%s contrast=%s noise=%s blur=%s color_cast=%s",
-        brightness_level,
-        contrast_level,
-        noise_level,
-        blur_level,
-        color_cast,
+        levels["brightness_level"],
+        levels["contrast_level"],
+        levels["noise_level"],
+        levels["blur_level"],
+        levels["color_cast"],
     )
 
     return TechnicalMetrics(
         brightness_mean=round(brightness_mean, 2),
-        brightness_level=brightness_level,
         contrast_std=round(contrast_std, 2),
-        contrast_level=contrast_level,
         noise_variance=round(noise_variance, 4),
-        noise_level=noise_level,
         sharpness_laplacian_var=round(sharpness_laplacian_var, 2),
-        blur_level=blur_level,
-        color_cast=color_cast,
         histogram_stats=histogram_stats,
+        defect_severity=severity,
+        calibration_version=calibration_version(),
+        **levels,
     )

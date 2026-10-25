@@ -14,6 +14,17 @@ from .retriever import CardMatch, match_cards
 
 # Mức độ mặc định khi card không gắn với lỗi nào (card theo loại cảnh)
 DEFAULT_SEVERITY = 2
+# Lỗi lấy severity hiệu chỉnh từ TechnicalMetrics.defect_severity, theo thứ tự báo cáo
+CALIBRATED_DEFECTS = (
+    "noise",
+    "underexposed",
+    "overexposed",
+    "low_contrast",
+    "blur",
+    "color_cast_warm",
+    "color_cast_cool",
+    "color_cast_green",
+)
 DEFAULT_FEATHER = 15
 
 
@@ -33,7 +44,11 @@ def diagnose_from_metrics(
 
 
 def _metric_defects(metrics: Dict[str, Any]) -> List[Defect]:
-    """Lỗi toàn ảnh suy ra từ các mức phân loại của Module 1."""
+    """Lỗi toàn ảnh suy ra từ Module 1.
+
+    Có `defect_severity` (severity theo bảng hiệu chỉnh P2, cùng nguồn với các *_level — quyết
+    định D4) thì dùng thẳng; chỉ số cũ không có trường này thì suy từ các mức phân loại.
+    """
     defects: List[Defect] = []
 
     def add(defect_type: str, severity: int, evidence: str) -> None:
@@ -41,6 +56,15 @@ def _metric_defects(metrics: Dict[str, Any]) -> List[Defect]:
         defects.append(
             Defect(type=defect_type, severity=severity, evidence=evidence, origin="rule")
         )
+
+    calibrated = metrics.get("defect_severity")
+    if calibrated:
+        version = metrics.get("calibration_version") or "?"
+        for defect_type in CALIBRATED_DEFECTS:
+            severity = int(calibrated.get(defect_type, 0))
+            if severity >= 1:
+                add(defect_type, severity, f"{defect_type}={severity} (calibration {version})")
+        return defects
 
     noise_severity = {"low": 1, "medium": 2, "severe": 3}.get(metrics.get("noise_level") or "")
     if noise_severity:
