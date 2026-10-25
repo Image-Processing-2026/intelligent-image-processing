@@ -8,6 +8,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
+from .color import measure_color
 from .exposure import measure_exposure
 from .noise import measure_noise
 from .schemas import Estimate, MeasurementReport, MeasurementResult, RegionStats
@@ -65,7 +66,8 @@ def measure_image(image: np.ndarray, *, tile_size: int = 64) -> MeasurementResul
     exposure = measure_exposure(rgb, tile_size)
     noise, sigma_luma = measure_noise(rgb, tile_size, grayscale=grayscale)
     sharpness = measure_sharpness(rgb, tile_size, sigma_luma)
-    sections = {"exposure": exposure, "noise": noise, "sharpness": sharpness}
+    color = measure_color(rgb, tile_size)
+    sections = {"exposure": exposure, "noise": noise, "sharpness": sharpness, "color": color}
 
     notes: List[str] = []
     for section in sections.values():
@@ -77,6 +79,7 @@ def measure_image(image: np.ndarray, *, tile_size: int = 64) -> MeasurementResul
         exposure=exposure.estimates,
         noise=noise.estimates,
         sharpness=sharpness.estimates,
+        color=color.estimates,
         notes=notes,
     )
     maps: Dict[str, np.ndarray] = {}
