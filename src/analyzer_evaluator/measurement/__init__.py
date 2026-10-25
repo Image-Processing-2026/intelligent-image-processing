@@ -4,10 +4,11 @@
 (ADR-001). Hợp đồng: docs/analysis_v2/contracts.md §C1.
 """
 
-from typing import Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 
+from .noise import measure_noise
 from .schemas import Estimate, MeasurementReport, MeasurementResult, RegionStats
 from .tiles import MAP_KEYS, aggregate
 
@@ -57,7 +58,22 @@ def measure_image(image: np.ndarray, *, tile_size: int = 64) -> MeasurementResul
     """
     if tile_size < 1:
         raise ValueError(f"tile_size must be >= 1, got {tile_size}")
-    rgb, _grayscale = _to_rgb_uint8(image)
+    rgb, grayscale = _to_rgb_uint8(image)
     height, width = rgb.shape[:2]
-    report = MeasurementReport(width=width, height=height, tile_size=tile_size)
-    return MeasurementResult(report=report, maps={}, tile_size=tile_size)
+    noise, sigma_luma = measure_noise(rgb, tile_size, grayscale=grayscale)
+    sections = {"noise": noise}
+
+    notes: List[str] = []
+    for section in sections.values():
+        notes.extend(section.notes)
+    report = MeasurementReport(
+        width=width,
+        height=height,
+        tile_size=tile_size,
+        noise=noise.estimates,
+        notes=notes,
+    )
+    maps: Dict[str, np.ndarray] = {}
+    for section in sections.values():
+        maps.update(section.maps)
+    return MeasurementResult(report=report, maps=maps, tile_size=tile_size)
