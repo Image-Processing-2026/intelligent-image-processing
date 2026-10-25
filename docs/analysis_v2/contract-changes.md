@@ -54,3 +54,30 @@ Lane ghi đề xuất ở đây; lead quyết định cùng người dùng và g
      metadata. Ghi trong `progress.md` mục Hoãn.
 3. `src/agent/perception.py` và `src/agent/planner.py` chưa đọc `image_metadata`. Đó là việc của lane
    `agent` (theo brief `meta.md`).
+
+## 5. [agent] Sửa nhỏ ngoài phạm vi lane (cần lead duyệt)
+
+Lane `agent` sửa các file sau ngoài danh sách sở hữu, vì brief yêu cầu hoặc vì cần plumbing tối
+thiểu. Không đổi chữ ký hiện có: mọi tham số mới đều tùy chọn, có default.
+
+1. `src/agent/graph.py` (2 chỗ):
+   - `perceive_node` truyền `metadata=state.get("image_metadata")` vào `perceive` (brief mục 7:
+     prior EXIF vào prompt).
+   - `process_node` truyền `subject_boxes=diagnosis.subject_boxes` và
+     `cache_key=image_cache_key(original_image)` vào `execute_plan` (brief mục 3: executor dùng
+     chung resolver và cache mask của Perceive).
+2. `src/api/routes.py`: `/diagnose` truyền metadata đã đọc vào `perceive`.
+3. `src/api/main.py` (lifespan) và `frontend/app.py` (`__main__`): gọi
+   `perception.preload_region_models()` (brief mục 5). Nạp ở luồng nền, không chặn khởi động.
+4. `tests/conftest.py`: fixture autouse đặt `perception.PERCEIVE_SAMPLES = 1` (các test cũ mock một
+   phản hồi Perceive mỗi vòng) và xóa cache mask chủ thể của `region_engine` trước/sau mỗi test.
+   Test self-consistency tự đặt lại 3.
+5. Thêm trường có default (được phép theo quy tắc): `DiagnosisReport.subject_boxes`
+   (bbox Gemini theo tên subject, không đưa vào prompt Plan) và `DiagnosisReport.measurement_maps`
+   (`exclude=True`, không ra JSON/HistoryItem/API).
+6. Chữ ký mở rộng (tham số tùy chọn): `perceive(..., metadata=None, cache_key=None)`,
+   `execute_plan(image, plan, subject_boxes=None, cache_key=None)`,
+   `resolve_region_mask(..., box_2d=None, cache_key=None)`,
+   `call_gemini_json(..., temperature=None)`.
+
+- **Quyết định:** chờ lead.
