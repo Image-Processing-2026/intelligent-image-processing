@@ -6,16 +6,17 @@ Nhánh tích hợp `feat/analysis-v2`. Chưa push, chưa mở PR.
 
 | Wave | Lane | Phase | Merge | Tiêu chí | Ghi chú |
 |---|---|---|---|---|---|
-| 1 | bench | P0.2–0.4 | merge bench lane (2026-10-25) | đạt (trừ sai số synthetic → lead đo, xem dưới) | ngoài phạm vi nhưng chấp nhận: `.gitignore`, `data/calibration_sources.json`, `data/download_real_benchmark.py` (tải full-res), `test_build_calibration_set.py`. Chú thích `annotated_by: "agent"` trong manifest chưa được người duyệt. |
-| 1 | measure | P1 | merge measure lane (2026-10-25) | đạt | lệch khỏi plan: quyết định trong `measurement_synthetic.md`; numpy 1.26.4: 70/70 xanh |
-| 1 | region | P4a | merge region lane (2026-10-25) | đạt | contract-changes 1 (A), 2 (chấp nhận), 3 (chấp nhận). Cần Person 2 review. |
-| 1 | meta | P3 | merge meta lane (2026-10-25) | đạt | phiên tương tác → lane `agent`; Gradio hoãn |
-| 2 | calib | P2 | – | – | mở sau wave 1 |
-| 2 | agent | P4b + P5 | – | – | mở sau wave 1 |
-| 3 | fusion | P6 + P7 | – | – | chờ checkpoint sau `calib` |
+| 1 | bench | P0.2–0.4 | `803a980` | đạt (trừ sai số synthetic → lead đo, xem dưới) | ngoài phạm vi nhưng chấp nhận: `.gitignore`, `data/calibration_sources.json`, `data/download_real_benchmark.py` (tải full-res), `test_build_calibration_set.py`. Chú thích `annotated_by: "agent"` trong manifest chưa được người duyệt. |
+| 1 | measure | P1 | `efe536b` | đạt | lệch khỏi plan: quyết định trong `measurement_synthetic.md`; numpy 1.26.4: 70/70 xanh |
+| 1 | region | P4a | `d972c22` | đạt | contract-changes 1 (A), 2 (chấp nhận), 3 (chấp nhận). Cần Person 2 review. |
+| 1 | meta | P3 | `a908bc0` | đạt | phiên tương tác → lane `agent`; Gradio hoãn |
+| 2 | calib | P2 | `526884d` | đạt (MAE synthetic 0.14; FP already_good không tăng) | thêm xác nhận mờ chuyển động, chọn pixel trung tính lặp, D4. contract-changes 5 (`long_side`) chờ người dùng xác nhận; 6.3 giao `fusion`. Cần Person 1 review. |
+| 2 | agent | P4b + P5 | `d5dd271` (merge **sau** checkpoint, theo lệnh người dùng) | đạt | sửa ngoài phạm vi chấp nhận (contract-changes 7). Prompt rev 2 chỉnh trên chính bộ thật. N = 3 chưa cho lợi ích đo được (đề nghị xem lại D3 ở `fusion`). |
+| 3 | fusion | P6 + P7 | – | – | **dừng: checkpoint không đạt, chờ người dùng** |
 
 Sau mỗi merge: `ruff check src/ tests/` sạch; `pytest tests/unit/ -q`: 1173 → 1243 → 1267 → 1296
-passed (sau bench / measure / region / meta), thêm 5 test của `benchmark_measurement`.
+passed (sau bench / measure / region / meta), 1301 (+ `benchmark_measurement`), 1344 (calib),
+1381 (agent).
 
 ## Số đo
 
@@ -23,7 +24,10 @@ passed (sau bench / measure / region / meta), thêm 5 test của `benchmark_meas
 |---|---|---|---|---|---|
 | real (30 ảnh chấm, 13 sạch/chủ ý) | baseline | 0.47 | 0.54 | 1.00 | `baseline.md` |
 | real | vlm_only | 0.53 | 0.62 | 0.88 | `baseline.md` |
-| real | measure_only | – | – | – | chờ `calib` |
+| real, sau calib (trước agent) | baseline | 0.33 (5/15) | 0.39 (5/13) | 0.80 | `checkpoint_calib.md` |
+| real, sau calib | measure_only | 0.33 (5/15) | 0.77 (10/13) | 0.80 | `checkpoint_calib.md` |
+| synthetic, sau calib | measure_only | 0.64 | 0.05 (1/20) | 0.14 | `checkpoint_calib.md` |
+| real, lane agent (prompt chỉnh trên bộ này) | vlm_only v2 | 0.47 (7/15) | 0.00 (0/13) | 1.14 | `status/agent.md` |
 | real | fused | – | – | – | chờ `fusion` |
 
 Mục tiêu cuối: FP ≤ 0.10, recall ≥ 0.85, MAE ≤ 0.6.
@@ -36,6 +40,10 @@ texture có hướng); nguồn sáng 5.5° (ám mạnh bị đo thiếu).
 
 Sau khi merge `calib`: chạy lại benchmark. Nếu FP rate ảnh sạch (already_good + intentional_style)
 không giảm rõ từ 0.54 về phía ≤ 0.10 → dừng, báo người dùng trước khi mở wave 3 (`fusion`).
+
+**Kết quả (2026-10-25):** FP ảnh sạch 7 → 5 / 13 (0.54 → 0.39) — không giảm rõ về phía ≤ 0.10.
+11/17 FP còn lại là `backlit_subject` origin `measured` từ ngưỡng tay cũ trong `perception`. Đã
+merge `agent` theo thứ tự người dùng đặt; **chưa mở wave 3**, chờ người dùng.
 
 ## Hoãn
 
