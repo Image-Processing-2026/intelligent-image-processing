@@ -78,3 +78,6 @@ artifacts/*
 web/node_modules/
 web/dist/
 web/coverage/
+
+# Phân vùng ngữ nghĩa: model tải về (scripts/fetch_segmentation_models.py)
+models/segmentation/

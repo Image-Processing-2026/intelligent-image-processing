@@ -43,8 +43,30 @@ from .segmentation_backend import (
     reset_segmentation_backend,
 )
 from .spatial import create_bbox_mask, create_quadrant_mask
+from .subject import (
+    Box2D,
+    BoxXYXY,
+    MaskSource,
+    SubjectMask,
+    box2d_to_xyxy,
+    clear_subject_mask_cache,
+    refine_bbox_mask,
+    resolve_subject_mask,
+    segment_box,
+)
+from .subject import capabilities as subject_capabilities
 
 __all__ = [
+    "Box2D",
+    "BoxXYXY",
+    "MaskSource",
+    "SubjectMask",
+    "box2d_to_xyxy",
+    "clear_subject_mask_cache",
+    "refine_bbox_mask",
+    "resolve_subject_mask",
+    "segment_box",
+    "subject_capabilities",
     "segment_by_prompt",
     "PromptSegmentationConfig",
     "PromptSegmentationResult",
