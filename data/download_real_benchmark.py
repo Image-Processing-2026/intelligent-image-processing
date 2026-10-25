@@ -3,7 +3,8 @@ Tải bộ ảnh thật dùng để đánh giá module brain (perceive + plan) t
 
 Danh sách ảnh, nguồn, giấy phép và đáp án mong đợi nằm trong data/real_benchmark_manifest.json.
 Ảnh được lưu vào data/real/benchmark/<nhóm>/ (thư mục này bị .gitignore), cạnh dài tối đa
-`max_side` px trong manifest. Ảnh đã có sẵn thì bỏ qua.
+`max_side` px trong manifest. Ảnh đã có sẵn thì bỏ qua. Ảnh có trường `fullres_file` (nhóm noisy)
+được tải thêm bản gốc độ phân giải đầy đủ vào data/real/benchmark_fullres/, không thu nhỏ.
 
 Chạy từ thư mục gốc repo:
     python data/download_real_benchmark.py
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent
 MANIFEST = ROOT / "real_benchmark_manifest.json"
 OUT_DIR = ROOT / "real" / "benchmark"
+FULLRES_DIR = ROOT / "real" / "benchmark_fullres"
 API = "https://commons.wikimedia.org/w/api.php"
 # Wikimedia yêu cầu User-Agent mô tả rõ client
 USER_AGENT = "AIImageDoctor-benchmark/0.1 (university course project; python urllib)"
@@ -63,7 +65,12 @@ def _scaled_url(entry: Dict[str, Any], max_side: int) -> str:
         "formatversion": "2",
     }
     data = json.loads(_fetch(API + "?" + urllib.parse.urlencode(params)))
-    return data["query"]["pages"][0]["imageinfo"][0]["thumburl"]
+    info = data["query"]["pages"][0].get("imageinfo")
+    if not info:
+        # Commons không tạo được bản thu nhỏ cho kích thước này: lấy bản gốc, _fit_max_side sẽ thu nhỏ
+        logger.warning("No thumbnail for %s; using the original.", entry["commons_title"])
+        return entry["original_url"]
+    return info[0]["thumburl"]
 
 
 def _fit_max_side(path: Path, max_side: int) -> None:
@@ -74,6 +81,27 @@ def _fit_max_side(path: Path, max_side: int) -> None:
         image = image.convert("RGB")
         image.thumbnail((max_side, max_side), Image.LANCZOS)
         image.save(path, "JPEG", quality=95)
+
+
+def download_fullres() -> int:
+    """Tải bản gốc full-res của các ảnh có `fullres_file` còn thiếu; trả về số ảnh tải mới."""
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    downloaded = 0
+    for entry in manifest["images"]:
+        if "fullres_file" not in entry:
+            continue
+        path = FULLRES_DIR / entry["fullres_file"].removeprefix("benchmark_fullres/")
+        if path.exists():
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            path.write_bytes(_fetch(entry["original_url"]))
+            downloaded += 1
+            logger.info("Downloaded full-res %s", path.name)
+        except Exception as exc:
+            logger.error("Failed to download full-res of %s: %s", entry["id"], exc)
+        time.sleep(1.5)
+    return downloaded
 
 
 def download_all() -> int:
@@ -103,3 +131,5 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     count = download_all()
     logger.info("Done: %d new image(s) in %s", count, OUT_DIR)
+    fullres = download_fullres()
+    logger.info("Done: %d new full-res image(s) in %s", fullres, FULLRES_DIR)
