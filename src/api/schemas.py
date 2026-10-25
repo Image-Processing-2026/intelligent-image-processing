@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from src.agent.intent import Question
 from src.agent.refine import Adjustment
 from src.agent.state import DiagnosisReport, IntentProfile, RegionOperation, TreatmentPlan
+from src.analyzer_evaluator.metadata import ImageMetadata
 
 
 class DiagnoseRequest(BaseModel):
@@ -23,6 +24,7 @@ class DiagnoseResponse(BaseModel):
     technical_metrics: Dict[str, Any]
     diagnosis: Optional[DiagnosisReport] = None
     treatment_plan: TreatmentPlan
+    image_metadata: Optional[ImageMetadata] = None
 
 
 class VariantOut(BaseModel):
@@ -58,6 +60,7 @@ class ProcessResponse(BaseModel):
     final_decision: str
     final_evaluation: Dict[str, Any]
     history: List[Dict[str, Any]]
+    image_metadata: Optional[ImageMetadata] = None
     intermediate_images_base64: List[str] = Field(
         default_factory=list,
         description="Danh sách ảnh trung gian sau mỗi vòng lặp (Base64 PNG thumbnails)",

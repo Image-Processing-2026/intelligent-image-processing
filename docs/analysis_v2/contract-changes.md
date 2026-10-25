@@ -1,4 +1,6 @@
-# Đề xuất đổi hợp đồng (chờ lead quyết định)
+# Đề xuất đổi hợp đồng
+
+Lane ghi đề xuất ở đây; lead quyết định cùng người dùng và ghi **Quyết định** dưới mỗi mục.
 
 ## 1. C2: tên `capabilities` trùng export hiện có (lane `region`, 2026-10-25)
 
@@ -15,6 +17,8 @@
   - (B) Đổi tên bản C2 thành `semantic_capabilities` trong `contracts.md` và `subject.py`.
   - (C) Đổi `controller.capabilities()` thành phẳng và sửa hai nơi dùng. Không khuyến nghị:
     thay đổi hành vi API hiện có.
+- **Quyết định (người dùng duyệt, 2026-10-25): (A).** `contracts.md` §C2 đã sửa theo
+  `subject_capabilities`; lane `agent` import tên này.
 
 ## 2. C2: hành vi khi có model nhưng không có bbox (quyết định của lane `region`)
 
@@ -24,10 +28,29 @@
   `UNANCHORED_DINO_CONFIDENCE = 0.5`. Không có detection nào thì rơi về quadrant/full.
 - Lý do: `region.md` yêu cầu test real_model `resolve_subject_mask(..., "sky", box_2d=None)` phải
   chạy DINO và không được trả vùng "sky" ≥ 90 %.
-- Lead cần xác nhận hoặc yêu cầu bỏ nhánh này (chỉ quadrant/full khi không có bbox).
+- **Quyết định (người dùng duyệt, 2026-10-25): chấp nhận.** `contracts.md` §C2 và
+  `plan_analysis_v2.md` §Phase 4 đã sửa theo hành vi này.
 
 ## 3. Backend: encoder SAM dùng chung (không đổi chữ ký Protocol)
 
 - `segmentation_backend.py` thêm `_ensure_encoder_locked` và `_reset_encoder_locked`: gọi
   `set_image` một lần cho mỗi digest ảnh; `reset_image` xóa digest. `SegmentationBackend` Protocol
   không đổi. Fake backend cũ vẫn chạy (test `test_segment_by_prompt.py` vẫn xanh).
+- **Quyết định:** chấp nhận (không đổi hợp đồng, nằm trong phạm vi lane `region`).
+
+## 4. [meta] Metadata: nối `image_metadata` vào luồng phiên tương tác và giao diện Gradio
+
+1. `src/agent/session.py::start_session` gọi `initial_doctor_state` không truyền `image_metadata`.
+   Vì vậy `POST /api/v1/sessions` (`src/api/workspace.py::create_session`) chưa đưa metadata vào
+   state. Cần thêm `image_metadata: Optional[ImageMetadata] = None` cho `start_session` rồi truyền
+   xuống; route `create_session` đọc bytes upload bằng `read_metadata`. `session.py` không thuộc
+   phạm vi lane `meta`.
+   - **Quyết định (người dùng duyệt, 2026-10-25):** giao cho lane `agent` (đã ghi vào
+     `agents/agent.md`, phạm vi thêm `session.py` và route `create_session`).
+2. `frontend/app.py`: `gr.Image(type="numpy")` không giữ bytes file, nên không đọc được EXIF.
+   Muốn đọc EXIF phải đổi input sang `type="filepath"`, kéo theo `process_job`, `render_chosen_variant`,
+   `image.change`, và mẫu ảnh (đang gán đường dẫn).
+   - **Quyết định (người dùng duyệt, 2026-10-25): HOÃN.** Giữ `type="numpy"`; UI Gradio chưa có
+     metadata. Ghi trong `progress.md` mục Hoãn.
+3. `src/agent/perception.py` và `src/agent/planner.py` chưa đọc `image_metadata`. Đó là việc của lane
+   `agent` (theo brief `meta.md`).
