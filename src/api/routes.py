@@ -30,6 +30,7 @@ from src.agent.session import (
 from src.agent.state import RegionOperation, TreatmentPlan
 from src.agent.variants import treatment_recipe
 from src.analyzer_evaluator.analyzer import analyze_image
+from src.analyzer_evaluator.metadata import ImageMetadata, read_metadata
 
 from .schemas import (
     AnswerRequest,
@@ -65,12 +66,17 @@ def health_check():
     return {"status": "ok", "service": "intelligent-image-processing"}
 
 
-def _diagnose(img: np.ndarray) -> DiagnoseResponse:
+def _diagnose(img: np.ndarray, metadata: ImageMetadata) -> DiagnoseResponse:
     """Chỉ số kỹ thuật → chẩn đoán (Perceive) → kế hoạch điều trị, không xử lý ảnh."""
     metrics = analyze_image(img).model_dump()
     diagnosis = perceive(img, metrics, iteration=1)
     plan = plan_treatment(img, metrics, diagnosis, iteration=1)
-    return DiagnoseResponse(technical_metrics=metrics, diagnosis=diagnosis, treatment_plan=plan)
+    return DiagnoseResponse(
+        technical_metrics=metrics,
+        diagnosis=diagnosis,
+        treatment_plan=plan,
+        image_metadata=metadata,
+    )
 
 
 @router.post("/diagnose", response_model=DiagnoseResponse)
@@ -80,7 +86,7 @@ async def diagnose_image_endpoint(file: UploadFile = File(...)):
         content = await file.read()
         img = _read_image_file(content)
         # Hai lời gọi Gemini + phát hiện khuôn mặt là blocking: chạy ngoài event loop
-        return await run_in_threadpool(_diagnose, img)
+        return await run_in_threadpool(_diagnose, img, read_metadata(content))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -114,6 +120,7 @@ async def process_image_endpoint(
             max_iterations=max_iterations,
             num_variants=num_variants,
             user_id=user_id,
+            image_metadata=read_metadata(content),
         )
 
         return _process_response(result_state, remember_run(result_state, user_id))
@@ -148,6 +155,7 @@ def _process_response(
         intent=result_state.get("intent"),
         recommended_reason=result_state.get("recommended_reason"),
         case_id=case_id,
+        image_metadata=result_state.get("image_metadata"),
     )
 
 

@@ -23,6 +23,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import Send, interrupt
 
 from src.analyzer_evaluator.analyzer import analyze_image
+from src.analyzer_evaluator.metadata import ImageMetadata
 from src.analyzer_evaluator.no_reference_eval import evaluate_no_reference
 from src.analyzer_evaluator.reference_eval import evaluate_reference
 
@@ -560,6 +561,7 @@ def run_pipeline(
     num_variants: int = 1,
     intent: Optional[IntentProfile] = None,
     user_id: str = DEFAULT_USER,
+    image_metadata: Optional[ImageMetadata] = None,
 ) -> DoctorState:
     """
     Hàm giao tiếp ngoài để chạy toàn bộ chu trình xử lý ảnh.
@@ -567,10 +569,18 @@ def run_pipeline(
     num_variants > 1 (tối đa 3): sau vòng lặp, sinh các phiên bản phong cách trên ảnh preview
     (state["variants"], đã xếp hạng); current_image vẫn là kết quả full-res của phác đồ.
     intent: ý định người dùng có sẵn (không hỏi). Chạy tương tác: xem src/agent/session.py.
+    image_metadata: metadata của file gốc (metadata.read_metadata); chỉ được lưu vào state.
     """
     app = build_doctor_graph()
     initial_state = initial_doctor_state(
-        image, ground_truth, is_synthetic, max_iterations, num_variants, intent, user_id=user_id
+        image,
+        ground_truth,
+        is_synthetic,
+        max_iterations,
+        num_variants,
+        intent,
+        user_id=user_id,
+        image_metadata=image_metadata,
     )
     return app.invoke(initial_state)
 
@@ -584,6 +594,7 @@ def initial_doctor_state(
     intent: Optional[IntentProfile] = None,
     interactive: bool = False,
     user_id: str = DEFAULT_USER,
+    image_metadata: Optional[ImageMetadata] = None,
 ) -> DoctorState:
     """State khởi đầu của pipeline (dùng chung cho chạy thường và chạy tương tác)."""
     initial_state: DoctorState = {
@@ -612,5 +623,6 @@ def initial_doctor_state(
         "intent": intent,
         "user_id": user_id,
         "recommended_reason": None,
+        "image_metadata": image_metadata,
     }
     return initial_state

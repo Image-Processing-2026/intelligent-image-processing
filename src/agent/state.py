@@ -9,6 +9,8 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, TypedDict
 import numpy as np
 from pydantic import BaseModel, Field
 
+from src.analyzer_evaluator.metadata import ImageMetadata
+
 PlanSource = Literal["vlm", "rule_based", "vlm_fallback"]
 
 # Từ vựng chẩn đoán (giai đoạn Perceive). Chỉ gồm lỗi mà toolbox 5 công cụ xử lý được
@@ -262,3 +264,5 @@ class DoctorState(TypedDict):
     user_id: str  # Chủ của các ca trong bộ nhớ (Phase 5)
     # Vì sao phiên bản được đề xuất: "intent" | "preference" | "critic" | "score"
     recommended_reason: Optional[str]
+    # Metadata EXIF/JPEG của file gốc (Phase 3); None khi không có. Chưa dùng trong perceive.
+    image_metadata: Optional[ImageMetadata]
