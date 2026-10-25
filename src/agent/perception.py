@@ -137,6 +137,10 @@ Trả về bản chẩn đoán JSON gồm:
    Chỉ báo lỗi khi THẤY rõ trên ảnh hoặc crop. Ảnh tốt thì trả "defects": [] — "không có lỗi"
    là câu trả lời đúng và được khuyến khích khi ảnh ổn; đừng cố tìm lỗi.
    Mờ do xóa phông/chuyển động có chủ ý, hạt film, tông màu nghệ thuật KHÔNG phải lỗi.
+   Trời, nguồn sáng hay đèn cháy trắng PHÍA SAU chủ thể (ngược sáng, trời âm u) là bình thường
+   và không khôi phục được: KHÔNG báo overexposed cho vùng đó; chỉ báo overexposed khi vùng
+   quan trọng (mặt, chủ thể) mất chi tiết hoặc cả ảnh sáng quá. Chỉ báo backlit_subject khi
+   mặt/chủ thể THỰC SỰ tối và mất chi tiết; mặt sáng đều dù mặt trời ở phía sau thì không phải lỗi.
 5. preserve: đặc điểm thẩm mỹ CÓ CHỦ Ý cần giữ nguyên (aspect, region, reason). Ví dụ:
    ánh hoàng hôn/đèn vàng ấm áp → warm_tone; ảnh tối tâm trạng → low_key;
    bóng đen nghệ thuật → silhouette; hạt film → film_grain; xóa phông mềm mại → soft_focus;
