@@ -18,6 +18,7 @@ param(
     [switch]$NoLead,
     # Chỉ gửi lại prompt khởi động (khi agent kẹt ở hộp thoại trust lúc khởi động)
     [switch]$PromptOnly,
+    # Rỗng = dùng $LaneModels
     [string]$Model = '',
     [string]$PermissionMode = 'auto',
     [string]$BaseBranch = 'feat/analysis-v2',
@@ -27,6 +28,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $KnownLanes = @('bench', 'measure', 'region', 'meta', 'calib', 'agent', 'fusion')
+# Model theo lane: ~/.claude/settings.json có thể đặt haiku làm mặc định. -Model ghi đè cho mọi lane.
+$LaneModels = @{
+    lead = 'opus'; measure = 'opus'; region = 'opus'; calib = 'opus'; agent = 'opus'; fusion = 'opus'
+    bench = 'sonnet'; meta = 'sonnet'
+}
 
 function Invoke-Step([string]$Description, [scriptblock]$Action) {
     Write-Host "-> $Description"
@@ -140,7 +146,10 @@ function Start-LaneAgent([string]$Name, [string]$Path, [string]$Kickoff) {
     # Ghép '--' trong mảng: Windows PowerShell có thể nuốt token '--' viết trực tiếp
     $startArgs = @('agent', 'start', $Name, '--kind', 'claude', '--pane', $paneId, '--timeout', '120000',
         '--', '--permission-mode', $PermissionMode)
-    if ($Model) { $startArgs += @('--model', $Model) }
+    $laneModel = $LaneModels[$Name]
+    if ($Model) { $laneModel = $Model }
+    if ($laneModel) { $startArgs += @('--model', $laneModel) }
+    Write-Host "   starting '$Name' with model '$laneModel'"
     & herdr @startArgs | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Warning ("Agent '$Name' is not ready (often the folder-trust dialog). Answer it in workspace " +
