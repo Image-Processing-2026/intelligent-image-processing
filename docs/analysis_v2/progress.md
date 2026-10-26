@@ -13,6 +13,7 @@ Nhánh tích hợp `feat/analysis-v2`. Chưa push, chưa mở PR.
 | 2 | calib | P2 | `526884d` | đạt (MAE synthetic 0.14; FP already_good không tăng) | thêm xác nhận mờ chuyển động, chọn pixel trung tính lặp, D4. contract-changes 5 (`long_side`) chờ người dùng xác nhận; 6.3 giao `fusion`. Cần Person 1 review. |
 | 2 | agent | P4b + P5 | `d5dd271` (merge **sau** checkpoint, theo lệnh người dùng) | đạt | sửa ngoài phạm vi chấp nhận (contract-changes 7). Prompt rev 2 chỉnh trên chính bộ thật. N = 3 chưa cho lợi ích đo được (đề nghị xem lại D3 ở `fusion`). |
 | 3 | fusion | P6 + P7 | – | – | mở 2026-10-25 theo quyết định người dùng (sau checkpoint không đạt); brief mục 9–14 |
+| 4 | color | P2 bổ sung | – | – | mở 2026-10-26 (pane `wE:p1`), song song `fusion`; brief `agents/color.md`; không dùng hold-out |
 
 Sau mỗi merge: `ruff check src/ tests/` sạch; `pytest tests/unit/ -q`: 1173 → 1243 → 1267 → 1296
 passed (sau bench / measure / region / meta), 1301 (+ `benchmark_measurement`), 1344 (calib),
@@ -60,6 +61,46 @@ merge `agent` theo thứ tự người dùng đặt; **chưa mở wave 3**, ch�
    chấp nhận (mục 7).
 5. D3: `PERCEIVE_SAMPLES` mặc định 1, ghi đè bằng env `PERCEIVE_SAMPLES`; giữ code gộp; config
    benchmark `vlm_only_n3`. Fusion đánh giá `rejected` làm bằng chứng yếu, kết luận trên hold-out.
+
+## Review `fusion` trước merge (lead, 2026-10-26; chưa merge)
+
+Review tới `0c1a82f`. **Chưa merge**: FP ảnh sạch sau sàn mức 2 chưa đo (lần chạy r2 chờ quota
+Gemini). Merge ngay khi `status/fusion.md` kết thúc bằng `LANE DONE`.
+
+**Xung đột.** Thử merge (`git merge-tree`): chỉ `scripts/benchmark_analysis.py`; `contract-changes.md`
+tự gộp. Đã giải sẵn trên nhánh cục bộ `lead/fusion-merge-prep` (`77ca85d`, worktree tạm trong
+scratchpad), `ruff` sạch, `pytest tests/unit/` 1400 passed + 29 skipped (skip chỉ do worktree tạm thiếu
+ảnh mẫu `data/real/*.jpg`). Quy tắc giải:
+- `run_benchmark` dùng `load_cases(...)` của nhánh tích hợp: giữ chặn nhãn chưa duyệt và
+  `--reviewed-only`. Bản của fusion đọc hold-out trực tiếp, bỏ qua chặn này; không lấy.
+- `load_real_cases`: lấy bản fusion (đọc manifest một lần, nhận `image_dir` của manifest).
+- CLI: giữ nhóm loại trừ `--allow-unreviewed` / `--reviewed-only` và thêm `--vlm-cache`; đặt
+  `VLM_CACHE` trước kiểm tra key; điều kiện cần key giữ `dataset != "synthetic"` (tương đương).
+- Docstring: thêm ghi chú hold-out từ chối nhãn chưa duyệt.
+Khi merge thật: nếu fusion không sửa `scripts/benchmark_analysis.py` sau `0c1a82f` thì lấy file từ
+`lead/fusion-merge-prep`; nếu có sửa thì giải lại theo các quy tắc trên. Sau merge xóa nhánh và
+worktree tạm.
+
+**contract-changes mục 8: chấp nhận cả 6 điểm** (lead review; báo người dùng qua reporter):
+1. `graph.plan_treatment` gọi `apply_contraindications` sau preserve guard: đúng brief mục 5. Chỉ bỏ
+   action, không sắp xếp lại. `no_brighten` chặn `gamma > 1` toàn ảnh: đúng quy ước
+   `exposure_contrast` (gamma > 1 làm sáng).
+2. `retriever.match_cards` lấy mọi lỗi mức ≥ 1: cần cho card tư vấn. Đã kiểm: 4 card trong
+   `limits.yaml` đều `auto_apply: false`, không recipe, nên luật dự phòng không sinh action.
+3. `fusion_notes` ra khỏi prompt Plan: chấp nhận.
+4. `tests/conftest.py` tắt verify mặc định: chấp nhận. Test pipeline cũ vì vậy không đi qua verify;
+   verify chỉ được kiểm trong `test_agent_fusion.py`.
+5. `scripts/benchmark_analysis.py`: chấp nhận, với cách giải xung đột ở trên.
+6. Test lane khác sửa theo hành vi mới: chấp nhận. Test `_measured_defects` cũ bỏ vì hàm bỏ, bảng
+   fusion có test riêng mỗi dòng.
+Thay đổi hành vi (lỗi không sửa được → plan rỗng → SHIP; tác dụng phụ ≥ 2 → rollback ảnh thực;
+vòng ≥ 2 không gọi VLM khi mọi lỗi đo được; `DEFECT_TYPES` thêm 4 loại D2): chấp nhận, ghi vào
+`docs/interfaces.md` khi merge.
+
+**Còn mở, không chặn merge:** ngưỡng backlit của fusion (`BACKLIT_MIN_GAP_L = 20`, mốc L* mặt 60 /
+chủ thể 50) và ngưỡng tác dụng phụ P7 là prior, chưa hiệu chỉnh (Person 1 review). Số r1 của fusion
+đo trên chính 30 ảnh dev đã dùng để chỉnh (lạc quan). D3 (`fused_n3`, `fused_n3_weak`) chỉ kết luận
+trên hold-out.
 
 ## Bộ hold-out (2026-10-25)
 
