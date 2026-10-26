@@ -266,7 +266,7 @@
         ],
         "preserve": [],
         "empty_plan": false,
-        "ambiguous": true
+        "ambiguous": false
       },
       "note": "Cross-processed look (magenta/purple shadows, cyan sky), probably an intentional edit. Acceptable: a mild colour correction, or recognising it as a style and leaving it. Not acceptable: a strong warm shift."
     },
@@ -452,7 +452,7 @@
         ],
         "preserve": [],
         "empty_plan": false,
-        "ambiguous": false
+        "ambiguous": true
       },
       "note": "Indoor snapshot of a dog: dim, noisy, soft, strong blue cast from the carpet/light."
     },
