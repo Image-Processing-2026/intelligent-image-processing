@@ -121,7 +121,7 @@ class TestKnowledgeBaseValidation:
             ("{gamma: {2: 1.3, 3: 1.5}}", "{gamma: {2: 9.0}}", "outside"),
             ("{gamma: {2: 1.3, 3: 1.5}}", "{strength: 1.0}", "has no parameter"),
             ("{gamma: {2: 1.3, 3: 1.5}}", "{gamma: {5: 1.3}}", "severity keys"),
-            ("types: [underexposed]", "types: [haze]", "unknown defect types"),
+            ("types: [underexposed]", "types: [lens_flare]", "unknown defect types"),
         ],
     )
     def test_invalid_card_is_rejected_with_location(

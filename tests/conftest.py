@@ -57,6 +57,19 @@ def _single_perceive_sample(monkeypatch: pytest.MonkeyPatch):
     clear_subject_mask_cache()
 
 
+@pytest.fixture(autouse=True)
+def _no_verify_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Fusion (P6) gọi thêm Gemini verify khi bảng quyết định yêu cầu. Các test cũ mock đúng số
+    phản hồi Perceive/Plan, nên verify tắt mặc định; test fusion tự bật (VERIFY_ENABLED = True).
+    Bằng chứng yếu từ giả thuyết bị loại cũng tắt, kể cả khi máy đặt biến môi trường.
+    """
+    from src.agent import fusion, perception
+
+    monkeypatch.setattr(perception, "VERIFY_ENABLED", False)
+    monkeypatch.delenv(fusion.USE_WEAK_REJECTED_ENV, raising=False)
+
+
 @pytest.fixture
 def flat_gray_image() -> np.ndarray:
     """Ảnh RGB xám đồng nhất mức 128 — contrast=0, noise=0."""

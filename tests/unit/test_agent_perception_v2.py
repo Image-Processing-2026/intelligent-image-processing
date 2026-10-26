@@ -159,6 +159,8 @@ class TestMergeSamples:
         self, mock_genai: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(perception, "PERCEIVE_SAMPLES", 3)
+        # Kiểm tra bước gộp, không phải hợp nhất P6 (fusion có test riêng)
+        monkeypatch.setattr(perception, "FUSION_ENABLED", False)
         noise = {"type": "noise", "region": "full", "severity": 2}
         calls = _gemini(
             mock_genai,
@@ -182,6 +184,8 @@ class TestMergeSamples:
         self, mock_genai: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(perception, "PERCEIVE_SAMPLES", 3)
+        # Kiểm tra bước gộp, không phải hợp nhất P6 (fusion có test riêng)
+        monkeypatch.setattr(perception, "FUSION_ENABLED", False)
         noise = {"type": "noise", "region": "full", "severity": 2}
         _gemini(mock_genai, [_diagnosis(defects=[noise]), "không phải JSON", _diagnosis()])
         report = perceive(np.full((64, 64, 3), 128, dtype=np.uint8), {})

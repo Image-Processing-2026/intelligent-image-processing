@@ -112,3 +112,42 @@ thiểu. Không đổi chữ ký hiện có: mọi tham số mới đều tùy c
 - **Quyết định (lead đã review, người dùng duyệt, 2026-10-25): chấp nhận.** Mọi tham số mới tùy chọn, có default; plumbing đúng
   brief. `feather_radius` của action bị bỏ qua khi dùng resolver chung (mask C2 feather 15 px): chấp
   nhận, ghi cho `fusion`.
+
+## 8. [fusion] Sửa ngoài phạm vi lane và thay đổi hành vi (cần lead duyệt)
+
+Phạm vi lane `fusion` (`orchestration.md`): `fusion.py`, `measurement/diff.py`, `state.py`,
+`perception.py`, `planner.py`, `intent.py`, `graph.py` (`decide_node`), knowledge cards,
+`SYSTEM_PROMPT`. Ngoài danh sách đó:
+
+1. `src/agent/graph.py::plan_treatment` (không phải `decide_node`): gọi
+   `planner.apply_contraindications(plan, fusion.plan_contraindications(diagnosis))` sau preserve
+   guard (brief mục 5: planner đọc `contraindications`).
+2. `src/agent/knowledge/retriever.py::match_cards`: lấy mọi defect severity ≥ 1 thay cho
+   `actionable_defects`, vì `actionable_defects` giờ bỏ lỗi `fixable=False`; card của lỗi không sửa
+   được (`cards/limits.yaml`, chỉ tư vấn, không recipe) vẫn được truy xuất cho mục "Tránh".
+3. `src/agent/vlm_diagnostician.py`: ngoài `SYSTEM_PROMPT`, thêm `fusion_notes` vào
+   `_PLAN_DIAGNOSIS_EXCLUDE` (nhật ký hợp nhất không đưa vào prompt Plan).
+4. `tests/conftest.py`: fixture autouse `_no_verify_call` đặt `perception.VERIFY_ENABLED = False`
+   (test cũ mock đúng số phản hồi Perceive/Plan; verify là một lời gọi thêm) và xóa env
+   `FUSION_WEAK_REJECTED`. Test fusion tự bật lại verify.
+5. `scripts/benchmark_analysis.py` (lane `bench`): config `fused`, `fused_noverify`, `fused_n3`,
+   `fused_n3_weak`; `vlm_only` giờ tắt hợp nhất (`FUSION_ENABLED = False`); `--set holdout`
+   (`data/holdout_manifest.json`, cùng định dạng manifest thật, ảnh ở `image_dir` của manifest hoặc
+   `data/real/holdout`); `--vlm-cache DIR` (cache phản hồi Gemini theo băm yêu cầu, chạy lại không
+   gọi mạng); `results.json` ghi `ask_user`, `fusion_notes`, `gemini_cache_hits`.
+6. Test của lane khác sửa theo hành vi mới: `test_agent_knowledge.py` và `test_agent_perception.py`
+   dùng `lens_flare` làm loại lỗi không hợp lệ (`haze` giờ hợp lệ, D2); test `_measured_defects`
+   cũ bỏ (hàm đã bỏ, thay bằng bảng fusion, có test riêng); hai test backlit offline dùng ảnh
+   640 px (bản đồ đo tile 64 px không tách được chủ thể trên ảnh 100 px); hai test gộp
+   self-consistency tắt hợp nhất (`FUSION_ENABLED = False`) vì chỉ kiểm bước gộp.
+
+Thay đổi hành vi đáng chú ý (không đổi chữ ký):
+- `DiagnosisReport.actionable_defects` bỏ lỗi `fixable=False` (D2: không lập action). Ảnh chỉ có
+  lỗi không sửa được → plan rỗng → SHIP.
+- `decide_node`: tác dụng phụ severity ≥ 2 (P7) → suy thoái → rollback (chỉ ảnh thực).
+- Perceive vòng ≥ 2 không gọi VLM khi mọi lỗi đã xác nhận đều đo được (P7).
+- Trường mới có default: `DiagnosisReport.fusion_notes`, `DiagnosisReport.diff`,
+  `HistoryItem.side_effects`. `DEFECT_TYPES` thêm `motion_blur`, `jpeg_artifacts`, `haze`,
+  `highlight_clipping` (D2); lead cập nhật `docs/interfaces.md` (P8).
+- Brief mục 14: giữ việc executor bỏ `feather_radius` của action khi dùng resolver chung (mask dùng
+  chung cho đo và xử lý, C2 feather 15 px); không sửa.

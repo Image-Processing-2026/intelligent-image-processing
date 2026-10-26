@@ -13,13 +13,23 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, Field
 
+from .fusion import INTENTIONAL_ASPECT, VERIFY_PHRASES
 from .perception import _drop_preserved_defects
+from .regions import canonical_region
 from .state import Defect, DiagnosisReport, IntentProfile, PreserveItem
 
 MAX_QUESTIONS = 3
 # Số câu hỏi về chỗ mơ hồ tối đa (câu còn lại dành cho phong cách)
 MAX_AMBIGUITY_QUESTIONS = MAX_QUESTIONS - 1
 USER_DEFECT_SEVERITY = 2
+
+# Câu hỏi về chỗ mơ hồ đã được một câu ask_user (fusion) bao phủ thì không hỏi lại
+TOPIC_DEFECTS: Dict[str, Tuple[str, ...]] = {
+    "mood": ("underexposed", "backlit_subject"),
+    "warm": ("color_cast_warm",),
+    "grain": ("noise",),
+    "cool": ("color_cast_cool",),
+}
 
 # Sửa một loại lỗi nghĩa là bỏ các aspect cần giữ mâu thuẫn với nó
 FIX_CONFLICTS: Dict[str, Tuple[str, ...]] = {
@@ -132,6 +142,38 @@ def _grain_question(diagnosis: DiagnosisReport) -> Optional[Question]:
     )
 
 
+def _ask_user_questions(diagnosis: DiagnosisReport) -> List[Question]:
+    """
+    Câu hỏi từ DiagnosisReport.ask_user (fusion P6: lỗi nặng trên chủ thể nhưng VLM coi là chủ
+    ý): giữ như chủ ý hay sửa. Mặc định giữ (preserve thắng khi người dùng không trả lời).
+    """
+    questions: List[Question] = []
+    seen = set()
+    for defect in diagnosis.ask_user:
+        region = canonical_region(defect.region)
+        if (defect.type, region) in seen:
+            continue
+        seen.add((defect.type, region))
+        phenomenon = VERIFY_PHRASES.get(defect.type, (defect.type, "", ""))[0]
+        where = "Ảnh" if region == "full" else f"Vùng '{region}'"
+        aspect = INTENTIONAL_ASPECT.get(defect.type)
+        questions.append(
+            Question(
+                id=f"ask_{defect.type}_{region}",
+                text=(
+                    f"{where} {phenomenon} khá rõ (mức {defect.severity}/3), có thể là chủ ý. "
+                    "Bạn muốn giữ nguyên hay sửa?"
+                ),
+                choices=[
+                    Choice(value="keep", label="Giữ nguyên (chủ ý)", keep=aspect),
+                    Choice(value="fix", label="Sửa lỗi này", fix=defect.type),
+                ],
+                default="keep",
+            )
+        )
+    return questions
+
+
 def style_question() -> Question:
     """Câu hỏi phong cách, luôn được hỏi."""
     return Question(
@@ -147,18 +189,24 @@ def style_question() -> Question:
 def build_questions(diagnosis: Optional[DiagnosisReport]) -> List[Question]:
     """
     Câu hỏi cho một chẩn đoán: tối đa MAX_AMBIGUITY_QUESTIONS câu về chỗ mơ hồ (theo thứ tự
-    ưu tiên: không khí tối, tông ấm, hạt, tông lạnh), rồi câu phong cách. Tất định, nên sinh
-    lại khi resume cho đúng cùng câu hỏi.
+    ưu tiên: lỗi fusion cần hỏi (ask_user), không khí tối, tông ấm, hạt, tông lạnh), rồi câu
+    phong cách. Tất định, nên sinh lại khi resume cho đúng cùng câu hỏi.
     """
     ambiguities: List[Question] = []
     if diagnosis is not None:
+        ambiguities = _ask_user_questions(diagnosis)
+        asked = {defect.type for defect in diagnosis.ask_user}
         candidates = (
             _mood_question(diagnosis),
             _tone_question(diagnosis, warm=True),
             _grain_question(diagnosis),
             _tone_question(diagnosis, warm=False),
         )
-        ambiguities = [question for question in candidates if question is not None]
+        ambiguities += [
+            question
+            for question in candidates
+            if question is not None and not asked & set(TOPIC_DEFECTS.get(question.id, ()))
+        ]
     return [*ambiguities[:MAX_AMBIGUITY_QUESTIONS], style_question()]
 
 
@@ -254,6 +302,14 @@ def apply_intent(diagnosis: DiagnosisReport, intent: Optional[IntentProfile]) ->
     defects = [defect.model_copy() for defect in diagnosis.defects]
     for fix in intent.fix:
         matching = [defect for defect in defects if defect.type == fix]
+        if not matching:
+            # Lỗi fusion đã hỏi người dùng (ask_user): sửa đúng vùng và mức đã chẩn đoán
+            matching = [
+                defect.model_copy(update={"origin": "user"})
+                for defect in diagnosis.ask_user
+                if defect.type == fix
+            ]
+            defects += matching
         for defect in matching:
             defect.severity = max(defect.severity, USER_DEFECT_SEVERITY)
         if not matching:
