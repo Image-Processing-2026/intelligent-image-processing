@@ -31,6 +31,7 @@ passed (sau bench / measure / region / meta), 1301 (+ `benchmark_measurement`), 
 | real, lane agent (prompt chỉnh trên bộ này) | vlm_only v2 | 0.47 (7/15) | 0.00 (0/13) | 1.14 | `status/agent.md` |
 | real, lane fusion (dev, chỉnh trên bộ này) | fused r3 | 0.47 (7/15) | 0.08 (1/13) | 1.00 | `status/fusion.md` |
 | real, lane color | measure_only | 0.40 (6/15) | 0.77 (10/13) | 0.67 | `status/color.md` |
+| **hold-out** (20 ảnh đã duyệt, 11 sạch/không sửa) | fused (`3c5af72`+`6f40eb1`) | **0.18 (2/11)** | **0.09 (1/11)** | 1.00 (2 cặp) | mục "Chấm hold-out" |
 
 Mục tiêu cuối: FP ≤ 0.10, recall ≥ 0.85, MAE ≤ 0.6.
 
@@ -167,6 +168,42 @@ dev; nếu người dùng duyệt lại, ghi `reviewed_by` trong manifest dev.
    thành kết quả verify, nên không thể thêm FP: FP ảnh sạch dự kiến giữ 1/13 (chưa chạy lại, cần
    Gemini). Ghi nhận (không chỉnh): ở r3 VLM giữ `warm_tone` trên `color_cast_03`, nên sau merge
    color, giả thuyết đo warm 3 sẽ bị preserve chặn; ảnh này vẫn có thể là FN.
+
+## Chấm hold-out (lead, 2026-10-26, theo lệnh người dùng)
+
+`python scripts/benchmark_analysis.py --set holdout --config fused --reviewed-only --vlm-cache
+data/real/vlm_cache_holdout --out data/real/benchmark_results/holdout-fused` (HEAD `6b7ac00`).
+20/20 ảnh `source=vlm`, `gemini-3.5-flash-lite` (cùng model với dev r3), 30 lời gọi, không 429,
+không fallback. Chỉ chạy `fused`; `fused_n3*` (D3) chưa chạy.
+
+| | dev r3 (chỉnh trên bộ này) | **hold-out** | mục tiêu |
+|---|---|---|---|
+| FP ảnh sạch | 1/13 (0.08) | **1/11 (0.09)** | ≤ 0.10 — đạt |
+| Recall | 7/15 (0.47) | **2/11 (0.18)** | ≥ 0.85 — không đạt |
+| MAE severity | 1.00 | 1.00 (2 cặp) | ≤ 0.6 — không đạt |
+| Precision | 0.70 | 0.33 (2/6) | |
+| Preserve recall | 0.67 | 1.00 (7/7) | |
+
+Đúng: `noisy_01` noise 2 (khớp mức), `blur_01` blur (đo 1, nhãn 3).
+FP ảnh sạch duy nhất: `cast_01` (ca không sửa) underexposed@road 2 (VLM 2 + đo 3 đồng ý).
+FP trên ảnh có lỗi: `blur_01` backlit_subject@full 3 (VLM, không đo được), `blur_02` overexposed@cat
+2 và highlight_clipping@cat 3 (lấy nét sau mèo bị đọc thành cháy sáng).
+
+**9 lỗi bỏ sót, theo nguyên nhân** (chỉ ghi nhận, không chỉnh trên hold-out):
+1. **Preserve chặn lỗi đo được (3/9):** VLM gán ý đồ, preserve thắng số đo. `backlit_02` (đo
+   backlit 2) → `silhouette`; `backlit_03` (đo 3) → `silhouette` + `ask_user`; `multi_01` (đo
+   underexposed 3) → `low_key`. Bảng fusion cho preserve thắng mọi nguồn, không hỏi verify.
+2. **Ám màu đọc thành phong cách (1/9):** `cast_02` (cool 2): đo không ra mức ≥ 1, VLM gán
+   `cool_tone`.
+3. **Nhiễu/mờ nhẹ không thành giả thuyết (5/9):** noise ở `noisy_02`, `multi_01`, `multi_02`; blur ở
+   `multi_02` và `blur_02` (vùng mèo). Số đo dưới mức 1 (hoặc không đo vùng `cats`), VLM không nhắc.
+   Trùng kết luận dev: thang hiệu chỉnh synthetic lệch so với nhãn thật mức 1. Ba ảnh này VLM cũng
+   gán `low_key`.
+4. `ask_user` (`backlit_03`) bị chấm là bỏ sót; trong phiên tương tác ảnh này sẽ hỏi người dùng.
+
+Nhận xét: FP ảnh sạch giữ được ngoài bộ dev, nhưng recall tụt 0.47 → 0.18: số dev lạc quan (prompt
+rev 2 chỉnh trên dev), và hệ thống nghiêng hẳn về "giữ nguyên". Mọi thay đổi tiếp theo phải chỉnh
+trên dev/synthetic; hold-out này đã dùng, lần chấm sau trên nó không còn là đánh giá độc lập.
 
 ## Bộ hold-out (2026-10-25)
 
