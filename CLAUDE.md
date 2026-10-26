@@ -36,8 +36,8 @@ Run from the repo root. `pythonpath = ["."]` means every import uses the `src.` 
 
 | Module | Owner | Role |
 |---|---|---|
-| `src/analyzer_evaluator/` | Person 1 | `analyze_image()` → `TechnicalMetrics`; dual-path evaluation |
-| `src/region_engine/` | Person 2 | Soft masks: `segment_by_prompt`, `detect_faces` (MediaPipe), spatial/quadrant masks, `blend_regions` |
+| `src/analyzer_evaluator/` | Person 1 | `analyze_image()` → `TechnicalMetrics`; local measurement + severity calibration (`measurement/`); EXIF priors (`metadata.py`); dual-path evaluation |
+| `src/region_engine/` | Person 2 | Soft masks: `resolve_subject_mask` (subject masks), `segment_by_prompt`, `detect_faces` (MediaPipe), spatial/quadrant masks, `blend_regions` |
 | `src/processing_engine/` | Person 3 | Classical ops: denoise, gamma, CLAHE, sharpen, color balance |
 | `src/agent/` + `src/api/` | Person 4 | LangGraph loop, VLM diagnosis, plan validation, executor, FastAPI |
 | `src/extensions/` | — | **DEFERRED** (deblur, inpaint, super-res). Never import it into MVP code. Ruff excludes it. |
@@ -54,7 +54,8 @@ analyze → perceive → clarify → diagnose_and_plan → process → evaluate 
    └──────────────────────────── RE_PROCESS ──────────────────────────┘   (max_iterations, default 3)
 ```
 
-- `perceive` (`perception.perceive`) is stage 1. It produces a `DiagnosisReport` (scene, `defects` with severity 0–3, `preserve` = intentional style), measures each subject region through `executor.resolve_region_mask`, adds `measured` defects (for example a backlit face), and drops defects that conflict with `preserve`.
+- `analyze` calls `analyze_image()`. Its `*_level` fields and `defect_severity` come from the calibrated measurement (Analysis v2 D4): `measurement.measure_image()` measures per 64 px tile (exposure L\*/clipping, Liu σ noise, defocus σ/edge width/motion, neutral-pixel illuminant, blockiness, dark channel), and `measurement.calibration.severity_from_measurement()` maps a measurement to severity 0–3 using thresholds fitted on the synthetic set (`calibration.yaml`, `calibration_version()`). Never add hand-tuned thresholds elsewhere; refit with `scripts/calibrate_severity.py`.
+- `perceive` (`perception.perceive`, Perceive v2) is stage 1. It measures the image, sends Gemini the full frame plus up to 6 evidence crops at 100 % (`evidence.select_evidence`), overlays, the measurement summary and EXIF priors (`metadata_priors`), and gets a `DiagnosisReport` (scene, subjects with `box_2d`, `defects` with severity 0–3, `preserve` = intentional style). It drops defects that conflict with `preserve`, builds subject masks with `region_engine.resolve_subject_mask` (the same masks the executor uses later, cached by `cache_key`), stores per-region `region_stats` (`measurement.aggregate`) and `region_metrics`, and adds `measured` defects. `PERCEIVE_SAMPLES` (default 1, env `PERCEIVE_SAMPLES`) Gemini samples are merged by self-consistency; hypotheses below quorum go to `rejected`.
 - `diagnose_and_plan` calls `graph.plan_treatment()` (stage 2). If no defect has severity ≥ 1, it returns an empty plan without calling the VLM. Otherwise it runs `diagnose_and_plan()` → `validate_and_sort_plan()` → `planner.apply_preserve_guard()`, which deterministically neutralises or drops actions that break `preserve`.
 - `process` calls `executor.execute_plan()`. It builds a mask with the region engine and then dispatches to processing-engine functions.
 - `evaluate_node` does its own ADR-002 routing: reference eval only when `is_synthetic` and a ground truth exists. It must store `eval_metrics.model_dump()` (a plain dict), never the Pydantic model. The model breaks `HistoryItem` and the JSON API response.
@@ -70,6 +71,7 @@ analyze → perceive → clarify → diagnose_and_plan → process → evaluate 
 - Knowledge Base (`src/agent/knowledge/`, see its `README.md`): YAML playbook cards (symptoms → recipe using the 5 tools → contraindications) and markdown principles. Retrieval is structured filtering plus BM25, with no embeddings. `format_context()` injects the matched cards into the Plan prompt, with parameters already resolved for the case's severity. `TreatmentPlan.knowledge` records the ids used.
 - No `GEMINI_API_KEY` → rule-based plan (`TreatmentPlan.source == "rule_based"`), produced by the KB rule engine from the `auto_apply` cards. All tests depend on this offline path, so keep it working.
 - Key set but the call, parse or validation fails → the same rule-based plan with `source == "vlm_fallback"`. Only a valid VLM response with `actions: []` yields an empty plan (= `SHIP`).
+- Perceive uses its own `PERCEIVE_PROMPT` and schema (`perception.py`). Subject boxes are `box_2d` in Gemini's convention (ymin, xmin, ymax, xmax) on 0..1000. They are kept in `DiagnosisReport.subject_boxes` and never sent to the Plan prompt. `PERCEIVE_FULL_FRAME_MAX_SIDE` optionally downscales the full frame; crops stay at 100 %.
 - `.env` is saved with a BOM, so `load_dotenv()` misses `GEMINI_API_KEY`; scripts read it with `encoding="utf-8-sig"`.
 - `SYSTEM_PROMPT` is in Vietnamese and lists the toolbox and parameter ranges. Keep it in sync with `planner.py` (gamma hallucination was a past bug).
 - Mock Gemini in tests with `patch.dict("os.environ", {"GEMINI_API_KEY": "fake-..."})` plus patching `src.agent.vlm_diagnostician.genai` and setting `mock_genai.Client.return_value.models`. Both stages call Gemini through `call_gemini_json`, so a pipeline test needs perceive and plan responses (`_route_gemini` in `tests/unit/test_vlm_mock.py` routes them by schema). See `tests/unit/test_vlm_mock.py`). Never hit the real API in unit tests.
@@ -91,7 +93,7 @@ analyze → perceive → clarify → diagnose_and_plan → process → evaluate 
 
 **Executor swallows errors:** each action runs in its own `try/except` that logs a warning and skips the action. A broken operation will not fail the pipeline. Assert on output or logs in tests, not on exceptions.
 
-**Region engine is heuristic for now:** `segment_by_prompt` maps keywords (sky/ground/center/full, plus Vietnamese equivalents) to quadrant masks. Any other prompt returns a full-image mask. GroundingDINO/MobileSAM is a TODO. `target_prompt` values `face`/`khuôn mặt` go to MediaPipe. A face action with no detected face is skipped.
+**Subject masks:** `resolve_subject_mask(image, name, box_2d)` chains face → MediaPipe; with the models (`REGION_DINO_MODEL_PATH`, `REGION_MOBILE_SAM_CHECKPOINT`, see `scripts/fetch_segmentation_models.py`) → GroundingDINO matched to the Gemini box → MobileSAM; without models → GrabCut on the Gemini box; no box → best DINO detection (confidence ≤ 0.5) → quadrant keyword → full. `subject_capabilities()` reports what is available without loading models. The executor uses this resolver for semantic regions that have a Perceive `box_2d` (`DiagnosisReport.subject_boxes`); other regions go through the controller (face/full/quadrant keywords, including Vietnamese, and semantic prompts). `target_prompt` values `face`/`khuôn mặt` go to MediaPipe. A face action with no detected face is skipped.
 
 **Dual-path evaluation (ADR-002):** PSNR/SSIM/MSE (`evaluate_reference`) only for synthetic images with ground truth. Real images use `evaluate_no_reference` (heuristic score + optional `pyiqa` BRISQUE/NIQE + deltas vs. the previous iteration). `analyzer_evaluator.evaluate_quality()` is the unified router. `graph.evaluate_node` duplicates that routing, so keep both consistent.
 
