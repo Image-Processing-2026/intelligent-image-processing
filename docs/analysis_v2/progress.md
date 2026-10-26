@@ -126,7 +126,8 @@ cùng nối cuối), giữ cả hai. `ruff` sạch, `pytest tests/unit/` 1439 pa
 **contract-changes 9 (key `illuminant_method`, `illuminant_gate_chroma`): chấp nhận**, đã ghi vào
 §C1 của `contracts.md`.
 
-**Đề xuất "ám màu có `illuminant_method ≥ 1` đi verify": chấp nhận về nguyên tắc, chưa làm.**
+**Đề xuất "ám màu có `illuminant_method ≥ 1` đi verify": người dùng duyệt làm trước hold-out; lead
+đã làm (xem "Sau merge" bên dưới).** Phân tích ban đầu:
 Bảng fusion hiện tại:
 - Số đo báo ám mà VLM không nhắc → đã luôn đi verify (mọi `illuminant_method`). Không cần đổi.
 - Không có VLM (luật dự phòng) → cần confidence ≥ 0.5; đường 1 (color_cast_03: 0.375) và đường 2
@@ -148,6 +149,24 @@ Bảng fusion hiện tại:
 ln(b/r) −0.08, hơi ấm) và `color_cast_02` (ambiguous, cool 1, đo −0.29, hơi ấm). Cả hai nằm giữa
 phân bố ảnh sạch (±0.4). Đổi nhãn không đổi ngưỡng (mức 1 vốn không tách được) mà chỉ đổi recall
 dev; nếu người dùng duyệt lại, ghi `reviewed_by` trong manifest dev.
+
+## Sau merge (lead, 2026-10-26, trước hold-out)
+
+1. **Nhãn dev (`0f228fb`, người dùng duyệt):** `color_cast_02` ambiguous true → false (ám lạnh mức 1
+   xác nhận); `multi_defect_01` ambiguous false → true (không chắc). Không đổi defects. Lưu ý:
+   ambiguous bỏ chấm cả ảnh, nên 3 lỗi khác của `multi_defect_01` (underexposed, noise, blur) cũng
+   ra khỏi phép chấm dev; số dương tính dev thay đổi, số cũ không so thẳng được.
+2. **Fusion, ám màu kém tin cậy:** `Measured.low_trust` = ám màu đo bằng đường dự phòng
+   (`color.illuminant_method` ≥ 1, chỉ báo cáo toàn ảnh). VLM báo ám + số đo đó ≥ 1 → verify
+   (defect → confirmed, severity theo VLM; intentional → preserved; texture/not_present → rejected;
+   verify lỗi → giữ lời VLM, confidence × 0.5). Đường chuẩn giữ dòng 1. 4 test offline mới trong
+   `test_agent_fusion.py`. `ruff` sạch, `pytest tests/unit/` 1444 passed.
+   Tác động trên dev (offline, không gọi Gemini): chỉ 2 ảnh đi đường dự phòng: `color_cast_03`
+   (warm 3) và `intentional_style_08` (cool 1, ảnh sạch). Ở `fusion-r3-fused` VLM không báo ám màu
+   trên cả hai, nên với cùng phản hồi VLM nhánh mới không chạy. Luật chỉ đổi "confirmed thẳng"
+   thành kết quả verify, nên không thể thêm FP: FP ảnh sạch dự kiến giữ 1/13 (chưa chạy lại, cần
+   Gemini). Ghi nhận (không chỉnh): ở r3 VLM giữ `warm_tone` trên `color_cast_03`, nên sau merge
+   color, giả thuyết đo warm 3 sẽ bị preserve chặn; ảnh này vẫn có thể là FN.
 
 ## Bộ hold-out (2026-10-25)
 
