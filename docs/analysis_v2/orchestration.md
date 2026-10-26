@@ -15,7 +15,8 @@ develop
        ├─ feat/analysis-v2-meta       ┘
        ├─ feat/analysis-v2-calib      ┐ wave 2 (sau khi measure + bench đã merge)
        ├─ feat/analysis-v2-agent      ┘
-       └─ feat/analysis-v2-fusion       wave 3 (sau khi agent + calib đã merge)
+       ├─ feat/analysis-v2-fusion       wave 3 (sau khi agent + calib đã merge)
+       └─ feat/analysis-v2-color        wave 4 (song song fusion; đo ám màu ảnh thật)
 ```
 
 Mỗi lane có worktree riêng ở `..\iip-wt\<lane>` (cạnh repo chính), một pane Herdr chạy Claude Code.
@@ -31,6 +32,7 @@ Mỗi lane có worktree riêng ở `..\iip-wt\<lane>` (cạnh repo chính), mộ
 | 2 | `calib` | P2 | `measurement/calibration.py`, `calibration.yaml`, `scripts/calibrate_severity.py`, ngưỡng trong `analyzer.py`, `knowledge/engine.py` (chỉ chỗ đọc ngưỡng), phần motion của `measurement/sharpness.py`, chọn pixel trung tính trong `measurement/color.py` | bench (bộ synthetic), measure |
 | 2 | `agent` | P4b + P5 | `src/agent/perception.py`, `state.py`, `vlm_diagnostician.py`, `executor.py` (resolve mask), `src/agent/evidence.py`, `session.py` + route `create_session` (metadata), test tương ứng | measure, region, meta |
 | 3 | `fusion` | P6 + P7 | `src/agent/fusion.py`, `measurement/diff.py`, `state.py`, `perception.py`, `planner.py`, `intent.py`, `graph.py` (`decide_node`), knowledge cards, `SYSTEM_PROMPT` | agent, calib |
+| 4 | `color` | P2 bổ sung | `measurement/color.py`, `measurement/calibration.py` (`_score_cast_*`, `_illuminant`), `calibration.yaml` (mục `color_cast_*`), `scripts/calibrate_severity.py`, `scripts/build_calibration_set.py` (chỉ thêm mức ám), test tương ứng. Không dùng hold-out | calib |
 | cuối | lead | P8 | ADR-005, `docs/interfaces.md`, `CLAUDE.md` | tất cả |
 
 Lane cần đổi file ngoài phạm vi: ghi vào `docs/analysis_v2/contract-changes.md` và báo lead,

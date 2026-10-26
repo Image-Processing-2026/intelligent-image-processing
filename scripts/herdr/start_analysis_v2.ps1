@@ -13,7 +13,7 @@
 #>
 [CmdletBinding()]
 param(
-    # Mặc định = wave 1. Wave 2: calib, agent. Wave 3: fusion.
+    # Mặc định = wave 1. Wave 2: calib, agent. Wave 3: fusion. Wave 4: color.
     [string[]]$Lanes = @('bench', 'measure', 'region', 'meta'),
     [switch]$NoLead,
     # Chỉ gửi lại prompt khởi động (khi agent kẹt ở hộp thoại trust lúc khởi động)
@@ -27,10 +27,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$KnownLanes = @('bench', 'measure', 'region', 'meta', 'calib', 'agent', 'fusion')
+$KnownLanes = @('bench', 'measure', 'region', 'meta', 'calib', 'agent', 'fusion', 'color')
 # Model theo lane: ~/.claude/settings.json có thể đặt haiku làm mặc định. -Model ghi đè cho mọi lane.
 $LaneModels = @{
-    lead = 'opus'; measure = 'opus'; region = 'opus'; calib = 'opus'; agent = 'opus'; fusion = 'opus'
+    lead = 'opus'; measure = 'opus'; region = 'opus'; calib = 'opus'; agent = 'opus'; fusion = 'opus'; color = 'opus'
     bench = 'sonnet'; meta = 'sonnet'
 }
 
@@ -91,7 +91,8 @@ function Copy-LocalAssets([string]$Path) {
         foreach ($rel in $relPaths) {
             $src = Join-Path $MainRepo $rel
             if (Test-Path $src) {
-                & robocopy $src (Join-Path $Path $rel) /E /XC /XN /XO /NFL /NDL /NJH /NJS /NP | Out-Null
+                # Bộ hold-out không bao giờ được chép sang lane (chỉ lead chấm trên đó)
+                & robocopy $src (Join-Path $Path $rel) /E /XC /XN /XO /XD holdout /NFL /NDL /NJH /NJS /NP | Out-Null
                 if ($LASTEXITCODE -ge 8) { throw "robocopy failed for $rel" }
             }
         }
