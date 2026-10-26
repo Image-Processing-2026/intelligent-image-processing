@@ -12,12 +12,12 @@ Nhánh tích hợp `feat/analysis-v2`. Chưa push, chưa mở PR.
 | 1 | meta | P3 | `a908bc0` | đạt | phiên tương tác → lane `agent`; Gradio hoãn |
 | 2 | calib | P2 | `526884d` | đạt (MAE synthetic 0.14; FP already_good không tăng) | thêm xác nhận mờ chuyển động, chọn pixel trung tính lặp, D4. contract-changes 5 (`long_side`) chờ người dùng xác nhận; 6.3 giao `fusion`. Cần Person 1 review. |
 | 2 | agent | P4b + P5 | `d5dd271` (merge **sau** checkpoint, theo lệnh người dùng) | đạt | sửa ngoài phạm vi chấp nhận (contract-changes 7). Prompt rev 2 chỉnh trên chính bộ thật. N = 3 chưa cho lợi ích đo được (đề nghị xem lại D3 ở `fusion`). |
-| 3 | fusion | P6 + P7 | – | – | mở 2026-10-25 theo quyết định người dùng (sau checkpoint không đạt); brief mục 9–14 |
-| 4 | color | P2 bổ sung | – | – | mở 2026-10-26 (pane `wE:p1`), song song `fusion`; brief `agents/color.md`; không dùng hold-out |
+| 3 | fusion | P6 + P7 | `a20d674` (+ doc `c372ef8`) | một phần: FP sạch đạt (1/13, r3); recall 0.47, MAE 1.00 chưa đạt | mở 2026-10-25 theo quyết định người dùng; brief mục 9–14; contract-changes 8 chấp nhận; xung đột `benchmark_analysis.py` giải sẵn (`lead/fusion-merge-prep`). Ngưỡng backlit/P7 cần Person 1 review. |
+| 4 | color | P2 bổ sung | `1cc70fd` | đạt (color_cast_03 warm 3; FP ám màu sạch 4 → 4; hoàng hôn không thành cool) | mở 2026-10-26 (pane `wE:p1`); không dùng hold-out, 0 lời gọi Gemini; contract-changes 9 chấp nhận, key ghi vào §C1; ngưỡng giữ (mức 1 không tách được). Cần Person 1 review `measurement/color.py`. |
 
 Sau mỗi merge: `ruff check src/ tests/` sạch; `pytest tests/unit/ -q`: 1173 → 1243 → 1267 → 1296
 passed (sau bench / measure / region / meta), 1301 (+ `benchmark_measurement`), 1344 (calib),
-1381 (agent).
+1381 (agent), 1429 (fusion), 1439 (color; coverage `analyzer_evaluator` 97.6 %).
 
 ## Số đo
 
@@ -29,7 +29,8 @@ passed (sau bench / measure / region / meta), 1301 (+ `benchmark_measurement`), 
 | real, sau calib | measure_only | 0.33 (5/15) | 0.77 (10/13) | 0.80 | `checkpoint_calib.md` |
 | synthetic, sau calib | measure_only | 0.64 | 0.05 (1/20) | 0.14 | `checkpoint_calib.md` |
 | real, lane agent (prompt chỉnh trên bộ này) | vlm_only v2 | 0.47 (7/15) | 0.00 (0/13) | 1.14 | `status/agent.md` |
-| real | fused | – | – | – | chờ `fusion` |
+| real, lane fusion (dev, chỉnh trên bộ này) | fused r3 | 0.47 (7/15) | 0.08 (1/13) | 1.00 | `status/fusion.md` |
+| real, lane color | measure_only | 0.40 (6/15) | 0.77 (10/13) | 0.67 | `status/color.md` |
 
 Mục tiêu cuối: FP ≤ 0.10, recall ≥ 0.85, MAE ≤ 0.6.
 
@@ -62,7 +63,7 @@ merge `agent` theo thứ tự người dùng đặt; **chưa mở wave 3**, ch�
 5. D3: `PERCEIVE_SAMPLES` mặc định 1, ghi đè bằng env `PERCEIVE_SAMPLES`; giữ code gộp; config
    benchmark `vlm_only_n3`. Fusion đánh giá `rejected` làm bằng chứng yếu, kết luận trên hold-out.
 
-## Review `fusion` trước merge (lead, 2026-10-26; chưa merge)
+## Review `fusion` trước merge (lead, 2026-10-26; đã merge `a20d674`)
 
 Review tới `0c1a82f`. **Chưa merge**: FP ảnh sạch sau sàn mức 2 chưa đo (lần chạy r2 chờ quota
 Gemini). Merge ngay khi `status/fusion.md` kết thúc bằng `LANE DONE`.
@@ -107,6 +108,47 @@ chủ thể 50) và ngưỡng tác dụng phụ P7 là prior, chưa hiệu chỉ
 đo trên chính 30 ảnh dev đã dùng để chỉnh (lạc quan). D3 (`fused_n3`, `fused_n3_weak`) chỉ kết luận
 trên hold-out.
 
+**Merge (2026-10-26).** Fusion chỉ thêm `f66e75f` (status, r3) sau `0c1a82f`, không sửa
+`scripts/benchmark_analysis.py` → lấy file từ `lead/fusion-merge-prep`; cây merge khớp `08450b2`
+ngoài `progress.md` và `status/fusion.md`. Doc fusion cherry-pick thành `c372ef8`. `ruff` sạch,
+`pytest tests/unit/` 1429 passed.
+
+## Merge `color` (lead, 2026-10-26, `1cc70fd`)
+
+Review theo brief: không đọc hold-out, 0 lời gọi Gemini; chỉ 6 ảnh đổi kết quả đo (từ "không ước
+lượng" sang có ước lượng), không thêm FP ám màu; FP ám màu ảnh sạch 4/13 trước và sau (is_01, is_05,
+is_08, is_09, đều có từ trước); hai hoàng hôn vẫn ấm, không cool. `calibration.yaml` → `p2-20261026`:
+mọi ngưỡng giữ, chỉ đổi số khớp (warm reliability 0.49 → 0.64, cool 0.16 → 0.09 vì biến thể cỏ giờ
+có ước lượng). Ca dò 5000 K / 7000 K không vào khớp. Xung đột: chỉ `contract-changes.md` (mục 8 và 9
+cùng nối cuối), giữ cả hai. `ruff` sạch, `pytest tests/unit/` 1439 passed, coverage
+`analyzer_evaluator` 97.6 %.
+
+**contract-changes 9 (key `illuminant_method`, `illuminant_gate_chroma`): chấp nhận**, đã ghi vào
+§C1 của `contracts.md`.
+
+**Đề xuất "ám màu có `illuminant_method ≥ 1` đi verify": chấp nhận về nguyên tắc, chưa làm.**
+Bảng fusion hiện tại:
+- Số đo báo ám mà VLM không nhắc → đã luôn đi verify (mọi `illuminant_method`). Không cần đổi.
+- Không có VLM (luật dự phòng) → cần confidence ≥ 0.5; đường 1 (color_cast_03: 0.375) và đường 2
+  (≤ 0.2) bị loại. An toàn, không cần đổi.
+- Chỗ hở duy nhất: VLM báo ám **và** số đo đường dự phòng ≥ 1 → "vlm + measured agree", xác nhận
+  thẳng, severity lấy từ số đo (VLM ±1). Với ước lượng kém tin cậy thì nên hỏi verify (câu hỏi thêm
+  vào lời gọi verify sẵn có của ảnh) hoặc để severity theo VLM.
+- Cần: fusion đọc `illuminant_method` từ `MeasurementReport.color` (không có trong `RegionStats`, nên
+  chỉ dùng được cho vùng `full`), một test offline. Phạm vi `fusion.py`, nhỏ.
+- **Thời điểm:** phải quyết trước khi chấm hold-out (đổi luật sau khi xem hold-out là chỉnh trên
+  hold-out). Trên dev chỉ một ảnh đi đường dự phòng (color_cast_03), nên không đo được lợi ích; đây
+  là luật an toàn, không phải luật chỉnh số. Chờ người dùng chọn: làm trước hold-out, hay đóng băng
+  như hiện tại.
+
+**Person 1 review** `src/analyzer_evaluator/measurement/color.py` (đường dự phòng, hằng
+`RELAXED_GATES`, `ALL_PIXELS_CONFIDENCE` là prior chưa hiệu chỉnh) cùng P1/P2.
+
+**Nhãn ám màu dev cần người dùng xem lại** (không chặn, không tự sửa): `multi_defect_01` (cool 1, đo
+ln(b/r) −0.08, hơi ấm) và `color_cast_02` (ambiguous, cool 1, đo −0.29, hơi ấm). Cả hai nằm giữa
+phân bố ảnh sạch (±0.4). Đổi nhãn không đổi ngưỡng (mức 1 vốn không tách được) mà chỉ đổi recall
+dev; nếu người dùng duyệt lại, ghi `reviewed_by` trong manifest dev.
+
 ## Bộ hold-out (2026-10-25)
 
 19 ảnh Commons mới (`data/holdout_manifest.json`, hướng dẫn `holdout.md`): already_good 3,
@@ -125,11 +167,10 @@ không sửa (`holdout_backlit_01`): vẫn là mẫu mỏng. Chưa chạy config
 - Gradio (`frontend/app.py`) chưa nhận metadata: `gr.Image(type="numpy")` bỏ bytes file. Không
   đổi sang `type="filepath"` lúc này (người dùng quyết định, 2026-10-25).
 - `measure`: zone histogram 11 vùng, vị trí blob cháy, Tenengrad (xem `measurement_synthetic.md`).
-- Lane đề xuất `colorcast` (chưa mở, chờ reporter và người dùng): color_cast_03 không có pixel trung
-  tính (C* < 12) nên không đo được; ám màu nhẹ (color_cast_01, multi_defect_01) là lệch thang
-  hiệu chỉnh trên ảnh thật (ngưỡng cool mức 1 ln(b/r) ≥ 0.49 khớp từ 5 ảnh synthetic).
+- Ám màu mức 1 không đo được bằng ngưỡng nguồn sáng tuyệt đối (lane `color`): chỉ đo tương đối
+  (vòng ≥ 2 qua `measurement/diff.py`, hoặc chủ thể so với nền). Để VLM + verify.
 
 ## Review cần người
 
-- P1/P2 (`measure`, `calib`): Person 1.
+- P1/P2 (`measure`, `calib`, `color`): Person 1; kèm ngưỡng backlit và tác dụng phụ P7 của `fusion`.
 - P4a (`region`): Person 2.

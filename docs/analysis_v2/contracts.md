@@ -73,7 +73,7 @@ def aggregate(result: MeasurementResult, mask: np.ndarray, region: str = "full")
 | exposure | `mean_l` (L\* 0–100), `p5_l`, `p95_l`, `clip_high_any`, `clip_high_all`, `clip_low_any`, `clip_low_all` (tỉ lệ 0–1), `largest_clip_blob` (tỉ lệ diện tích), `key` (log-mean luminance) | |
 | noise | `sigma_luma`, `sigma_cb`, `sigma_cr` (đơn vị mức 0–255), `sigma_dark_ratio` (σ bin tối / σ bin sáng), `immerkaer` | Liu 2013 |
 | sharpness | `edge_width_px`, `edge_width_norm` (chuẩn hóa cạnh dài 1000 px), `defocus_sigma`, `motion_coherence` (0–1), `motion_angle_deg`, `laplacian_var` | |
-| color | `illuminant_angle_deg` (lệch so trung tính), `illuminant_r`, `illuminant_g`, `illuminant_b` (chromaticity, tổng = 1), `algorithm_spread_deg`, `chroma_p50`, `chroma_p95` (C\*), `neutral_fraction` | |
+| color | `illuminant_angle_deg` (lệch so trung tính), `illuminant_r`, `illuminant_g`, `illuminant_b` (chromaticity, tổng = 1), `algorithm_spread_deg`, `chroma_p50`, `chroma_p95` (C\*), `neutral_fraction`, `illuminant_method` (0 = pixel trung tính C\* < 12, 1 = cổng C\* nới 18/24/30, 2 = mọi pixel không cháy), `illuminant_gate_chroma` (cổng đã dùng; chỉ đường 0, 1) | đường dự phòng hạ confidence `illuminant_*` (× 12/cổng, × 0.2); thêm bởi lane `color` (contract-changes 9) |
 | compression | `blockiness` | |
 | haze | `dark_channel_median` | |
 
