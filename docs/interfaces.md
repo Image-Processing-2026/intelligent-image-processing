@@ -62,7 +62,9 @@ class Evidence(BaseModel):             # Analysis v2: one structured piece of ev
 class Defect(BaseModel):
     type: Literal[DEFECT_TYPES]        # underexposed, overexposed, backlit_subject, low_contrast,
                                        # noise, blur, color_cast_{warm,cool,green},
-                                       # oversaturated, undersaturated
+                                       # oversaturated, undersaturated; not fixable by the toolbox
+                                       # (D2, fixable=False): motion_blur, jpeg_artifacts, haze,
+                                       # highlight_clipping
     region: str = "full"               # "full" or a subject target_prompt
     severity: int                      # 0 negligible … 3 severe
     evidence: str = ""
@@ -111,6 +113,12 @@ class DiagnosisReport(BaseModel):
     subject_boxes: Dict[str, List[int]] = {}   # Gemini box_2d (ymin, xmin, ymax, xmax) 0..1000,
                                        # reused by the executor; never sent to the Plan prompt
     measurement_maps: Optional[Any] = None     # tile maps, in-process only (excluded from JSON)
+    fusion_notes: List[str] = []       # one line per fusion decision (P6), not sent to Plan
+    diff: Optional[Dict[str, Any]] = None  # iteration >= 2: measurement.diff.DiffReport as dict
+
+    @property
+    def actionable_defects(self) -> List[Defect]:  # severity >= 1 and fixable
+        ...
 
 
 # ---------------------------------------------------------
@@ -210,6 +218,30 @@ def severity_from_measurement(
 
 
 def calibration_version() -> str: ...
+
+
+# src/analyzer_evaluator/measurement/diff.py — iteration >= 2 (Analysis v2, P7)
+class SideEffect(BaseModel):
+    kind: Literal["halo", "dark_noise", "banding", "channel_clipping", "oversaturation"]
+    region: str = "full"
+    severity: int                      # 0..3
+    value: float
+    before: Optional[float] = None
+    after: Optional[float] = None
+    evidence: str = ""
+
+
+def compare(original: np.ndarray, current: np.ndarray,
+            regions: Optional[Dict[str, np.ndarray]] = None, *,
+            defects: Sequence[Tuple[str, str]] = (), original_measurement=None,
+            current_measurement=None, assess=None) -> DiffReport:
+    """Trạng thái từng lỗi (resolved/improved/unchanged/worse) + tác dụng phụ so với ảnh gốc."""
+    ...
+
+
+def side_effects(original: np.ndarray, current: np.ndarray) -> List[SideEffect]:
+    """Tác dụng phụ mức ≥ 1 do xử lý, đo trên ảnh ≤ 3000 px."""
+    ...
 
 
 # src/analyzer_evaluator/metadata.py — EXIF priors (Analysis v2, P3)
@@ -419,9 +451,38 @@ def perceive(
     """measure_image → Gemini with the full frame, ≤ 6 evidence crops at 100 %, overlays and
     the measurement summary (or the rule-based diagnosis) → defects conflicting with `preserve`
     dropped → subject masks (resolve_subject_mask with the Gemini box_2d) → region_stats and
-    region_metrics → measured defects.
+    region_metrics → fusion.fuse (with verify). From iteration 2: re-measure, compare with
+    the original (measurement.diff) and call the VLM only for open semantic defects or side
+    effects to judge.
     PERCEIVE_SAMPLES Gemini samples (default 1, env PERCEIVE_SAMPLES) are merged by
     self-consistency; hypotheses below quorum go to `rejected`."""
+    ...
+
+
+# src/agent/fusion.py — cross-check and fusion (Analysis v2, P6)
+def fuse(
+    hypotheses: DiagnosisReport,                 # VLM (merged samples) or rule-based diagnosis
+    measurement: Optional[MeasurementReport],
+    region_stats: Dict[str, RegionStats],
+    priors: Sequence[Prior] = (),
+    intent: Optional[IntentProfile] = None,
+    *,
+    verifier: Optional[Verifier] = None,         # closed-question Gemini verify; None = none
+    long_side: Optional[int] = None,
+    crops_for: Optional[Callable[[str, str], List[str]]] = None,
+    use_weak: Optional[bool] = None,             # rejected hypotheses as weak evidence (D3)
+) -> DiagnosisReport:
+    """Bảng quyết định tất định: defects = confirmed (confidence, evidence_items, fixable,
+    contraindications), rejected, ask_user, preserve (+ aspect verify xác nhận chủ ý)."""
+    ...
+
+
+def plan_contraindications(report: Optional[DiagnosisReport]) -> List[str]: ...
+
+
+# src/agent/planner.py
+def apply_contraindications(plan: TreatmentPlan, contraindications: Sequence[str]) -> TreatmentPlan:
+    """no_sharpen → bỏ mọi sharpen; no_brighten → bỏ gamma_correct > 1 toàn ảnh."""
     ...
 
 
@@ -458,8 +519,9 @@ def plan_treatment(
     history: Optional[List[HistoryItem]] = None,
     original_image: Optional[np.ndarray] = None,
 ) -> TreatmentPlan:
-    """No defect with severity >= 1 → empty plan without a second VLM call. Otherwise
-    diagnose_and_plan() → validate_and_sort_plan() → apply_preserve_guard()."""
+    """No actionable defect (severity >= 1 and fixable) → empty plan without a second VLM call.
+    Otherwise diagnose_and_plan() → validate_and_sort_plan() → apply_preserve_guard() →
+    apply_contraindications(plan, fusion.plan_contraindications(diagnosis))."""
     ...
 
 
