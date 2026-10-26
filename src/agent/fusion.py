@@ -9,11 +9,15 @@ Gemini `verify` với câu hỏi đóng, để ra kết luận cho từng giả 
 | Số đo                     | VLM / verify                 | Kết luận                                   |
 |---------------------------|------------------------------|--------------------------------------------|
 | severity ≥ 1              | VLM báo lỗi                  | confirmed, severity = số đo (VLM ±1)        |
+| ≥ 1, kém tin cậy (*)      | VLM báo lỗi                  | verify: defect → confirmed, severity = VLM  |
 | severity ≥ 1              | VLM preserve (chủ ý)         | preserved; severity 3 trên chủ thể → ask_user |
 | severity ≥ 1              | VLM không nhắc               | verify: defect → confirmed; còn lại → bỏ    |
 | severity 0 (đo được)      | VLM báo lỗi                  | verify: not_present/texture → rejected      |
 | không đo được             | VLM báo lỗi                  | confirmed, confidence = tỉ lệ đồng thuận    |
 | bất kỳ                    | —                            | ý định người dùng thắng (apply_intent)      |
+
+(*) Ám màu đo bằng đường dự phòng của bộ ước lượng nguồn sáng (`color.illuminant_method` ≥ 1:
+cổng C* nới hoặc mọi pixel, contract-changes 9): số đo chỉ cho hướng, không đủ tin để đặt severity.
 
 Lỗi đo được không bao giờ được phát ra một mình khi có VLM (brief fusion mục 11): phải có VLM
 đồng ý, verify xác nhận, hoặc bị preserve chặn. Không có VLM (luật dự phòng, không mạng) thì
@@ -50,6 +54,10 @@ VERDICTS: Tuple[str, ...] = ("defect", "intentional", "texture", "not_present")
 NON_FIXABLE_DEFECTS = frozenset(("motion_blur", "jpeg_artifacts", "haze", "highlight_clipping"))
 # Lỗi không sửa được chỉ đáng báo khi rõ (mức ≥ 2): mức nhẹ không có gì để làm, chỉ gây nhiễu
 NON_FIXABLE_MIN_SEVERITY = 2
+# Ám màu: số đo từ đường dự phòng (`illuminant_method` ≥ 1) kém tin cậy → hỏi verify kể cả khi
+# VLM đồng ý, severity theo VLM (lane `color`, contract-changes 9)
+COLOR_CAST_TYPES = frozenset(("color_cast_warm", "color_cast_cool", "color_cast_green"))
+ILLUMINANT_METHOD_KEY = "illuminant_method"
 
 # Lỗi mâu thuẫn với một đặc điểm cần giữ (VLM đôi khi liệt kê cả hai)
 CONFLICTING_DEFECTS: Dict[str, frozenset] = {
@@ -287,6 +295,8 @@ class Measured:
     severity: int
     confidence: float
     evidence: List[Evidence] = field(default_factory=list)
+    # True: số đo từ đường dự phòng (ám màu không có pixel trung tính), không tự đặt severity
+    low_trust: bool = False
 
 
 @dataclass
@@ -406,7 +416,23 @@ def _calibrated(
         return None
     if severity == 0 and confidence <= 0.0:
         return None
-    return Measured(severity, confidence, _measured_evidence(defect_type, stats, region))
+    return Measured(
+        severity,
+        confidence,
+        _measured_evidence(defect_type, stats, region),
+        low_trust=defect_type in COLOR_CAST_TYPES and _fallback_illuminant(stats),
+    )
+
+
+def _fallback_illuminant(stats: Stats) -> bool:
+    """Nguồn sáng ước lượng bằng đường dự phòng (cổng C* nới hoặc mọi pixel).
+
+    Chỉ MeasurementReport có key này (không thuộc MAP_KEYS); RegionStats → False.
+    """
+    if not isinstance(stats, MeasurementReport):
+        return False
+    method = stats.color.get(ILLUMINANT_METHOD_KEY)
+    return method is not None and float(method.value) >= 1.0
 
 
 def is_subject_region(region: str) -> bool:
@@ -698,7 +724,7 @@ def _needs_verify(hypothesis: Hypothesis, preserved: str, vlm_mode: bool, use_we
         if max(claimed, measured.severity if measured else 0) < NON_FIXABLE_MIN_SEVERITY:
             return False
     if hypothesis.vlm is not None:
-        return measured is not None and measured.severity == 0
+        return measured is not None and (measured.severity == 0 or measured.low_trust)
     if measured is None or measured.severity < 1:
         return False
     return not (use_weak and hypothesis.weak_vlm is not None)
@@ -729,6 +755,27 @@ def _decide(
             # Không đo được: tin lời VLM theo tỉ lệ đồng thuận
             return _Decision(
                 "confirmed", max(1, vlm.severity), _clip(vlm.confidence + shift), "vlm, unmeasured"
+            )
+        if m_sev >= 1 and measured.low_trust and vlm_mode:
+            # Số đo dự phòng chỉ cho hướng: verify quyết định, severity theo VLM
+            if answer is None:
+                return _Decision(
+                    "confirmed",
+                    max(1, vlm.severity),
+                    _clip(vlm.confidence * UNVERIFIED_VLM_SCALE + shift),
+                    "vlm + low-trust measured, unverified",
+                )
+            if answer.verdict == "defect":
+                return _Decision(
+                    "confirmed",
+                    max(1, vlm.severity),
+                    _clip(vlm.confidence * answer.confidence + shift),
+                    "vlm + low-trust measured, verify defect",
+                    answer,
+                )
+            outcome = "preserved" if answer.verdict == "intentional" else "rejected"
+            return _Decision(
+                outcome, vlm.severity, _clip(answer.confidence), f"verify {answer.verdict}", answer
             )
         if m_sev >= 1:
             confidence = 1.0 - (1.0 - m_conf) * (1.0 - vlm.confidence)

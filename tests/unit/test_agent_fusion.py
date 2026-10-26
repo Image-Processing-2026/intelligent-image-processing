@@ -241,6 +241,43 @@ class TestDecisionTable:
         assert fused.defects[0].confidence == pytest.approx(0.667)
         assert verifier.calls == []  # bảng không yêu cầu verify
 
+    @pytest.mark.parametrize(
+        ("verdict", "expected"),
+        [("defect", "confirmed"), ("not_present", "rejected"), ("texture", "rejected")],
+    )
+    def test_row1_low_trust_colour_cast_goes_to_verify(self, verdict: str, expected: str):
+        """Ám màu đo bằng đường dự phòng (illuminant_method ≥ 1) + VLM đồng ý → verify quyết định,
+        severity theo VLM chứ không theo số đo."""
+        report = _report(illuminant=(0.5, 0.33, 0.17))  # ln(r/b) ≈ 1.08 → đo warm 3
+        report.color["illuminant_method"] = _e(1.0)
+        assert measure_hypothesis("color_cast_warm", "full", report, {}).low_trust
+        verifier = FakeVerifier({"color_cast_warm": verdict})
+        fused = fuse(_vlm(_claim("color_cast_warm", severity=1)), report, {}, verifier=verifier)
+        assert [q.defect_type for q in verifier.calls[0]] == ["color_cast_warm"]
+        if expected == "confirmed":
+            [defect] = fused.defects
+            assert (defect.type, defect.severity) == ("color_cast_warm", 1)
+        else:
+            assert fused.defects == []
+            assert ("color_cast_warm", "full") in _types(fused.rejected)
+
+    def test_row1_trusted_colour_cast_is_not_verified(self):
+        """Đường chuẩn (illuminant_method = 0) giữ dòng 1: không verify, severity = số đo (±1)."""
+        report = _report(illuminant=(0.5, 0.33, 0.17))
+        report.color["illuminant_method"] = _e(0.0)
+        verifier = FakeVerifier({"color_cast_warm": "not_present"})
+        fused = fuse(_vlm(_claim("color_cast_warm", severity=1)), report, {}, verifier=verifier)
+        assert verifier.calls == []
+        assert [(d.type, d.severity) for d in fused.defects] == [("color_cast_warm", 2)]
+
+    def test_row1_low_trust_without_verify_keeps_vlm_severity(self):
+        report = _report(illuminant=(0.5, 0.33, 0.17))
+        report.color["illuminant_method"] = _e(2.0)
+        fused = fuse(_vlm(_claim("color_cast_warm", severity=1)), report, {}, verifier=None)
+        [defect] = fused.defects
+        assert defect.severity == 1
+        assert defect.confidence == pytest.approx(fusion.UNVERIFIED_VLM_SCALE)
+
     def test_row6_intent_wins(self):
         intent = IntentProfile(fix=["color_cast_warm"])
         fused = fuse(
