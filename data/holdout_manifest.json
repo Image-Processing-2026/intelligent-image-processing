@@ -339,9 +339,9 @@
         "ambiguous": false
       },
       "note": "Tourist in front of a sunlit waterfall; face and body in shadow against bright spray and sky. Commons title says it needs fill flash.",
-      "label_status": "unreviewed",
+      "label_status": "reviewed",
       "label_draft_by": "lead agent from thumbnails (suggestion, not ground truth)",
-      "reviewed_by": null
+      "reviewed_by": "Tiên"
     },
     {
       "id": "holdout_noisy_01",

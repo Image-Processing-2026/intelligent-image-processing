@@ -16,7 +16,7 @@ này.
 
 19 ảnh ban đầu đã được Tiên duyệt. `holdout_backlit_01` (dáng tối có vẻ chủ ý) và `holdout_cast_01`
 (màu xanh là cảnh thật) thành ca "không sửa": không có lỗi mong đợi. `min_severity` giữ bằng 1 như
-nháp. Ảnh thêm sau, chờ duyệt: `holdout_backlit_03` (khách du lịch trước thác nước nắng, mặt và người
+nháp. Ảnh thêm sau, đã duyệt: `holdout_backlit_03` (khách du lịch trước thác nước nắng, mặt và người
 tối; nháp backlit_subject@person:2). Bảng dưới là nhãn nháp; nhãn đã duyệt nằm trong manifest.
 
 ## Nhãn nháp

@@ -70,9 +70,9 @@ color_cast 2, multi_defect 2. Nhãn nháp do lead agent đặt từ thumbnail.
 Người dùng (Tiên) đã duyệt cả 19 ảnh ban đầu. `holdout_backlit_01` và `holdout_cast_01` thành ca
 "không sửa" (không có lỗi mong đợi). `min_severity` giữ bằng 1 như nháp (bản xuất từ công cụ duyệt
 từng đặt nhầm bằng severity, đã hoàn lại). Thêm `holdout_backlit_03` (chân dung ngược sáng rõ, CC0),
-còn `unreviewed`. Chấm bằng `--set holdout --reviewed-only` (bỏ hẳn ảnh chưa duyệt). Khi chưa duyệt
-backlit_03, kết luận về backlit chỉ dựa trên **một** ảnh có lỗi (`holdout_backlit_02`, severity 1,
-vùng person). Chưa chạy config nào trên bộ này; không chỉnh gì theo các nhãn này.
+đã duyệt (severity 2, min 1). Cả 20 ảnh đã duyệt; chấm bằng `--set holdout --reviewed-only`.
+Backlit có hai ảnh có lỗi (`holdout_backlit_02` mức 1, `holdout_backlit_03` mức 2) và một ca
+không sửa (`holdout_backlit_01`): vẫn là mẫu mỏng. Chưa chạy config nào trên bộ này; không chỉnh gì theo các nhãn này.
 
 ## Hoãn
 
