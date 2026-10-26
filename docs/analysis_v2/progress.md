@@ -79,6 +79,9 @@ không sửa (`holdout_backlit_01`): vẫn là mẫu mỏng. Chưa chạy config
 - Gradio (`frontend/app.py`) chưa nhận metadata: `gr.Image(type="numpy")` bỏ bytes file. Không
   đổi sang `type="filepath"` lúc này (người dùng quyết định, 2026-10-25).
 - `measure`: zone histogram 11 vùng, vị trí blob cháy, Tenengrad (xem `measurement_synthetic.md`).
+- Lane đề xuất `colorcast` (chưa mở, chờ reporter và người dùng): color_cast_03 không có pixel trung
+  tính (C* < 12) nên không đo được; ám màu nhẹ (color_cast_01, multi_defect_01) là lệch thang
+  hiệu chỉnh trên ảnh thật (ngưỡng cool mức 1 ln(b/r) ≥ 0.49 khớp từ 5 ảnh synthetic).
 
 ## Review cần người
 
