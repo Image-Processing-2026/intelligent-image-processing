@@ -92,6 +92,13 @@ def test_build_variants_writes_expected_defects_in_params(image):
     ]
     assert variants["cct_3000"]["expected"]["defects"][0]["type"] == "color_cast_warm"
     assert variants["cct_8000"]["expected"]["defects"][0]["type"] == "color_cast_cool"
+    # mức ám nhẹ (lane color): nhãn mức 1, đúng hướng
+    assert variants["cct_5000"]["expected"]["defects"] == [
+        {"type": "color_cast_warm", "region": "full", "severity": 1}
+    ]
+    assert variants["cct_7000"]["expected"]["defects"] == [
+        {"type": "color_cast_cool", "region": "full", "severity": 1}
+    ]
     assert variants["jpeg_q20"]["expected"]["defects"] == []
     combo = variants["combo_noise_dark"]["expected"]["defects"]
     assert {d["type"] for d in combo} == {"noise", "underexposed"}

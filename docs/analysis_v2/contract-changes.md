@@ -151,3 +151,29 @@ Thay đổi hành vi đáng chú ý (không đổi chữ ký):
   `highlight_clipping` (D2); lead cập nhật `docs/interfaces.md` (P8).
 - Brief mục 14: giữ việc executor bỏ `feather_radius` của action khi dùng resolver chung (mask dùng
   chung cho đo và xử lý, C2 feather 15 px); không sửa.
+
+- **Quyết định (lead đã review, 2026-10-26): chấp nhận cả 6 điểm** và các thay đổi hành vi;
+  chi tiết ở `progress.md` mục "Review `fusion` trước merge". Merge `a20d674`.
+
+## 9. [color] Key mới trong `MeasurementReport.color` (chỉ thêm key, 2026-10-26)
+
+Đánh số 9 vì nhánh `fusion` đã dùng mục 8.
+
+1. **`illuminant_method`** (Estimate, giá trị 0/1/2, confidence 1.0, `n_samples` = số pixel ước
+   lượng): đường ước lượng nguồn sáng trong `measurement/color.py`.
+   - 0 = pixel trung tính chuẩn (C\* < 12), như trước.
+   - 1 = cổng C\* nới (18 → 24 → 30) vì cổng chuẩn có < `MIN_NEUTRAL_PIXELS` pixel. Confidence các
+     key `illuminant_*` nhân thêm 12 / cổng.
+   - 2 = mọi pixel không cháy (chỉ Shades-of-Gray + Gray-Edge, không lặp chọn trung tính).
+     Confidence nhân thêm `ALL_PIXELS_CONFIDENCE` = 0.2.
+   Cả hai đường dự phòng cần ảnh có cạnh (≥ 100 pixel có gradient); một mặt màu phẳng vẫn không có
+   ước lượng (như trước), có note `no image structure for a fallback illuminant estimate`.
+2. **`illuminant_gate_chroma`** (C\* của cổng đã dùng: 12, 18, 24 hoặc 30): chỉ có ở đường 0 và 1.
+3. Không có trong `MAP_KEYS`; `RegionStats` không đổi. `calibration.py` không đọc hai key này
+   (severity vẫn từ `illuminant_r/g/b`); confidence thấp đã đi qua `_illuminant` của
+   `calibration.py` vào confidence severity.
+- **Đề xuất cho lead:** ghi hai key vào bảng §C1 của `contracts.md`. Lane `fusion`: severity ám màu
+  có `illuminant_method ≥ 1` (hoặc confidence thấp) nên đi đường verify, không confirm thẳng.
+- **Quyết định (lead đã review, 2026-10-26): chấp nhận.** Chỉ thêm key, không đổi `MAP_KEYS`,
+  `RegionStats` hay chữ ký; lead đã ghi hai key vào bảng §C1. Đề xuất cho fusion: xem
+  `progress.md` mục "Merge `color`" (chưa làm, cần người dùng duyệt).

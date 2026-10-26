@@ -5,6 +5,13 @@ White-Patch p99, Shades-of-Gray p = 6, Gray-Edge bậc 1, p = 6, σ = 2) ước 
 RGB tuyến tính của tập đó. Độ lệch góc giữa các thuật toán là độ đồng thuận: lệch quá 5° thì độ
 tin cậy giảm. Ước lượng không dùng pixel có màu thật (cảnh vàng vẫn cho nguồn sáng trung tính nếu
 có patch trung tính).
+
+Ám rất mạnh có thể đẩy mọi pixel xám ra khỏi cổng C* (giấy trắng dưới đèn sợi đốt có C* ≈ 65).
+Khi đó có hai đường dự phòng, theo thứ tự: nới cổng C* từng bậc (RELAXED_GATES) tới khi đủ
+MIN_NEUTRAL_PIXELS; không được thì ước lượng từ mọi pixel không cháy bằng Shades-of-Gray và
+Gray-Edge. Cả hai cần ảnh có cạnh: một mặt màu phẳng không phân biệt được màu vật với màu nguồn
+sáng nên không ước lượng. Đường đã dùng ghi ở `illuminant_method` (0 = cổng chuẩn, 1 = cổng nới, 2 = mọi pixel)
+và `illuminant_gate_chroma`; confidence giảm theo đường để fusion biết cần verify.
 """
 
 import math
@@ -38,6 +45,14 @@ MIN_EDGE_GRADIENT = 1e-3
 CAST_MAX_CHROMA = 30.0
 NEUTRAL_ITERATIONS = 6
 NEUTRAL_CONVERGED_DEG = 0.25
+# Đường dự phòng khi cổng C* < NEUTRAL_CHROMA có ít hơn MIN_NEUTRAL_PIXELS pixel. Bậc cuối bằng
+# CAST_MAX_CHROMA: xa hơn thì màu thật bão hòa bắt đầu lọt vào. Confidence của cổng nới nhân
+# NEUTRAL_CHROMA / cổng; đường mọi pixel nhân ALL_PIXELS_CONFIDENCE.
+RELAXED_GATES = (18.0, 24.0, CAST_MAX_CHROMA)
+ALL_PIXELS_CONFIDENCE = 0.2
+METHOD_NEUTRAL = 0
+METHOD_RELAXED_GATE = 1
+METHOD_ALL_PIXELS = 2
 _NEUTRAL_UNIT = np.full(3, 1.0 / math.sqrt(3.0))
 
 
@@ -59,16 +74,21 @@ def _angle_deg(a: np.ndarray, b: np.ndarray) -> float:
     return math.degrees(math.acos(cosine))
 
 
-def _illuminant_estimates(linear: np.ndarray, gradient: Optional[np.ndarray]) -> List[np.ndarray]:
+def _illuminant_estimates(
+    linear: np.ndarray, gradient: Optional[np.ndarray], all_pixels: bool = False
+) -> List[np.ndarray]:
     """Ước lượng nguồn sáng (chưa chuẩn hóa) từ RGB tuyến tính của pixel tin được.
 
     Gray-Edge cần gradient ở pixel nằm xa mọi pixel không trung tính; gradient là None thì bỏ qua.
+    `all_pixels`: tập có cả pixel màu thật, nên bỏ Gray-World và White-Patch (bị màu cảnh kéo
+    mạnh nhất), chỉ giữ Shades-of-Gray và Gray-Edge.
     """
-    estimates = [
-        np.mean(linear, axis=0),
-        np.percentile(linear, WHITE_PATCH_PERCENTILE, axis=0),
-        _power_mean(linear, SHADES_POWER),
-    ]
+    estimates = [_power_mean(linear, SHADES_POWER)]
+    if not all_pixels:
+        estimates = [
+            np.mean(linear, axis=0),
+            np.percentile(linear, WHITE_PATCH_PERCENTILE, axis=0),
+        ] + estimates
     if gradient is not None:
         estimates.append(_power_mean(gradient, GRAY_EDGE_POWER))
     return estimates
@@ -98,11 +118,15 @@ def _gradient_magnitude(linear: np.ndarray) -> np.ndarray:
 
 
 def _consensus(
-    linear_all: np.ndarray, gradient_all: np.ndarray, neutral: np.ndarray
+    linear_all: np.ndarray,
+    gradient_all: np.ndarray,
+    neutral: np.ndarray,
+    all_pixels: bool = False,
 ) -> Optional[Tuple[np.ndarray, float]]:
     """Nguồn sáng đồng thuận (vector đơn vị) và độ lệch góc lớn nhất giữa các thuật toán.
 
-    Trả None khi tập pixel trung tính rỗng hoặc có ít hơn hai ước lượng hợp lệ.
+    Trả None khi tập pixel rỗng hoặc có ít hơn hai ước lượng hợp lệ (với `all_pixels`: ảnh không
+    có cạnh thì chỉ còn Shades-of-Gray, không đủ để tin).
     """
     if not neutral.any():
         return None
@@ -110,7 +134,7 @@ def _consensus(
     # Chỉ dùng pixel có gradient thật: vùng phẳng chỉ có nhiễu số, làm hướng Gray-Edge bị ngẫu nhiên.
     edge_mask = _away_from_non_neutral(neutral) & (gradient_all.max(axis=2) > MIN_EDGE_GRADIENT)
     gradient = gradient_all[edge_mask].astype(np.float64) if edge_mask.any() else None
-    units = [_unit(v) for v in _illuminant_estimates(linear, gradient)]
+    units = [_unit(v) for v in _illuminant_estimates(linear, gradient, all_pixels)]
     units = [u for u in units if u is not None]
     if len(units) < 2:
         return None
@@ -122,9 +146,9 @@ def _consensus(
 
 
 def _neutral_after_correction(
-    linear_all: np.ndarray, illuminant: np.ndarray, usable: np.ndarray
+    linear_all: np.ndarray, illuminant: np.ndarray, usable: np.ndarray, gate: float
 ) -> np.ndarray:
-    """Pixel trung tính (C* < NEUTRAL_CHROMA) sau khi bù nguồn sáng kiểu von Kries.
+    """Pixel trung tính (C* < gate) sau khi bù nguồn sáng kiểu von Kries.
 
     Ám màu mạnh đẩy chính các pixel xám ra khỏi cổng C*; bù trước rồi mới lọc thì chúng quay lại.
     `usable` đã chỉ gồm pixel có thể là xám bị ám (C* gốc < CAST_MAX_CHROMA).
@@ -136,28 +160,60 @@ def _neutral_after_correction(
     ).astype(np.float32)
     lab = cv2.cvtColor(encoded, cv2.COLOR_RGB2LAB)
     chroma = np.sqrt(lab[..., 1] ** 2 + lab[..., 2] ** 2)
-    return usable & (chroma < NEUTRAL_CHROMA)
+    return usable & (chroma < gate)
+
+
+def _neutral_set(
+    section: Section, usable: np.ndarray, chroma: np.ndarray
+) -> Tuple[np.ndarray, float, int]:
+    """Tập pixel trung tính ban đầu, cổng C* đã dùng và mã đường (METHOD_*).
+
+    Cổng chuẩn có ít hơn MIN_NEUTRAL_PIXELS pixel thì nới theo RELAXED_GATES; vẫn thiếu thì trả
+    mọi pixel không cháy với METHOD_ALL_PIXELS (cổng vô hạn).
+    """
+    neutral = usable & (chroma < NEUTRAL_CHROMA)
+    count = int(neutral.sum())
+    if count >= MIN_NEUTRAL_PIXELS:
+        return neutral, NEUTRAL_CHROMA, METHOD_NEUTRAL
+    section.notes.append(f"few neutral pixels for illuminant estimate (n={count})")
+    for gate in RELAXED_GATES:
+        relaxed = usable & (chroma < gate)
+        if int(relaxed.sum()) >= MIN_NEUTRAL_PIXELS:
+            section.notes.append(f"illuminant from relaxed neutral gate C* < {gate:g}")
+            return relaxed, gate, METHOD_RELAXED_GATE
+    return usable, math.inf, METHOD_ALL_PIXELS
 
 
 def _illuminant(
-    section: Section, linear_all: np.ndarray, neutral: np.ndarray, usable: np.ndarray
+    section: Section, linear_all: np.ndarray, chroma: np.ndarray, usable: np.ndarray
 ) -> None:
     """Nguồn sáng ước lượng, độ lệch so trung tính, độ đồng thuận giữa thuật toán.
 
-    Chọn pixel trung tính lặp: ước lượng trên tập C* < 12 của ảnh gốc, bù ảnh theo ước lượng đó,
+    Chọn pixel trung tính lặp: ước lượng trên tập C* < cổng của ảnh gốc, bù ảnh theo ước lượng đó,
     lọc lại C* trên ảnh đã bù rồi ước lượng lại trên pixel gốc, tới khi hội tụ. Bắt đầu từ tập
     trung tính của ảnh gốc (không từ Gray-World) để cảnh ấm có patch xám không bị kéo lệch; chỉ
     nhận lại pixel có C* gốc < CAST_MAX_CHROMA để màu thật bão hòa (cỏ) không bị coi là xám.
+    Thiếu pixel trung tính thì dùng đường dự phòng của `_neutral_set` (confidence thấp hơn).
     """
+    neutral, gate, method = _neutral_set(section, usable, chroma)
     count = int(neutral.sum())
-    if count < MIN_NEUTRAL_PIXELS:
-        section.notes.append(f"few neutral pixels for illuminant estimate (n={count})")
-    gradient_all = _gradient_magnitude(linear_all) if count else None
-    estimate = _consensus(linear_all, gradient_all, neutral) if count else None
+    if count == 0:
+        return
+    all_pixels = method == METHOD_ALL_PIXELS
+    gradient_all = _gradient_magnitude(linear_all)
+    if method != METHOD_NEUTRAL:
+        # Một mặt màu phẳng không phân biệt được màu vật với màu nguồn sáng: đường dự phòng chỉ
+        # chạy khi ảnh có cấu trúc (nhiều bề mặt, có cạnh).
+        edges = usable & (gradient_all.max(axis=2) > MIN_EDGE_GRADIENT)
+        if int(edges.sum()) < MIN_NEUTRAL_PIXELS:
+            section.notes.append("no image structure for a fallback illuminant estimate")
+            return
+    estimate = _consensus(linear_all, gradient_all, neutral, all_pixels)
     if estimate is None:
         return
-    for _ in range(NEUTRAL_ITERATIONS):
-        candidate = _neutral_after_correction(linear_all, estimate[0], usable)
+    candidates = usable & (chroma < CAST_MAX_CHROMA)
+    for _ in range(0 if all_pixels else NEUTRAL_ITERATIONS):
+        candidate = _neutral_after_correction(linear_all, estimate[0], candidates, gate)
         if int(candidate.sum()) < max(1, count // 2):
             break
         refined = _consensus(linear_all, gradient_all, candidate)
@@ -173,7 +229,14 @@ def _illuminant(
     spread_factor = min(
         1.0, max(0.0, 1.0 - max(0.0, spread - SPREAD_TOLERANCE_DEG) / SPREAD_PENALTY_DEG)
     )
-    confidence = count_factor * spread_factor
+    if all_pixels:
+        section.notes.append("illuminant from all unclipped pixels (Shades-of-Gray, Gray-Edge)")
+        method_factor = ALL_PIXELS_CONFIDENCE
+    else:
+        method_factor = NEUTRAL_CHROMA / gate
+        put_estimate(section, "illuminant_gate_chroma", gate, 1.0, count)
+    confidence = count_factor * spread_factor * method_factor
+    put_estimate(section, "illuminant_method", float(method), 1.0, count)
     put_estimate(
         section, "illuminant_angle_deg", _angle_deg(consensus, _NEUTRAL_UNIT), confidence, count
     )
@@ -202,5 +265,5 @@ def measure_color(rgb: np.ndarray, tile_size: int) -> Section:
     put_estimate(section, "neutral_fraction", float(neutral.mean()), 1.0, total)
     section.maps["color.chroma"] = tile_mean(chroma, tile_size)
 
-    _illuminant(section, srgb_to_linear(rgb01), neutral, usable & (chroma < CAST_MAX_CHROMA))
+    _illuminant(section, srgb_to_linear(rgb01), chroma, usable)
     return section
