@@ -48,10 +48,14 @@ DEFAULT_MAX_SIDE = 1024
 USER_AGENT = "AIImageDoctor-benchmark/0.1 (university course project; python urllib)"
 # Ánh sáng khí quyển cho mô hình haze
 HAZE_AIRLIGHT = 220.0
-# Hệ số nhân kênh (R, G, B) cho các nhiệt màu, xấp xỉ quanh D65 (6500K)
+# Hệ số nhân kênh (R, G, B) cho các nhiệt màu, xấp xỉ quanh D65 (6500K). 5000K và 7000K là mức
+# ám nhẹ (nội suy tuyến tính theo mired giữa 4500K/6500K và 6500K/8000K), thêm sau để đo ngưỡng
+# ám mức 1; các mức cũ giữ nguyên để so được với số cũ.
 CCT_GAINS: Dict[int, Tuple[float, float, float]] = {
     3000: (1.20, 1.00, 0.75),
     4500: (1.08, 1.00, 0.90),
+    5000: (1.055, 1.00, 0.93),
+    7000: (0.97, 1.00, 1.04),
     8000: (0.92, 1.00, 1.10),
 }
 TINT_GREEN_GAIN = 1.12

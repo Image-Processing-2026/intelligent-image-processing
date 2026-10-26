@@ -63,6 +63,10 @@ MAX_SEVERITY = 3
 REFERENCE_LONG_SIDE = 1024
 # Lỗi phải thắng bộ dự đoán rỗng trong kiểm chéo ít nhất chừng này (MAE cân bằng)
 MIN_CV_GAIN = 0.005
+# Mức ám nhẹ (lane color) chỉ dùng để dò: không khớp ngưỡng nào, báo riêng trong report.md. Ở thang
+# tuyệt đối chúng không tách khỏi ảnh sạch (docs/analysis_v2/status/color.md), nên đưa vào khớp sẽ
+# hạ ngưỡng ám mà không tách được, và đổi ngưỡng lỗi khác so với bảng cũ.
+PROBE_CCT = (5000, 7000)
 
 # Ngưỡng cho nhãn level không phải lỗi (TechnicalMetrics.contrast_level = "high"): prior giữ từ
 # analyzer cũ, không khớp; nằm trong calibration.yaml để analyzer chỉ có một nguồn ngưỡng.
@@ -133,6 +137,14 @@ def load_cases() -> List[Dict[str, Any]]:
     if not cases:
         raise SystemExit(f"No synthetic cases in {SYNTHETIC_DIR}; run build_calibration_set.py.")
     return cases
+
+
+def is_probe(case: Dict[str, Any]) -> bool:
+    """Ca dò ám nhẹ (PROBE_CCT): không dùng để khớp."""
+    return any(
+        d["type"] == "illuminant_shift" and d["cct"] in PROBE_CCT
+        for d in case["params"]["degradations"]
+    )
 
 
 def load_features(cases: Sequence[Dict[str, Any]], refresh: bool) -> Dict[str, MeasurementReport]:
@@ -524,8 +536,34 @@ def _fmt_thresholds(thresholds: Sequence[float]) -> str:
     return ", ".join("∞" if math.isinf(t) and t > 0 else f"{t:.3f}" for t in thresholds) or "–"
 
 
-def write_report(path: Path, calibration: Dict[str, Any], stats: Dict, evaluation: Dict) -> None:
-    """Báo cáo markdown: tham số khớp, ngưỡng, kiểm chéo, chỉ số theo lỗi."""
+def probe_rows(
+    cases: Sequence[Dict[str, Any]],
+    reports: Dict[str, MeasurementReport],
+    calibration: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Điểm và severity ám màu của các ca dò (không khớp)."""
+    rows = []
+    for case in cases:
+        report = reports[case["stem"]]
+        row: Dict[str, Any] = {"stem": case["stem"], "labels": case_labels(case["params"])}
+        for defect in ("color_cast_warm", "color_cast_cool"):
+            score = calib.defect_score(defect, report, calibration)
+            row[defect] = (
+                None if score is None else round(score[0], 3),
+                calib.severity_from_calibration(defect, report, calibration)[0],
+            )
+        rows.append(row)
+    return rows
+
+
+def write_report(
+    path: Path,
+    calibration: Dict[str, Any],
+    stats: Dict,
+    evaluation: Dict,
+    probes: Sequence[Dict[str, Any]] = (),
+) -> None:
+    """Báo cáo markdown: tham số khớp, ngưỡng, kiểm chéo, chỉ số theo lỗi, ca dò."""
     blur = calibration["defects"]["blur"]["params"]
     gate = calibration["defects"]["motion_blur"]["params"]
     lines = [
@@ -572,6 +610,21 @@ def write_report(path: Path, calibration: Dict[str, Any], stats: Dict, evaluatio
         if wrong:
             text = ", ".join(f"{d} label {lab} → {pred}" for d, (lab, pred) in wrong.items())
             lines.append(f"- {row['stem']}: {text}")
+    if probes:
+        lines += [
+            "",
+            f"## Mild-cast probe (CCT {', '.join(map(str, PROBE_CCT))} K, not fitted)",
+            "",
+            "| case | label | ln(r/b) → warm | ln(b/r) → cool |",
+            "|---|---|---|---|",
+        ]
+        for row in probes:
+            label = ", ".join(f"{d} {s}" for d, s in row["labels"].items() if s)
+            cells = [
+                "–" if row[d][0] is None else f"{row[d][0]:+.3f} → {row[d][1]}"
+                for d in ("color_cast_warm", "color_cast_cool")
+            ]
+            lines.append(f"| {row['stem']} | {label} | {cells[0]} | {cells[1]} |")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -597,23 +650,30 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
-    cases = load_cases()
-    reports = load_features(cases, args.refresh)
+    all_cases = load_cases()
+    reports = load_features(all_cases, args.refresh)
+    cases = [c for c in all_cases if not is_probe(c)]
     calibration, stats = calibrate(cases, reports)
     evaluation = evaluate(cases, reports, calibration)
+    probes = probe_rows([c for c in all_cases if is_probe(c)], reports, calibration)
 
     out_dir = args.out or RESULTS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}-calibration"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "results.json").write_text(
         json.dumps(
-            {"calibration": calibration, "stats": stats, "evaluation": evaluation},
+            {
+                "calibration": calibration,
+                "stats": stats,
+                "evaluation": evaluation,
+                "probes": probes,
+            },
             ensure_ascii=False,
             indent=2,
             default=str,
         ),
         encoding="utf-8",
     )
-    write_report(out_dir / "report.md", calibration, stats, evaluation)
+    write_report(out_dir / "report.md", calibration, stats, evaluation, probes)
     if not args.dry_run:
         write_calibration(calib.CALIBRATION_PATH, calibration)
         logger.info("Wrote %s", calib.CALIBRATION_PATH)

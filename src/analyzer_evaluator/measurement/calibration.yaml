@@ -2,8 +2,8 @@
 #   python scripts/calibrate_severity.py
 # severity = số ngưỡng (tăng dần) mà điểm đạt tới; điểm tính bằng hàm `score` trong
 # src/analyzer_evaluator/measurement/calibration.py. thresholds rỗng = không đo được → (0, 0.0).
-version: p2-20261025
-date: '2026-10-25'
+version: p2-20261026
+date: '2026-10-26'
 dataset:
   path: data/synthetic/calibration
   generator: scripts/build_calibration_set.py (seed 7, max side 1024)
@@ -14,7 +14,7 @@ dataset:
   - already_good_03
   - clean_grass_01
   - clean_landscape_01
-  measurement_fingerprint: 5fc31d63415d
+  measurement_fingerprint: 0c8572d8c8d3
 method: ordinal thresholds minimising sum |severity - label| over all synthetic cases; kept only when
   leave-one-source-out balanced MAE beats the all-zero predictor
 reference_long_side: 1024
@@ -132,16 +132,16 @@ defects:
     fit:
       cases: 150
       positives: 10
-      mae_all: 0.0533
-      loso_mae: 0.0933
-      loso_balanced_mae: 0.5143
+      mae_all: 0.0333
+      loso_mae: 0.0733
+      loso_balanced_mae: 0.3643
       null_balanced_mae: 1.0
     thresholds:
     - 0.3466
     - 0.8012
     - 0.8012
     fitted: true
-    reliability: 0.486
+    reliability: 0.636
   color_cast_cool:
     score: cast_cool
     params: {}
@@ -149,15 +149,15 @@ defects:
       cases: 150
       positives: 5
       mae_all: 0.0267
-      loso_mae: 0.0667
-      loso_balanced_mae: 0.4207
+      loso_mae: 0.1333
+      loso_balanced_mae: 0.4552
       null_balanced_mae: 0.5
     thresholds:
     - 0.4856
     - .inf
     - .inf
     fitted: true
-    reliability: 0.159
+    reliability: 0.09
   color_cast_green:
     score: cast_green
     params: {}
@@ -165,8 +165,8 @@ defects:
       cases: 150
       positives: 5
       mae_all: 0.0333
-      loso_mae: 0.2
-      loso_balanced_mae: 0.5862
+      loso_mae: 0.22
+      loso_balanced_mae: 0.5
       null_balanced_mae: 0.5
     thresholds: []
     fitted: false

@@ -12,7 +12,10 @@ from scripts.calibrate_severity import (
     cross_validate,
     fit_motion_gate,
     fit_thresholds,
+    is_probe,
     predict,
+    probe_rows,
+    write_report,
 )
 from src.analyzer_evaluator.measurement import Estimate, MeasurementReport
 from src.analyzer_evaluator.measurement.calibration import SCORE_FUNCTIONS
@@ -115,3 +118,59 @@ def test_motion_gate_excludes_every_non_motion_case() -> None:
 def test_every_spec_uses_a_known_score_function() -> None:
     for defect, spec in DEFECT_SPECS.items():
         assert spec["score"] is None or spec["score"] in SCORE_FUNCTIONS, defect
+
+
+def _cct_case(stem: str, cct: int, label: str) -> Dict[str, Any]:
+    params = {
+        "degradations": [{"type": "illuminant_shift", "cct": cct}],
+        "expected": {"defects": [{"type": label, "region": "full", "severity": 1}]},
+    }
+    return {"stem": stem, "source": stem.split("__")[0], "params": params}
+
+
+def test_mild_cast_probes_are_not_fitted() -> None:
+    assert is_probe(_cct_case("a__cct_5000", 5000, "color_cast_warm"))
+    assert is_probe(_cct_case("a__cct_7000", 7000, "color_cast_cool"))
+    assert not is_probe(_cct_case("a__cct_8000", 8000, "color_cast_cool"))
+    assert not is_probe({"params": {"degradations": [{"type": "gamma", "gamma": 1.5}]}})
+
+
+def test_probe_rows_and_report_section(tmp_path) -> None:
+    calibration = {
+        "defects": {
+            "color_cast_warm": {"score": "cast_warm", "params": {}, "thresholds": [0.3, 0.8, 0.8]},
+            "color_cast_cool": {"score": "cast_cool", "params": {}, "thresholds": [0.5]},
+        }
+    }
+    light = {"illuminant_r": 0.45, "illuminant_g": 0.33, "illuminant_b": 0.22}
+    report = MeasurementReport(
+        width=10,
+        height=10,
+        tile_size=64,
+        color={k: Estimate(value=v, confidence=1.0) for k, v in light.items()},
+    )
+    case = _cct_case("a__cct_5000", 5000, "color_cast_warm")
+    rows = probe_rows([case], {"a__cct_5000": report}, calibration)
+    assert rows[0]["color_cast_warm"] == (pytest.approx(math.log(0.45 / 0.22), abs=1e-3), 1)
+    assert rows[0]["color_cast_cool"][1] == 0
+    path = tmp_path / "report.md"
+    stats = {"color_cast_warm": {"status": "prior"}}
+    write_report(path, _report_calibration(calibration), stats, _empty_evaluation(), rows)
+    text = path.read_text(encoding="utf-8")
+    assert "Mild-cast probe" in text and "a__cct_5000" in text
+
+
+def _report_calibration(calibration: Dict[str, Any]) -> Dict[str, Any]:
+    """Bổ sung các trường mà write_report đọc."""
+    defects = dict(calibration["defects"])
+    defects["blur"] = {"params": {"defocus_bias": 0.1}, "thresholds": []}
+    defects["motion_blur"] = {"params": {"min_anisotropy": 1.2, "min_extent": 0.7}}
+    return {
+        "version": "test",
+        "dataset": {"images": 1, "sources": ["a"]},
+        "defects": defects,
+    }
+
+
+def _empty_evaluation() -> Dict[str, Any]:
+    return {"mae_matched": None, "per_defect": {}, "rows": []}
