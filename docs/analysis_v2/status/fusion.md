@@ -63,7 +63,7 @@ không sửa được; dự kiến FP sạch 0/13, **chưa đo lại**.
 
 ## Lần chạy lại 2026-10-26 (tuần tự, kiểm tra RAM trước mỗi job: 10.5 GB và 11.4 GB trống)
 
-### Job 1 — `fused` r2 trên bộ thật: **BLOCKED do hết quota Gemini**
+### Job 1 — `fused` r2 trên bộ thật: BLOCKED do hết quota Gemini (đã gỡ, xem r3 bên dưới)
 `fusion-r2-fused`: 51 lời gọi thật + 24 cache hit. Từ ca 16 (`multi_defect_03`) trở đi mọi lời gọi
 trả `429 RESOURCE_EXHAUSTED` (quota): **17/32 ca rơi về luật** (toàn bộ `intentional_style`,
 `already_good`, `group_small_faces`), nên **FP ảnh sạch chưa đo được** (n = 0 ca sạch được chấm).
@@ -83,6 +83,28 @@ không phải theo phút: nghỉ giữa các ảnh không giúp được. Lệnh
 `bash` vòng từng ảnh như trên (17 ảnh `multi_defect_03` … `intentional_style_10`), rồi
 `python scripts/benchmark_analysis.py --set real --config fused --vlm-cache data/real/vlm_cache --case-retries 0 --out data/real/benchmark_results/fusion-r3-fused`
 để gộp (toàn bộ từ cache, 0 lời gọi).
+
+### Job 1 hoàn tất — `fusion-r3-fused` (2026-10-26, sau khi quota theo ngày hồi)
+RAM trống trước khi chạy 7.8 GB, chỉ một job. Vòng từng ảnh (nghỉ 20 s): **17/17 ảnh xong, 26 lời
+gọi thật, không có 429**. Lượt gộp 32 ảnh: 8 lời gọi + 46 cache hit, **0 fallback, 0 lỗi**, mọi ca
+`source=vlm`. 8 lời gọi đó là verify không trùng khóa cache (nội dung câu hỏi/crop khác byte so với
+lượt từng ảnh), nên 8 ca này dùng câu trả lời verify mới (ví dụ `backlit_01`: r2 verify
+`intentional`, r3 verify `defect` → 2 FP trên ca không phải ảnh sạch).
+
+| | **fused r1** | **fused r3** |
+|---|---|---|
+| FP ảnh sạch (n = 13) | 2 (0.15) | **1 (0.08)** |
+| Precision | – | 0.70 (7/10) |
+| Recall (15) | 7 (0.47) | 7 (0.47) |
+| MAE severity | 1.00 | 1.00 |
+| Preserve recall | 0.67 | 0.67 (n = 21) |
+
+- FP ảnh sạch duy nhất: `already_good_03` `backlit_subject@person` mức 2. VLM (2) và số đo (2) đồng
+  ý nên bảng hợp nhất xác nhận; đây là bất đồng với nhãn, không phải fusion bỏ qua verify.
+- Sàn mức 2 cho lỗi không sửa được có tác dụng: 2 FP `highlight_clipping` mức 1 của r1 đã hết.
+- FP còn lại ngoài tập sạch: `backlit_01` (`backlit_subject@face` s1, `highlight_clipping@face` s3,
+  cả hai verify trả `defect`).
+- Theo nhóm: `intentional_style` 0/10 ảnh FP, `group_small_faces` 0/3, `already_good` 1/3.
 
 ### Job 2 — hồi quy pipeline offline (`run_pipeline`, 3 vòng, 32 ảnh, không key)
 
@@ -127,8 +149,8 @@ Ngưỡng hiệu chỉnh: cool mức 1 khi ln(b/r) ≥ 0.49 (≈ 14°, khớp tr
 3. Hoàng hôn đo đúng là ấm mạnh (−1.0, −0.72): bộ ước lượng chạy đúng khi có pixel trung tính; FP
    ám ấm trên ảnh chủ ý được preserve/verify chặn ở fusion.
 
-## Khoảng cách tới tiêu chí (theo r1)
-- FP sạch ≤ 10 %: dự kiến đạt sau sàn mức 2 (cần đo lại).
+## Khoảng cách tới tiêu chí (theo r3)
+- FP sạch ≤ 10 %: **đạt** (1/13 = 0.08, `fusion-r3-fused`).
 - Recall ≥ 85 %: **chưa đạt** (7/15). Ám màu 0/3: số đo nguồn sáng cho ~0 trên cả 4 ảnh ám màu
   thật (góc 0–2.6°; color_cast_03 không có pixel trung tính), gray-world không tách được ảnh ám
   khỏi ảnh sạch nên không thêm giả thuyết. Thiếu sáng bị VLM coi là low_key (backlit_02,
@@ -138,4 +160,8 @@ Ngưỡng hiệu chỉnh: cool mức 1 khi ln(b/r) ≥ 0.49 (≈ 14°, khớp tr
 - D3 (`rejected` làm bằng chứng yếu): đã có config `fused_n3` / `fused_n3_weak`; chưa chạy, chỉ
   kết luận trên hold-out.
 
-Chưa ghi LANE DONE: FP ảnh sạch (tiêu chí chính) chưa đo được vì hết quota Gemini theo ngày.
+Tóm lại: FP ảnh sạch đạt; recall (0.47) và MAE (1.00) chưa đạt, khoảng cách đã ghi ở trên
+(ám màu cần lane `measure`/`calib`, thang severity cần hiệu chỉnh lại trên nhãn thật). Các config
+`fused_n3*` để dành cho lượt hold-out của lead.
+
+LANE DONE
