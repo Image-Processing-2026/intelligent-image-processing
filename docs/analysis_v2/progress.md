@@ -81,6 +81,11 @@ Khi merge thật: nếu fusion không sửa `scripts/benchmark_analysis.py` sau 
 `lead/fusion-merge-prep`; nếu có sửa thì giải lại theo các quy tắc trên. Sau merge xóa nhánh và
 worktree tạm.
 
+**Tài liệu (P8, một phần).** `docs/interfaces.md` và `CLAUDE.md` đã đồng bộ với luồng đã merge
+(`55172e8`: đo + hiệu chỉnh, mask chủ thể, crop bằng chứng, perceive v2 với `PERCEIVE_SAMPLES = 1`,
+metadata). Phần fusion/P7 nằm sẵn ở commit `f803da6` trên `lead/fusion-merge-prep`; sau khi merge
+fusion thì `git cherry-pick f803da6`. ADR-005 vẫn chờ cuối P8.
+
 **contract-changes mục 8: chấp nhận cả 6 điểm** (lead review; báo người dùng qua reporter):
 1. `graph.plan_treatment` gọi `apply_contraindications` sau preserve guard: đúng brief mục 5. Chỉ bỏ
    action, không sắp xếp lại. `no_brighten` chặn `gamma > 1` toàn ảnh: đúng quy ước
