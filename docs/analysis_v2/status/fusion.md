@@ -72,6 +72,18 @@ Trên 15 ca có VLM thật: precision 1.00 (0 FP), recall 7/15 (noise 4/4, under
 Cache giữ 15 ca đã xong (cả verify): chạy lại cùng lệnh khi có quota chỉ tốn ~17 perceive + ≤ 17
 verify.
 
+Lần thử lại (2026-10-26, sau khi reporter thử quota thành công; từng ảnh một, nghỉ 20 s, dừng ở
+429 đầu tiên): **dừng ngay ở ảnh đầu tiên `multi_defect_03`, 0/17 ảnh xong**, 1 lời gọi bị từ chối.
+Lỗi nguyên văn: `429 RESOURCE_EXHAUSTED … Quota exceeded for metric:
+generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 500, model:
+gemini-3.5-flash-lite, description: Generate content requests per day limit exceeded on Free Tier …
+quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier … Please retry in 5h6m18s`
+(retryDelay 18378 s). Đây là **giới hạn theo ngày** (500 request/ngày/project/model, Free Tier),
+không phải theo phút: nghỉ giữa các ảnh không giúp được. Lệnh chạy lại khi quota hồi:
+`bash` vòng từng ảnh như trên (17 ảnh `multi_defect_03` … `intentional_style_10`), rồi
+`python scripts/benchmark_analysis.py --set real --config fused --vlm-cache data/real/vlm_cache --case-retries 0 --out data/real/benchmark_results/fusion-r3-fused`
+để gộp (toàn bộ từ cache, 0 lời gọi).
+
 ### Job 2 — hồi quy pipeline offline (`run_pipeline`, 3 vòng, 32 ảnh, không key)
 
 | | base `dec2d3d` | nhánh fusion |
@@ -126,4 +138,4 @@ Ngưỡng hiệu chỉnh: cool mức 1 khi ln(b/r) ≥ 0.49 (≈ 14°, khớp tr
 - D3 (`rejected` làm bằng chứng yếu): đã có config `fused_n3` / `fused_n3_weak`; chưa chạy, chỉ
   kết luận trên hold-out.
 
-Chưa ghi LANE DONE.
+Chưa ghi LANE DONE: FP ảnh sạch (tiêu chí chính) chưa đo được vì hết quota Gemini theo ngày.
