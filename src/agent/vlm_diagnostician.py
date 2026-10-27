@@ -7,6 +7,7 @@ import io
 import json
 import logging
 import os
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -14,9 +15,11 @@ from PIL import Image
 from pydantic import ValidationError
 
 try:
+    import httpx
     from google import genai
     from google.genai import types as genai_types
 except ImportError:
+    httpx = None
     genai = None
     genai_types = None
 
@@ -44,6 +47,13 @@ DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 VLM_INLINE_IMAGE_BUDGET = 14 * 1024 * 1024
 # Ảnh PNG vượt phần ngân sách của nó → JPEG chất lượng cao, không lấy mẫu con màu (4:4:4)
 VLM_JPEG_QUALITY = 95
+# Gọi lại khi server Gemini lỗi tạm thời (500 INTERNAL, 503 quá tải); lỗi khác thì fallback ngay
+GEMINI_RETRYABLE_CODES = frozenset({500, 503})
+GEMINI_MAX_ATTEMPTS = 3
+# Thời gian chờ trước lần thử thứ n+1 = GEMINI_RETRY_BASE_DELAY * 2**(n-1) giây (1s, 2s)
+GEMINI_RETRY_BASE_DELAY = 1.0
+# Timeout mỗi lần gọi (ms); SDK mặc định không có timeout nên một request treo sẽ chờ vô hạn
+GEMINI_TIMEOUT_MS = 90_000
 
 SYSTEM_PROMPT = """
 Bạn là "AI Image Doctor" - một chuyên gia chẩn đoán và xử lý ảnh theo phương pháp kinh điển (Classical Image Processing).
@@ -410,30 +420,57 @@ def _parse_json_text(text: Optional[str]) -> Any:
     return json.loads(text.strip())
 
 
+def _is_retryable_gemini_error(exc: Exception) -> bool:
+    """
+    Lỗi tạm thời thì đáng gọi lại: lỗi server (google.genai ServerError mang thuộc tính
+    `code`) hoặc request quá GEMINI_TIMEOUT_MS.
+    """
+    if httpx is not None and isinstance(exc, httpx.TimeoutException):
+        return True
+    return isinstance(exc, TimeoutError) or getattr(exc, "code", None) in GEMINI_RETRYABLE_CODES
+
+
 def call_gemini_json(
     api_key: str, system_prompt: str, contents: List[Any], schema: Dict[str, Any]
 ) -> Any:
     """
     Gọi Gemini với structured output (JSON theo schema) và trả về JSON đã parse.
     Dùng chung cho giai đoạn Perceive và Plan; mọi lỗi được ném ra để bên gọi fallback.
+    Lỗi 500/503 và timeout được gọi lại tối đa GEMINI_MAX_ATTEMPTS lần, thời gian chờ tăng gấp đôi.
     """
     if genai is None or genai_types is None:
         raise RuntimeError("google-genai is not installed")
 
-    client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
-        contents=_encode_contents(contents),
-        config=genai_types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            response_mime_type="application/json",
-            response_json_schema=schema,
-            # Không khai báo tool nào → tắt AFC để SDK không cảnh báo/không tự gọi hàm
-            automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(disable=True),
-            # Ngân sách token ảnh lớn nhất: model tự lấy mẫu lại ảnh theo ngân sách này
-            media_resolution=genai_types.MediaResolution.MEDIA_RESOLUTION_HIGH,
-        ),
+    client = genai.Client(
+        api_key=api_key, http_options=genai_types.HttpOptions(timeout=GEMINI_TIMEOUT_MS)
     )
+    config = genai_types.GenerateContentConfig(
+        system_instruction=system_prompt,
+        response_mime_type="application/json",
+        response_json_schema=schema,
+        # Không khai báo tool nào → tắt AFC để SDK không cảnh báo/không tự gọi hàm
+        automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(disable=True),
+        # Ngân sách token ảnh lớn nhất: model tự lấy mẫu lại ảnh theo ngân sách này
+        media_resolution=genai_types.MediaResolution.MEDIA_RESOLUTION_HIGH,
+    )
+    contents = _encode_contents(contents)
+    model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+    for attempt in range(1, GEMINI_MAX_ATTEMPTS + 1):
+        try:
+            response = client.models.generate_content(model=model, contents=contents, config=config)
+            break
+        except Exception as exc:
+            if attempt == GEMINI_MAX_ATTEMPTS or not _is_retryable_gemini_error(exc):
+                raise
+            delay = GEMINI_RETRY_BASE_DELAY * 2 ** (attempt - 1)
+            logger.warning(
+                "Gemini call failed with %s (attempt %d/%d); retrying in %.1fs.",
+                getattr(exc, "code", None) or type(exc).__name__,
+                attempt,
+                GEMINI_MAX_ATTEMPTS,
+                delay,
+            )
+            time.sleep(delay)
     return _parse_json_text(response.text)
 
 
