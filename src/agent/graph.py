@@ -577,9 +577,6 @@ def should_continue(state: DoctorState) -> Union[str, List[Send]]:
     if state["decision"] == "RE_PROCESS":
         return "re_process"
     style_ids = styles_for(state.get("num_variants", 1))
-    intent = state.get("intent")
-    if intent is not None and intent.style and intent.style not in style_ids:
-        style_ids.append(intent.style)
     if len(style_ids) < 2:
         return "ship"
     history = state.get("history") or []
@@ -616,14 +613,11 @@ def rank_variants_node(state: DoctorState) -> Dict[str, Any]:
     ranked, recommended, source = rank_variants(
         downscale(state["original_image"]), state.get("variant_candidates") or [], diagnosis
     )
-    # Ưu tiên: phong cách người dùng nói rõ > phong cách họ hay chọn > xếp hạng
+    # Ưu tiên: phong cách người dùng hay chọn > xếp hạng
     available = {variant.id for variant in ranked}
     reason = source
-    intent = state.get("intent")
     memory = get_case_memory()
-    if intent is not None and intent.style in available:
-        recommended, reason = intent.style, "intent"
-    elif memory is not None:
+    if memory is not None:
         try:
             preferred = memory.preferred_style(state.get("user_id") or DEFAULT_USER)
         except Exception as exc:

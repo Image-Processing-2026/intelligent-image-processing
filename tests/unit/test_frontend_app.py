@@ -149,7 +149,7 @@ def test_chat_flow_asks_answers_and_refines():
 
     img = _dark_image()
     history, session_id, questions, *radios = chat_start(img, [])
-    assert session_id and questions[-1]["id"] == "style"
+    assert session_id and questions[-1]["id"] == "mood"
     assert len(radios) == QUESTION_SLOTS
     assert radios[len(questions) - 1]["visible"] is True
     assert "Chẩn đoán" in history[-1]["content"]

@@ -171,7 +171,7 @@ def test_ground_truth_branch_uses_run_pipeline(
     process = body["process"]
     assert process["is_synthetic"] is True
     assert {"psnr", "ssim"} <= set(process["final_evaluation"])
-    assert process["intent"]["style"] == "balanced"
+    assert process["intent"]["style"] is None
 
 
 # ---------------- thread hết hạn và hỏi ý lại ----------------

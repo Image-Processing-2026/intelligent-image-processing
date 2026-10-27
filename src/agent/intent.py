@@ -3,9 +3,9 @@ Hiểu ý định người dùng trước khi xử lý (Phase 4).
 
 Sau lần chẩn đoán đầu tiên, agent hỏi tối đa MAX_QUESTIONS câu. Câu hỏi được sinh TẤT ĐỊNH
 từ chẩn đoán: chỉ hỏi về chỗ thật sự mơ hồ (ám vàng là chủ ý hay lỗi, giữ không khí tối hay
-làm sáng, giữ hạt hay làm mịn), cộng một câu về phong cách mong muốn. Mỗi lựa chọn mang sẵn
-tác động (giữ một aspect, sửa một loại lỗi, hoặc chọn phong cách), nên câu trả lời được chuyển
-thành IntentProfile mà không cần VLM. Ý định người dùng ghi đè chẩn đoán của VLM.
+làm sáng, giữ hạt hay làm mịn); ảnh không có chỗ mơ hồ thì không có câu hỏi nào. Mỗi lựa chọn
+mang sẵn tác động (giữ một aspect hoặc sửa một loại lỗi), nên câu trả lời được chuyển thành
+IntentProfile mà không cần VLM. Ý định người dùng ghi đè chẩn đoán của VLM.
 """
 
 import re
@@ -17,10 +17,10 @@ from .fusion import INTENTIONAL_ASPECT, VERIFY_PHRASES
 from .perception import _drop_preserved_defects
 from .regions import canonical_region
 from .state import Defect, DiagnosisReport, IntentProfile, PreserveItem
+from .user_analysis import apply_edits
 
 MAX_QUESTIONS = 3
-# Số câu hỏi về chỗ mơ hồ tối đa (câu còn lại dành cho phong cách)
-MAX_AMBIGUITY_QUESTIONS = MAX_QUESTIONS - 1
+MAX_AMBIGUITY_QUESTIONS = MAX_QUESTIONS
 USER_DEFECT_SEVERITY = 2
 
 # Câu hỏi về chỗ mơ hồ đã được một câu ask_user (fusion) bao phủ thì không hỏi lại
@@ -44,12 +44,6 @@ FIX_CONFLICTS: Dict[str, Tuple[str, ...]] = {
     "oversaturated": ("vivid_colors",),
 }
 
-STYLE_LABELS: Dict[str, str] = {
-    "natural": "Tự nhiên (chỉnh nhẹ tay)",
-    "balanced": "Cân bằng",
-    "vivid": "Đậm nét (rực, tương phản cao)",
-}
-
 
 class Choice(BaseModel):
     """Một lựa chọn trả lời, kèm tác động của nó lên ý định."""
@@ -58,7 +52,6 @@ class Choice(BaseModel):
     label: str
     keep: Optional[str] = Field(default=None, description="Aspect cần giữ khi chọn")
     fix: Optional[str] = Field(default=None, description="Loại lỗi cần sửa khi chọn")
-    style: Optional[str] = Field(default=None, description="Phong cách khi chọn")
 
 
 class Question(BaseModel):
@@ -174,23 +167,11 @@ def _ask_user_questions(diagnosis: DiagnosisReport) -> List[Question]:
     return questions
 
 
-def style_question() -> Question:
-    """Câu hỏi phong cách, luôn được hỏi."""
-    return Question(
-        id="style",
-        text="Bạn thích kết quả theo phong cách nào?",
-        choices=[
-            Choice(value=style, label=label, style=style) for style, label in STYLE_LABELS.items()
-        ],
-        default="balanced",
-    )
-
-
 def build_questions(diagnosis: Optional[DiagnosisReport]) -> List[Question]:
     """
     Câu hỏi cho một chẩn đoán: tối đa MAX_AMBIGUITY_QUESTIONS câu về chỗ mơ hồ (theo thứ tự
-    ưu tiên: lỗi fusion cần hỏi (ask_user), không khí tối, tông ấm, hạt, tông lạnh), rồi câu
-    phong cách. Tất định, nên sinh lại khi resume cho đúng cùng câu hỏi.
+    ưu tiên: lỗi fusion cần hỏi (ask_user), không khí tối, tông ấm, hạt, tông lạnh); có thể rỗng.
+    Tất định, nên sinh lại khi resume cho đúng cùng câu hỏi.
     """
     ambiguities: List[Question] = []
     if diagnosis is not None:
@@ -207,7 +188,7 @@ def build_questions(diagnosis: Optional[DiagnosisReport]) -> List[Question]:
             for question in candidates
             if question is not None and not asked & set(TOPIC_DEFECTS.get(question.id, ()))
         ]
-    return [*ambiguities[:MAX_AMBIGUITY_QUESTIONS], style_question()]
+    return ambiguities[:MAX_AMBIGUITY_QUESTIONS]
 
 
 # ---------------------------------------------------------
@@ -223,9 +204,6 @@ NOTE_RULES: Tuple[Tuple[str, str, str], ...] = (
     ("mood", "brighten", r"làm sáng|sáng (rõ|lên|hơn)|thấy rõ mặt"),
     ("grain", "keep", r"giữ\s*hạt|kiểu film|chất film"),
     ("grain", "smooth", r"mịn|khử nhiễu|hết nhiễu|bớt nhiễu|hết hạt|bớt hạt"),
-    ("style", "natural", r"tự nhiên|nhẹ nhàng|nhẹ tay"),
-    ("style", "vivid", r"rực|đậm|nổi bật|sống động"),
-    ("style", "balanced", r"cân bằng"),
 )
 
 # Tác động mặc định khi ghi chú nói về một câu không được hỏi
@@ -238,7 +216,6 @@ DEFAULT_EFFECTS: Dict[Tuple[str, str], Choice] = {
     ("mood", "brighten"): Choice(value="brighten", label="", fix="underexposed"),
     ("grain", "keep"): Choice(value="keep", label="", keep="film_grain"),
     ("grain", "smooth"): Choice(value="smooth", label="", fix="noise"),
-    **{("style", style): Choice(value=style, label="", style=style) for style in STYLE_LABELS},
 }
 
 
@@ -275,8 +252,6 @@ def intent_from_answers(
             intent.keep.append(PreserveItem(aspect=choice.keep, reason="Người dùng yêu cầu giữ"))
         if choice.fix and choice.fix not in intent.fix:
             intent.fix.append(choice.fix)
-        if choice.style:
-            intent.style = choice.style
     return intent
 
 
@@ -290,6 +265,7 @@ def apply_intent(diagnosis: DiagnosisReport, intent: Optional[IntentProfile]) ->
     2. Thêm aspect người dùng muốn giữ.
     3. Bảo đảm lỗi người dùng muốn sửa có mặt với severity >= USER_DEFECT_SEVERITY.
     4. Bỏ lỗi mâu thuẫn với các aspect cần giữ.
+    5. Áp các DiagnosisEdit (thêm/bỏ lỗi, giữ) từ chat bổ sung phân tích.
     """
     if intent is None:
         return diagnosis
@@ -324,7 +300,8 @@ def apply_intent(diagnosis: DiagnosisReport, intent: Optional[IntentProfile]) ->
 
     updated = diagnosis.model_copy(update={"preserve": preserve, "defects": defects})
     updated.defects = _drop_preserved_defects(updated)
-    return updated
+    # Edit từ chat bổ sung phân tích áp sau cùng: người dùng thắng cả câu trả lời trắc nghiệm
+    return apply_edits(updated, intent.edits)
 
 
 def intent_prompt(intent: Optional[IntentProfile]) -> str:
@@ -332,8 +309,6 @@ def intent_prompt(intent: Optional[IntentProfile]) -> str:
     if intent is None:
         return ""
     lines: List[str] = []
-    if intent.style:
-        lines.append(f"- Phong cách mong muốn: {STYLE_LABELS[intent.style]}")
     if intent.keep:
         lines.append("- Muốn giữ: " + ", ".join(f"{p.aspect}@{p.region}" for p in intent.keep))
     if intent.fix:

@@ -44,9 +44,9 @@ def _dark_image() -> np.ndarray:
 # Câu hỏi
 # ============================================================
 class TestQuestions:
-    def test_clean_image_only_asks_style(self):
-        assert [q.id for q in build_questions(_diagnosis())] == ["style"]
-        assert [q.id for q in build_questions(None)] == ["style"]
+    def test_clean_image_asks_nothing(self):
+        assert build_questions(_diagnosis()) == []
+        assert build_questions(None) == []
 
     def test_ambiguities_are_prioritised_and_capped(self):
         diagnosis = _diagnosis(
@@ -56,7 +56,7 @@ class TestQuestions:
             Defect(type="color_cast_cool", severity=1),
         )
         questions = build_questions(diagnosis)
-        assert [q.id for q in questions] == ["mood", "warm", "style"]
+        assert [q.id for q in questions] == ["mood", "warm", "grain"]
         assert len(questions) == MAX_QUESTIONS
 
     def test_defaults_follow_the_diagnosis(self):
@@ -67,7 +67,7 @@ class TestQuestions:
 
     def test_backlit_subject_brighten_fixes_backlight(self):
         diagnosis = _diagnosis(Defect(type="backlit_subject", region="face", severity=2))
-        [mood, _] = build_questions(diagnosis)
+        [mood] = build_questions(diagnosis)
         assert "ngược sáng" in mood.text
         brighten = next(c for c in mood.choices if c.value == "brighten")
         assert brighten.fix == "backlit_subject"
@@ -90,8 +90,8 @@ class TestAnswers:
             ("làm sáng rõ mặt", {"mood": "brighten"}),
             ("cho mịn hơn", {"grain": "smooth"}),
             ("giữ hạt film", {"grain": "keep"}),
-            ("rực rỡ lên", {"style": "vivid"}),
-            ("tự nhiên thôi", {"style": "natural"}),
+            ("rực rỡ lên", {}),
+            ("tự nhiên thôi", {}),
             ("", {}),
         ],
     )
@@ -106,12 +106,12 @@ class TestAnswers:
         assert intent.fix == []
 
     def test_unknown_values_are_ignored(self):
-        intent = intent_from_answers(build_questions(None), {"style": "sepia", "ghost": "x"})
+        intent = intent_from_answers(build_questions(None), {"style": "vivid", "ghost": "x"})
         assert intent.style is None and intent.answers == {}
 
     def test_notes_about_unasked_questions_still_apply(self):
-        intent = intent_from_answers(build_questions(None), {"style": "vivid"}, "giữ hạt film")
-        assert intent.style == "vivid"
+        intent = intent_from_answers(build_questions(None), {}, "giữ hạt film")
+        assert intent.style is None
         assert [p.aspect for p in intent.keep] == ["film_grain"]
         assert intent.notes == "giữ hạt film"
 
@@ -150,14 +150,13 @@ class TestApplyIntent:
 
     def test_intent_prompt(self):
         intent = IntentProfile(
-            style="vivid",
             keep=[PreserveItem(aspect="warm_tone")],
             fix=["noise"],
             notes="làm rõ mặt",
         )
         text = intent_prompt(intent)
         assert text.startswith("Ý ĐỊNH NGƯỜI DÙNG")
-        assert "Đậm nét" in text and "warm_tone@full" in text and "noise" in text
+        assert "Phong cách" not in text and "warm_tone@full" in text and "noise" in text
         assert "làm rõ mặt" in text
         assert intent_prompt(None) == "" and intent_prompt(IntentProfile()) == ""
 
@@ -174,26 +173,26 @@ class TestInteractivePipeline:
     def test_session_asks_then_applies_the_intent(self):
         started = start_session(_dark_image(), max_iterations=2, num_variants=3)
         assert started.status == "needs_input"
-        assert started.questions[-1].id == "style"
+        assert [q.id for q in started.questions] == ["mood"]
         assert started.diagnosis is not None
 
-        done = answer_session(started.session_id, {"style": "natural"}, "giữ tông ấm")
+        done = answer_session(started.session_id, {}, "giữ tông ấm")
         state = done.state
         assert done.status == "done"
-        assert state["intent"].style == "natural"
-        assert state["recommended_variant"] == "natural"
+        assert state["intent"].style is None
         # Ý định áp vào chẩn đoán của mọi vòng
         assert all(
             "warm_tone" in [p.aspect for p in item.diagnosis.preserve] for item in state["history"]
         )
         end_session(started.session_id)
 
-    def test_preset_style_is_rendered_even_with_one_variant(self):
-        state = run_pipeline(
-            _dark_image(), max_iterations=1, num_variants=1, intent=IntentProfile(style="vivid")
-        )
-        assert sorted(v.id for v in state["variants"]) == ["balanced", "vivid"]
-        assert state["recommended_variant"] == "vivid"
+    def test_session_still_pauses_without_questions(self, monkeypatch):
+        monkeypatch.setattr("src.agent.graph.build_questions", lambda diagnosis: [])
+        started = start_session(_dark_image(), max_iterations=1, num_variants=1)
+        assert started.status == "needs_input"
+        assert started.questions == []
+        assert answer_session(started.session_id, {}).status == "done"
+        end_session(started.session_id)
 
     def test_answering_unknown_or_finished_sessions_fails(self):
         with pytest.raises(SessionNotFoundError):
@@ -235,7 +234,7 @@ class TestInteractivePipeline:
         mock_genai.Client.return_value.models = models
 
         started = start_session(_dark_image(), max_iterations=1, num_variants=1)
-        answer_session(started.session_id, {"style": "vivid"}, "giữ tông ấm")
+        answer_session(started.session_id, {}, "giữ tông ấm")
         end_session(started.session_id)
 
         prompts = [

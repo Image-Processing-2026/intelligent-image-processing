@@ -23,7 +23,7 @@ from src.agent.memory import (
     remember_run,
 )
 from src.agent.refine import Adjustment
-from src.agent.state import Defect, DiagnosisReport, IntentProfile
+from src.agent.state import Defect, DiagnosisReport
 
 FAKE_KEY = {"GEMINI_API_KEY": "fake-key-for-test"}
 
@@ -199,14 +199,6 @@ class TestPipelineIntegration:
         state = run_pipeline(_dark_image(), max_iterations=1, num_variants=3)
         assert state["recommended_variant"] == "natural"
         assert state["recommended_reason"] == "preference"
-
-    def test_intent_style_beats_preference(self, memory: CaseMemory):
-        for index in range(3):
-            memory._save(_case(f"p{index}", chosen_variant="natural"))
-        state = run_pipeline(
-            _dark_image(), max_iterations=1, num_variants=3, intent=IntentProfile(style="vivid")
-        )
-        assert (state["recommended_variant"], state["recommended_reason"]) == ("vivid", "intent")
 
     def test_without_memory_reason_is_the_ranking_source(self):
         state = run_pipeline(_dark_image(), max_iterations=1, num_variants=2)

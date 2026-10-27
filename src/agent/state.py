@@ -7,10 +7,12 @@ import operator
 from typing import Annotated, Any, Dict, List, Literal, Optional, TypedDict
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.analyzer_evaluator.measurement import MeasurementReport, RegionStats
 from src.analyzer_evaluator.metadata import ImageMetadata
+
+from .regions import canonical_region
 
 PlanSource = Literal["vlm", "rule_based", "vlm_fallback"]
 
@@ -246,10 +248,41 @@ class HistoryItem(BaseModel):
 STYLE_CHOICES: tuple[str, ...] = ("natural", "balanced", "vivid")
 
 
+class DiagnosisEdit(BaseModel):
+    """Một chỉnh sửa của người dùng lên chẩn đoán (chat bổ sung phân tích)."""
+
+    op: Literal["add_defect", "remove_defect", "keep"]
+    type: Optional[Literal[DEFECT_TYPES]] = None  # type: ignore[valid-type]
+    aspect: Optional[str] = Field(default=None, description="Aspect cần giữ (op=keep)")
+    region: str = Field(default="full", description="Luôn qua regions.canonical_region")
+    severity: int = Field(default=2, ge=1, le=3, description="Chỉ dùng cho add_defect")
+    source_text: str = Field(default="", description="Mệnh đề gốc của người dùng, để hiển thị")
+
+    @field_validator("region", mode="before")
+    @classmethod
+    def _canonical_region(cls, value: Any) -> str:
+        """Chuẩn hóa tên vùng theo từ vựng chung."""
+        return canonical_region(value)
+
+    @model_validator(mode="after")
+    def _check_target(self) -> "DiagnosisEdit":
+        """add/remove_defect cần type; keep cần aspect thuộc PRESERVE_ASPECTS."""
+        if self.op == "keep":
+            if self.aspect not in PRESERVE_ASPECTS:
+                raise ValueError(f"keep edit needs a known aspect, got {self.aspect!r}")
+        elif self.type is None:
+            raise ValueError(f"{self.op} edit needs a defect type")
+        return self
+
+
 class IntentProfile(BaseModel):
     """Ý định của người dùng, thu từ hội thoại trước khi xử lý (Phase 4)."""
 
+    # Deprecated: không còn câu hỏi phong cách, luôn None; giữ field để đọc được dữ liệu cũ
     style: Optional[Literal[STYLE_CHOICES]] = None  # type: ignore[valid-type]
+    edits: List[DiagnosisEdit] = Field(
+        default_factory=list, description="Chỉnh sửa chẩn đoán từ chat bổ sung phân tích"
+    )
     keep: List[PreserveItem] = Field(
         default_factory=list, description="Đặc điểm người dùng muốn giữ (ghi đè chẩn đoán)"
     )

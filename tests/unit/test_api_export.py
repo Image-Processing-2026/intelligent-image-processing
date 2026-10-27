@@ -108,7 +108,8 @@ def test_export_contains_analysis_data_without_internals(
         "answers",
         "result",
     ]
-    assert data["treatments"] and data["variants"] and data["artifacts"]
+    assert data["treatments"] and data["artifacts"]
+    assert data["variants"] == []  # một kết quả mỗi lần chạy (không còn chọn phong cách)
 
     text = json.dumps(data)
     assert "thread_id" not in text

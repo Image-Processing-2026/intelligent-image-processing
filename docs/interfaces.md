@@ -575,7 +575,8 @@ def run_pipeline(image, ground_truth=None, is_synthetic=False, max_iterations=3,
 **Intent conversation (Phase 4, `src/agent/intent.py`, `session.py`, `refine.py`):**
 ```python
 class IntentProfile(BaseModel):        # src/agent/state.py
-    style: Optional[Literal["natural", "balanced", "vivid"]] = None
+    style: Optional[Literal["natural", "balanced", "vivid"]] = None  # deprecated, always None
+    edits: List[DiagnosisEdit]         # user edits to the diagnosis (chat "bổ sung phân tích")
     keep: List[PreserveItem]           # user-declared intentional style (overrides the VLM)
     fix: List[DEFECT_TYPES]            # defects the user wants fixed even if "intentional"
     notes: str = ""                    # free text, also sent to the Plan prompt
@@ -584,18 +585,34 @@ class IntentProfile(BaseModel):        # src/agent/state.py
 def start_session(image, max_iterations=3, num_variants=3) -> SessionResult   # pauses
 def answer_session(session_id, answers, notes="") -> SessionResult             # resumes
 def refine(original, actions, feedback) -> RefineResult                        # stateless
+
+class DiagnosisEdit(BaseModel):        # src/agent/state.py
+    op: Literal["add_defect", "remove_defect", "keep"]
+    type: Optional[DEFECT_TYPES]       # add_defect / remove_defect
+    aspect: Optional[PRESERVE_ASPECTS] # keep
+    region: str = "full"               # canonical_region
+    severity: int = 2                  # 1..3, add_defect only
+    source_text: str = ""
+
+# src/agent/user_analysis.py
+def parse_edits(text, diagnosis=None) -> Tuple[List[DiagnosisEdit], str]  # source: rule|vlm|vlm_fallback|none
+def apply_edits(diagnosis, edits) -> DiagnosisReport                       # deterministic copy
 ```
+- `parse_edits`: Vietnamese rules first, then Gemini (text only, no image) when the rules find
+  nothing and a key is set. A user-added defect has `origin="user"`, is never dropped by fusion
+  and is raised, not duplicated, when the diagnosis already has `backlit_subject` on the subject.
 - Graph: `perceive → clarify → diagnose_and_plan`. `clarify` only acts on iteration 1 of an
   interactive run with no intent yet: it calls `interrupt()` with deterministic questions
-  built from the diagnosis (at most 2 ambiguities, chosen in priority order: dark mood, warm
-  tone, grain, cool tone, plus one style question). On resume
+  built from the diagnosis (at most 3 ambiguities, chosen in priority order: fusion `ask_user`,
+  dark mood, warm tone, grain, cool tone). The list may be empty and the graph still pauses, so
+  the user can add analysis notes. There is no style question any more. On resume
   (`Command(resume={"answers", "notes"})`) it builds the intent. Free-text notes are mapped by
   rules; explicit answers win.
 - The intent overrides every iteration's diagnosis (`apply_intent`): `fix` removes conflicting
   preserve items and ensures the defect at severity ≥ 2 (`origin="user"`), and `keep` adds
   preserve items and drops conflicting defects. The Plan prompt gets an
-  "Ý ĐỊNH NGƯỜI DÙNG" block. An intent style is always rendered as a variant and is the
-  recommended one. `run_pipeline(..., intent=...)` accepts a preset intent without asking.
+  "Ý ĐỊNH NGƯỜI DÙNG" block. `intent.edits` are applied last (`user_analysis.apply_edits`), so
+  they beat the multiple-choice answers on every iteration. `run_pipeline(..., intent=...)` accepts a preset intent without asking.
 - Sessions use an in-process `MemorySaver` (lost on restart; at most `MAX_SESSIONS`, oldest
   evicted).
 - Feedback (`refine`): Vietnamese rules first, then Gemini when the rules find nothing and a

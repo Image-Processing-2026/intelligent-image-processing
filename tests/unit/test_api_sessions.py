@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import select
 
-from src.agent.intent import style_question
+from src.agent.intent import Choice, Question
 from src.agent.session import SessionResult
 from src.agent.state import Defect, DiagnosisReport
 from src.api import workspace
@@ -70,7 +70,17 @@ class FakeAgent:
         return SessionResult(
             session_id=f"thread-{len(self.started)}",
             status="needs_input",
-            questions=[style_question()],
+            questions=[
+                Question(
+                    id="mood",
+                    text="Ảnh đang khá tối. Giữ hay làm sáng?",
+                    choices=[
+                        Choice(value="keep_dark", label="Giữ", keep="low_key"),
+                        Choice(value="brighten", label="Làm sáng", fix="underexposed"),
+                    ],
+                    default="brighten",
+                )
+            ],
             diagnosis=diagnosis,
         )
 
@@ -110,7 +120,7 @@ def test_create_from_upload_runs_diagnosis(
     assert body["options"]["max_iterations"] == 3 and body["options"]["num_variants"] == 3
     assert [m["kind"] for m in body["messages"]] == ["diagnosis", "questions"]
     assert body["diagnosis"]["source"] == "rule_based"
-    assert [q["id"] for q in body["questions"]] == ["style"]
+    assert [q["id"] for q in body["questions"]] == ["mood"]
     assert "thread" not in response.text  # thread_id không bao giờ ra client
     assert agent.started[0]["user_id"] == _user_id(app_db, "alice")
     assert agent.started[0]["shape"] == (32, 48, 3)
@@ -372,5 +382,5 @@ def test_create_with_real_rule_based_diagnosis(client: TestClient) -> None:
     body = response.json()
     assert body["status"] == "awaiting_answers"
     assert body["diagnosis"]["source"] == "rule_based"
-    assert body["questions"][-1]["id"] == "style"
+    assert body["questions"][-1]["id"] == "mood"
     assert any(defect["type"] == "underexposed" for defect in body["diagnosis"]["defects"])
