@@ -583,7 +583,7 @@ class IntentProfile(BaseModel):        # src/agent/state.py
     answers: Dict[str, str]            # raw question id -> chosen value
 
 def start_session(image, max_iterations=3, num_variants=3) -> SessionResult   # pauses
-def answer_session(session_id, answers, notes="") -> SessionResult             # resumes
+def answer_session(session_id, answers, notes="", edits=None) -> SessionResult # resumes
 def refine(original, actions, feedback) -> RefineResult                        # stateless
 
 class DiagnosisEdit(BaseModel):        # src/agent/state.py
@@ -606,12 +606,14 @@ def apply_edits(diagnosis, edits) -> DiagnosisReport                       # det
   built from the diagnosis (at most 3 ambiguities, chosen in priority order: fusion `ask_user`,
   dark mood, warm tone, grain, cool tone). The list may be empty and the graph still pauses, so
   the user can add analysis notes. There is no style question any more. On resume
-  (`Command(resume={"answers", "notes"})`) it builds the intent. Free-text notes are mapped by
+  (`Command(resume={"answers", "notes", "edits"})`) it builds the intent. `edits` are
+  `DiagnosisEdit` dicts already parsed at the API layer (the node never parses text); a broken
+  edit is skipped with a warning (`user_analysis.validate_edits`). Free-text notes are mapped by
   rules; explicit answers win.
 - The intent overrides every iteration's diagnosis (`apply_intent`): `fix` removes conflicting
   preserve items and ensures the defect at severity ≥ 2 (`origin="user"`), and `keep` adds
   preserve items and drops conflicting defects. The Plan prompt gets an
-  "Ý ĐỊNH NGƯỜI DÙNG" block. `intent.edits` are applied last (`user_analysis.apply_edits`), so
+  "Ý ĐỊNH NGƯỜI DÙNG" block (including a "Người dùng bổ sung phân tích" line listing the edits). `intent.edits` are applied last (`user_analysis.apply_edits`), so
   they beat the multiple-choice answers on every iteration. `run_pipeline(..., intent=...)` accepts a preset intent without asking.
 - Sessions use an in-process `MemorySaver` (lost on restart; at most `MAX_SESSIONS`, oldest
   evicted).

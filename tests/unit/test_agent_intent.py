@@ -26,7 +26,14 @@ from src.agent.session import (
     end_session,
     start_session,
 )
-from src.agent.state import Defect, DiagnosisReport, IntentProfile, PreserveItem
+from src.agent.state import (
+    Defect,
+    DiagnosisEdit,
+    DiagnosisReport,
+    IntentProfile,
+    PreserveItem,
+)
+from src.agent.user_analysis import validate_edits
 
 FAKE_KEY = {"GEMINI_API_KEY": "fake-key-for-test"}
 
@@ -244,3 +251,61 @@ class TestInteractivePipeline:
         ]
         assert prompts and "Ý ĐỊNH NGƯỜI DÙNG" in prompts[0]
         assert "warm_tone@full" in prompts[0]
+
+
+# ============================================================
+# Edits chẩn đoán qua clarify/session (T4)
+# ============================================================
+class TestClarifyEdits:
+    def test_intent_from_answers_carries_edits(self):
+        edit = DiagnosisEdit(op="add_defect", type="underexposed", region="face", severity=3)
+        intent = intent_from_answers([], {}, "", [edit])
+        assert intent.edits == [edit]
+        assert intent_from_answers([], {}).edits == []
+
+    def test_intent_prompt_lists_edits(self):
+        intent = IntentProfile(
+            edits=[
+                DiagnosisEdit(op="add_defect", type="underexposed", region="face", severity=3),
+                DiagnosisEdit(op="remove_defect", type="noise"),
+                DiagnosisEdit(op="keep", aspect="warm_tone"),
+            ]
+        )
+        text = intent_prompt(intent)
+        assert "Người dùng bổ sung phân tích" in text
+        assert "add underexposed@face (3)" in text
+        assert "remove noise@full" in text and "keep warm_tone@full" in text
+
+    def test_validate_edits_skips_broken_items(self, caplog):
+        good = {"op": "add_defect", "type": "underexposed", "region": "khuôn mặt", "severity": 2}
+        bad = [{"op": "add_defect"}, {"op": "nonsense"}, "text", None]
+        edits = validate_edits([good, *bad])
+        assert [(e.type, e.region) for e in edits] == [("underexposed", "face")]
+        assert "Skipping invalid diagnosis edit" in caplog.text
+        assert validate_edits(None) == [] and validate_edits("x") == []
+
+    def test_resume_with_edit_adds_a_user_defect_and_targets_it(self):
+        # Ảnh sáng vừa: số đo toàn ảnh không thêm underexposed@full (sẽ chặn card dark-region)
+        gradient = np.tile(np.linspace(100, 160, 48), (48, 1)).astype(np.uint8)
+        image = np.repeat(gradient[:, :, None], 3, axis=2)
+        started = start_session(image, max_iterations=1, num_variants=1)
+        edit = DiagnosisEdit(op="add_defect", type="underexposed", region="face", severity=3)
+        done = answer_session(started.session_id, {}, "", [edit])
+        state = done.state
+        assert done.status == "done"
+        assert edit in state["intent"].edits
+        item = state["history"][0]
+        user_defects = [d for d in item.diagnosis.defects if d.origin == "user"]
+        assert [(d.type, d.region, d.severity) for d in user_defects] == [
+            ("underexposed", "face", 3)
+        ]
+        assert any(a.region_id == "face" for a in item.plan.actions)
+        end_session(started.session_id)
+
+    def test_resume_with_broken_edit_still_finishes(self, caplog):
+        started = start_session(_dark_image(), max_iterations=1, num_variants=1)
+        done = answer_session(started.session_id, {}, "", [{"op": "add_defect"}])
+        assert done.status == "done"
+        assert done.state["intent"].edits == []
+        assert "Skipping invalid diagnosis edit" in caplog.text
+        end_session(started.session_id)

@@ -42,6 +42,7 @@ from .planner import (
 )
 from .regions import canonical_region
 from .state import DiagnosisReport, DoctorState, HistoryItem, IntentProfile, TreatmentPlan
+from .user_analysis import validate_edits
 from .variants import (
     is_noisy,
     merged_preserve,
@@ -96,8 +97,9 @@ def clarify_node(state: DoctorState) -> Dict[str, Any]:
     """
     Node hỏi ý định (Phase 4): chỉ ở vòng 1, khi chạy tương tác và chưa có ý định.
     interrupt() dừng graph và trả câu hỏi cho người dùng; khi resume với
-    {"answers": {...}, "notes": "..."} node chạy lại từ đầu, nên phần dựng câu hỏi phải
-    tất định (build_questions đáp ứng điều này).
+    {"answers": {...}, "notes": "...", "edits": [...]} node chạy lại từ đầu, nên phần dựng câu
+    hỏi phải tất định (build_questions đáp ứng điều này). edits đã được parse ở tầng API (không
+    parse văn bản trong node); edit hỏng bị bỏ qua với warning.
     """
     if not state.get("interactive") or state.get("intent") is not None or state["iteration"] > 1:
         return {}
@@ -111,7 +113,10 @@ def clarify_node(state: DoctorState) -> Dict[str, Any]:
     )
     response = response if isinstance(response, dict) else {}
     intent = intent_from_answers(
-        questions, dict(response.get("answers") or {}), str(response.get("notes") or "")
+        questions,
+        dict(response.get("answers") or {}),
+        str(response.get("notes") or ""),
+        validate_edits(response.get("edits")),
     )
     updated = apply_intent(diagnosis, intent) if diagnosis is not None else None
     return {"intent": intent, "diagnosis": updated}

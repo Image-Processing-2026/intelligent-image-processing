@@ -118,6 +118,24 @@ def _first_keep(clause: str) -> Optional[str]:
     return None
 
 
+def validate_edits(raw: Any) -> List[DiagnosisEdit]:
+    """
+    Chuyển payload thô (list dict hoặc DiagnosisEdit) thành DiagnosisEdit hợp lệ. Edit hỏng
+    bị bỏ qua và ghi warning; payload không phải list → rỗng. Không bao giờ raise.
+    """
+    if not isinstance(raw, (list, tuple)):
+        return []
+    edits: List[DiagnosisEdit] = []
+    for item in raw:
+        try:
+            edits.append(
+                item if isinstance(item, DiagnosisEdit) else DiagnosisEdit.model_validate(item)
+            )
+        except Exception as exc:
+            logger.warning("Skipping invalid diagnosis edit %r: %s", item, exc)
+    return edits
+
+
 def parse_edits_rules(text: str) -> List[DiagnosisEdit]:
     """Tách tin nhắn thành mệnh đề; mỗi mệnh đề lấy tối đa một luật (keep > phủ định > thêm)."""
     edits: List[DiagnosisEdit] = []

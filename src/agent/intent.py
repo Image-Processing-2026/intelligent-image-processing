@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from .fusion import INTENTIONAL_ASPECT, VERIFY_PHRASES
 from .perception import _drop_preserved_defects
 from .regions import canonical_region
-from .state import Defect, DiagnosisReport, IntentProfile, PreserveItem
+from .state import Defect, DiagnosisEdit, DiagnosisReport, IntentProfile, PreserveItem
 from .user_analysis import apply_edits
 
 MAX_QUESTIONS = 3
@@ -230,15 +230,19 @@ def parse_notes(notes: str) -> Dict[str, str]:
 
 
 def intent_from_answers(
-    questions: Sequence[Question], answers: Dict[str, str], notes: str = ""
+    questions: Sequence[Question],
+    answers: Dict[str, str],
+    notes: str = "",
+    edits: Sequence[DiagnosisEdit] = (),
 ) -> IntentProfile:
     """
     Chuyển câu trả lời (và ghi chú) thành IntentProfile. Câu trả lời chọn trực tiếp thắng
-    ghi chú; giá trị không có trong lựa chọn của câu hỏi bị bỏ qua.
+    ghi chú; giá trị không có trong lựa chọn của câu hỏi bị bỏ qua. edits (đã parse ở tầng
+    API) được gắn nguyên vẹn vào intent.edits.
     """
     by_id = {question.id: question for question in questions}
     merged = {**parse_notes(notes), **{k: v for k, v in answers.items() if v}}
-    intent = IntentProfile(notes=notes.strip())
+    intent = IntentProfile(notes=notes.strip(), edits=list(edits))
     for question_id, value in merged.items():
         question = by_id.get(question_id)
         if question is not None:
@@ -304,6 +308,15 @@ def apply_intent(diagnosis: DiagnosisReport, intent: Optional[IntentProfile]) ->
     return apply_edits(updated, intent.edits)
 
 
+def _edit_label(edit: DiagnosisEdit) -> str:
+    """Nhãn ngắn của một edit cho prompt: 'add underexposed@face (3)', 'keep warm_tone@full'."""
+    if edit.op == "add_defect":
+        return f"add {edit.type}@{edit.region} ({edit.severity})"
+    if edit.op == "remove_defect":
+        return f"remove {edit.type}@{edit.region}"
+    return f"keep {edit.aspect}@{edit.region}"
+
+
 def intent_prompt(intent: Optional[IntentProfile]) -> str:
     """Khối 'Ý ĐỊNH NGƯỜI DÙNG' cho prompt giai đoạn Plan; rỗng nếu không có ý định."""
     if intent is None:
@@ -313,6 +326,10 @@ def intent_prompt(intent: Optional[IntentProfile]) -> str:
         lines.append("- Muốn giữ: " + ", ".join(f"{p.aspect}@{p.region}" for p in intent.keep))
     if intent.fix:
         lines.append("- Muốn sửa: " + ", ".join(intent.fix))
+    if intent.edits:
+        lines.append(
+            "- Người dùng bổ sung phân tích: " + ", ".join(_edit_label(e) for e in intent.edits)
+        )
     if intent.notes:
         lines.append(f"- Ghi chú: {intent.notes}")
     if not lines:

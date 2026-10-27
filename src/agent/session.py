@@ -11,7 +11,7 @@ import threading
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 import numpy as np
 from langgraph.checkpoint.memory import MemorySaver
@@ -22,7 +22,7 @@ from src.analyzer_evaluator.metadata import ImageMetadata
 from .graph import build_doctor_graph, initial_doctor_state
 from .intent import Question
 from .memory import DEFAULT_USER
-from .state import DiagnosisReport, DoctorState
+from .state import DiagnosisEdit, DiagnosisReport, DoctorState
 
 logger = logging.getLogger(__name__)
 
@@ -105,9 +105,15 @@ def start_session(
 
 
 def answer_session(
-    session_id: str, answers: Optional[Dict[str, str]] = None, notes: str = ""
+    session_id: str,
+    answers: Optional[Dict[str, str]] = None,
+    notes: str = "",
+    edits: Optional[Sequence[Union[DiagnosisEdit, Dict[str, Any]]]] = None,
 ) -> SessionResult:
-    """Trả lời câu hỏi của phiên và chạy tiếp pipeline đến khi xong."""
+    """
+    Trả lời câu hỏi của phiên và chạy tiếp pipeline đến khi xong. edits là các chỉnh sửa
+    chẩn đoán đã parse ở tầng API (DiagnosisEdit hoặc dict); edit hỏng bị clarify bỏ qua.
+    """
     with _LOCK:
         known = session_id in _SESSIONS
     if not known:
@@ -115,7 +121,11 @@ def answer_session(
     snapshot = _APP.get_state(_config(session_id))
     if not snapshot.next:
         raise ValueError(f"session {session_id} is not waiting for input")
-    command = Command(resume={"answers": answers or {}, "notes": notes})
+    payload_edits = [
+        edit.model_dump(mode="json") if isinstance(edit, DiagnosisEdit) else edit
+        for edit in edits or []
+    ]
+    command = Command(resume={"answers": answers or {}, "notes": notes, "edits": payload_edits})
     return _result(session_id, _APP.invoke(command, _config(session_id)))
 
 
