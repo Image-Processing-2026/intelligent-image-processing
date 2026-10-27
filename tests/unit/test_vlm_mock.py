@@ -4,10 +4,13 @@ Chạy offline, không cần GEMINI_API_KEY, không tốn quota API.
 """
 
 import json
+from io import BytesIO
+from typing import Any, List
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from src.agent.graph import run_pipeline
 from src.agent.planner import validate_and_sort_plan
@@ -488,11 +491,20 @@ class TestVLMFailureFallsBackToRules:
 
 
 class TestVLMRequest:
-    """Phase 0: structured output, thu nhỏ ảnh và gửi kèm ảnh gốc từ vòng 2."""
+    """Phase 0: structured output, ảnh giữ độ phân giải gốc và gửi kèm ảnh gốc từ vòng 2."""
 
     @staticmethod
     def _call_kwargs(mock_genai: MagicMock) -> dict:
         return mock_genai.Client.return_value.models.generate_content.call_args.kwargs
+
+    @staticmethod
+    def _sent_images(contents: List[Any]) -> List[Image.Image]:
+        """Giải mã các Part ảnh đã gửi Gemini thành ảnh PIL."""
+        return [
+            Image.open(BytesIO(part.inline_data.data))
+            for part in contents
+            if not isinstance(part, str)
+        ]
 
     @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
     @patch("src.agent.vlm_diagnostician.genai")
@@ -539,16 +551,39 @@ class TestVLMRequest:
 
     @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
     @patch("src.agent.vlm_diagnostician.genai")
-    def test_large_image_is_downscaled(self, mock_genai):
-        from src.agent.vlm_diagnostician import VLM_MAX_SIDE
-
+    def test_large_image_is_sent_at_full_resolution(self, mock_genai):
         mock_genai.Client.return_value.models = _create_mock_model(MOCK_VALID_RESPONSE)
         img = np.zeros((1500, 3000, 3), dtype=np.uint8)
         diagnose_and_plan(img, {}, iteration=1)
 
         contents = self._call_kwargs(mock_genai)["contents"]
-        sent = contents[-1]
-        assert sent.size == (VLM_MAX_SIDE, VLM_MAX_SIDE // 2)
+        sent = self._sent_images(contents)[-1]
+        assert sent.size == (3000, 1500)
+        assert sent.format == "PNG"  # vừa ngân sách → không mất mát
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.VLM_INLINE_IMAGE_BUDGET", 200_000)
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_image_over_budget_falls_back_to_jpeg(self, mock_genai):
+        mock_genai.Client.return_value.models = _create_mock_model(MOCK_VALID_RESPONSE)
+        rng = np.random.default_rng(0)
+        img = rng.integers(0, 256, (400, 600, 3), dtype=np.uint8)  # nhiễu: PNG ~720 KB
+        diagnose_and_plan(img, {}, iteration=1)
+
+        sent = self._sent_images(self._call_kwargs(mock_genai)["contents"])[-1]
+        assert sent.format == "JPEG"
+        assert sent.size == (600, 400)
+
+    @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_media_resolution_is_high(self, mock_genai):
+        from google.genai import types
+
+        mock_genai.Client.return_value.models = _create_mock_model(MOCK_VALID_RESPONSE)
+        diagnose_and_plan(np.zeros((32, 32, 3), dtype=np.uint8), {}, iteration=1)
+
+        config = self._call_kwargs(mock_genai)["config"]
+        assert config.media_resolution == types.MediaResolution.MEDIA_RESOLUTION_HIGH
 
     @patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key-for-test"})
     @patch("src.agent.vlm_diagnostician.genai")
@@ -569,7 +604,7 @@ class TestVLMRequest:
         diagnose_and_plan(current, {}, iteration=2, original_image=original)
 
         contents = self._call_kwargs(mock_genai)["contents"]
-        images = [c for c in contents if not isinstance(c, str)]
+        images = self._sent_images(contents)
         assert len(images) == 2
         assert np.asarray(images[0]).max() == 0  # ảnh gốc trước
         assert np.asarray(images[1]).min() == 200  # ảnh hiện tại cuối cùng
@@ -582,7 +617,7 @@ class TestVLMRequest:
         plan = diagnose_and_plan(img, {}, iteration=1)
 
         assert plan.source == "vlm"
-        assert self._call_kwargs(mock_genai)["contents"][-1].mode == "L"
+        assert self._sent_images(self._call_kwargs(mock_genai)["contents"])[-1].mode == "L"
 
 
 class TestRuleBasedPlan:

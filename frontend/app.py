@@ -28,6 +28,7 @@ from src.agent.memory import (
     get_case_memory,
     remember_run,
 )
+from src.agent.perception import preload_region_models
 from src.agent.planner import sanitize_actions
 from src.agent.refine import refine
 from src.agent.session import SessionNotFoundError, answer_session, start_session
@@ -918,6 +919,8 @@ if __name__ == "__main__":
     load_dotenv(encoding="utf-8-sig")
     # Bộ nhớ ca bệnh (Phase 5): CASE_MEMORY_PATH rỗng → tắt
     configure_case_memory(os.getenv(MEMORY_ENV, str(DEFAULT_MEMORY_PATH)))
+    # Nạp sẵn DINO + MobileSAM ở luồng nền khi đã cài (lần chẩn đoán đầu không chờ ~13 s)
+    preload_region_models()
     app = create_app()
     app.launch(
         server_name="0.0.0.0", server_port=7860, theme=gr.themes.Soft(primary_hue="teal"), css=CSS

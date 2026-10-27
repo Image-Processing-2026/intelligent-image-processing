@@ -1,0 +1,36 @@
+{
+  "description": "Ảnh sạch bổ sung cho bộ hiệu chỉnh synthetic (scripts/build_calibration_set.py). Ảnh đã có sẵn trong data/real/benchmark/already_good/ không liệt kê ở đây.",
+  "max_side": 1024,
+  "images": [
+    {
+      "id": "clean_grass_01",
+      "file": "data/real/calibration_sources/clean_grass_01.jpg",
+      "role": "texture dày: cỏ",
+      "commons_title": "File:Green grass texture (Unsplash).jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Green_grass_texture_(Unsplash).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/3/33/Green_grass_texture_%28Unsplash%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3232,
+        1824
+      ],
+      "author": "Marc Wilnauer wk25",
+      "license": "CC0",
+      "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    },
+    {
+      "id": "clean_landscape_01",
+      "file": "data/real/calibration_sources/clean_landscape_01.jpg",
+      "role": "phong cảnh: đồi và cây",
+      "commons_title": "File:Tuscan landscape with lonely tree.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Tuscan_landscape_with_lonely_tree.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/e/ed/Tuscan_landscape_with_lonely_tree.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        5982,
+        3988
+      ],
+      "author": "Eric Kilby",
+      "license": "CC BY-SA 2.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/2.0"
+    }
+  ]
+}

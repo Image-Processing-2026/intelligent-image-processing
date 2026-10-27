@@ -61,6 +61,8 @@ weights/
 *.onnx
 data/synthetic/clean/*
 data/synthetic/degraded/*
+# Bộ hiệu chỉnh synthetic (scripts/build_calibration_set.py): ảnh sinh ra, không commit
+data/synthetic/calibration/
 data/real/*
 # Bộ nhớ ca bệnh (Phase 5): số liệu và lựa chọn của người dùng, không commit
 data/memory/
@@ -78,3 +80,6 @@ artifacts/*
 web/node_modules/
 web/dist/
 web/coverage/
+
+# Phân vùng ngữ nghĩa: model tải về (scripts/fetch_segmentation_models.py)
+models/segmentation/

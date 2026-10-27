@@ -21,13 +21,10 @@ from src.analyzer_evaluator import (
 )
 from src.analyzer_evaluator.analyzer import (
     _compute_histogram_stats,
-    _detect_color_cast,
     _ensure_rgb_and_gray,
     _estimate_noise_immerkaer,
 )
 from tests.fixtures.synthetic_images import (
-    create_color_cast_image,
-    create_flat_image,
     create_noisy_image,
 )
 
@@ -254,11 +251,20 @@ def test_immerkaer_on_flat_image():
 # =============================================================================
 
 
-def test_blur_level_flat_is_severe(flat_gray_image):
-    """Ảnh phẳng hoàn toàn phải là 'severe_blur' (Laplacian var = 0)."""
+def test_blur_level_flat_is_not_measured(flat_gray_image):
+    """Ảnh phẳng không có cạnh: độ mờ không đo được nên không báo mờ (D4: level từ calibration)."""
     m = analyze_image(flat_gray_image)
     assert m.sharpness_laplacian_var == 0.0
-    assert m.blur_level == "severe_blur"
+    assert m.defect_severity["blur"] == 0
+    assert m.blur_level == "sharp"
+
+
+def test_blur_level_blurred_photo_like_scene_is_blurred():
+    """Cảnh nhiều cạnh bị mờ Gaussian σ = 4 phải có blur_level khác 'sharp'."""
+    scene = _grey_scene_with_gains(np.ones(3))
+    blurred = cv2.GaussianBlur(scene, (0, 0), 4.0)
+    assert analyze_image(scene).blur_level == "sharp"
+    assert analyze_image(blurred).blur_level in ("mild_blur", "severe_blur")
 
 
 def test_blur_level_checkerboard_is_sharp(checkerboard_image):
@@ -286,33 +292,58 @@ def test_color_cast_none_on_gray(flat_gray_image):
     assert m.color_cast == "none"
 
 
-def test_color_cast_warm(warm_cast_image):
-    """Ảnh thiên đỏ/vàng phải phát hiện 'warm'."""
-    m = analyze_image(warm_cast_image)
+def _grey_scene_with_gains(gains: np.ndarray, seed: int = 0) -> np.ndarray:
+    """Cảnh gồm các khối xám ngẫu nhiên (có pixel trung tính) nhân kênh trên RGB tuyến tính.
+
+    Ám màu được đo trên pixel gần trung tính (Analysis v2), nên ảnh một màu đồng nhất không còn
+    dùng để kiểm tra ám màu: nó có thể là bức tường màu.
+    """
+    rng = np.random.default_rng(seed)
+    levels = rng.uniform(0.02, 0.6, (16, 16, 1)).astype(np.float32)
+    linear = np.kron(levels, np.ones((16, 16, 1), dtype=np.float32))
+    linear = np.clip(linear * gains.astype(np.float32), 0.0, 1.0)
+    encoded = np.where(linear <= 0.0031308, linear * 12.92, 1.055 * linear ** (1 / 2.4) - 0.055)
+    return np.clip(np.round(encoded * 255.0), 0, 255).astype(np.uint8)
+
+
+def test_color_cast_warm():
+    """Cảnh xám dưới nguồn sáng ấm mạnh phải phát hiện 'warm'."""
+    m = analyze_image(_grey_scene_with_gains(np.array([1.4, 1.0, 0.7])))
     assert m.color_cast == "warm"
+    assert m.defect_severity["color_cast_warm"] >= 1
 
 
-def test_color_cast_cool(cool_cast_image):
-    """Ảnh thiên xanh lam phải phát hiện 'cool'."""
-    m = analyze_image(cool_cast_image)
+def test_color_cast_cool():
+    """Cảnh xám dưới nguồn sáng lạnh mạnh phải phát hiện 'cool'."""
+    m = analyze_image(_grey_scene_with_gains(np.array([0.7, 1.0, 1.4])))
     assert m.color_cast == "cool"
 
 
-def test_color_cast_greenish():
-    """Ảnh thiên xanh lá phải phát hiện 'greenish'."""
-    base = create_flat_image(val=128)
-    green_img = create_color_cast_image(base, cast_type="greenish", intensity=50)
-    m = analyze_image(green_img)
-    assert m.color_cast == "greenish"
+def test_uniform_coloured_image_is_not_a_cast(warm_cast_image):
+    """Ảnh một màu đồng nhất không có pixel trung tính: không kết luận ám màu."""
+    assert analyze_image(warm_cast_image).color_cast == "none"
 
 
-def test_detect_color_cast_direct():
-    """Kiểm tra trực tiếp hàm _detect_color_cast."""
-    base = create_flat_image(val=128)
-    warm = create_color_cast_image(base, cast_type="warm", intensity=50)
-    cool = create_color_cast_image(base, cast_type="cool", intensity=50)
-    assert _detect_color_cast(warm) == "warm"
-    assert _detect_color_cast(cool) == "cool"
+def test_color_cast_green_follows_calibration():
+    """Ám xanh lá chỉ được báo khi bảng hiệu chỉnh có ngưỡng cho nó (bản hiện tại: không đo được)."""
+    from src.analyzer_evaluator.measurement.calibration import load_calibration
+
+    m = analyze_image(_grey_scene_with_gains(np.array([0.8, 1.3, 0.8])))
+    if load_calibration()["defects"]["color_cast_green"]["thresholds"]:
+        assert m.color_cast == "greenish"
+    else:
+        assert m.color_cast != "greenish"
+        assert m.defect_severity["color_cast_green"] == 0
+
+
+def test_levels_and_severity_share_one_source(underexposed_image):
+    """D4: *_level và defect_severity cùng một bảng hiệu chỉnh, có ghi phiên bản."""
+    from src.analyzer_evaluator.measurement.calibration import calibration_version
+
+    m = analyze_image(underexposed_image)
+    assert m.brightness_level == "underexposed"
+    assert m.defect_severity["underexposed"] >= 1
+    assert m.calibration_version == calibration_version()
 
 
 # =============================================================================
@@ -820,12 +851,13 @@ def test_exposure_extrema_white_image(white_image):
     assert result.brightness_level == "overexposed"
 
 
-def test_contrast_flat_image_has_zero_contrast_and_severe_blur(flat_gray_image):
-    """Ảnh phẳng đồng màu: contrast_std=0, sharpness=0, blur_level='severe_blur'."""
+def test_contrast_flat_image_has_zero_contrast_and_no_measured_blur(flat_gray_image):
+    """Ảnh phẳng đồng màu: contrast_std=0, sharpness=0, tương phản thấp, mờ không đo được."""
     result = analyze_image(flat_gray_image)
     assert result.contrast_std == 0.0
     assert result.sharpness_laplacian_var == 0.0
-    assert result.blur_level == "severe_blur"
+    assert result.contrast_level == "low"
+    assert result.blur_level == "sharp"
 
 
 def test_contrast_checkerboard_is_sharp(checkerboard_image):
@@ -1007,14 +1039,15 @@ def test_benchmark_generate_full_pipeline(tmp_path):
 
 
 def test_analyze_image_performance_full_hd():
-    """analyze_image phải hoàn thành trong < 1000ms trên ảnh 1920x1080.
+    """analyze_image phải hoàn thành trong < 5000ms trên ảnh 1920x1080 (không dùng cache).
 
-    Note: Mục tiêu gốc là < 50ms trên CPU cao cấp. Với laptop thông thường,
-    tất cả các bước đều dùng C-extensions (cv2, NumPy) — không có vòng lặp
-    Python thuần. Ngưỡng 1000ms đảm bảo test pass trên mọi phần cứng trong khi
-    vẫn phát hiện các regression nghiêm trọng (ví dụ: nested Python loops).
+    Note: từ Analysis v2 P2 (D4), các *_level suy ra từ đo cục bộ (`measure_image`, ~1–2 s cho
+    2 MP; plan chấp nhận phép đo nặng hơn để chính xác hơn). Ngưỡng 5000ms vẫn phát hiện regression
+    nghiêm trọng (ví dụ: nested Python loops). Cache theo nội dung được xóa mỗi lần để đo chi phí thật.
     """
     import time
+
+    from src.analyzer_evaluator.analyzer import clear_severity_cache
 
     img_1080p = np.random.default_rng(123).integers(0, 256, (1080, 1920, 3), dtype=np.uint8)
 
@@ -1022,15 +1055,32 @@ def test_analyze_image_performance_full_hd():
     analyze_image(img_1080p)
 
     iterations = 3
-    start = time.perf_counter()
+    elapsed = 0.0
     for _ in range(iterations):
+        clear_severity_cache()
+        start = time.perf_counter()
         analyze_image(img_1080p)
-    elapsed_ms = (time.perf_counter() - start) / iterations * 1000
+        elapsed += time.perf_counter() - start
+    elapsed_ms = elapsed / iterations * 1000
 
-    assert elapsed_ms < 1000.0, (
-        f"analyze_image took {elapsed_ms:.1f}ms on 1920x1080 — exceeds 1000ms limit. "
+    assert elapsed_ms < 5000.0, (
+        f"analyze_image took {elapsed_ms:.1f}ms on 1920x1080 — exceeds 5000ms limit. "
         "Verify that no Python-level nested loops remain."
     )
+
+
+def test_analyze_image_reuses_severity_for_identical_content(flat_gray_image):
+    """Cùng nội dung ảnh (kể cả bản sao) chỉ đo cục bộ một lần."""
+    from unittest.mock import patch
+
+    from src.analyzer_evaluator import analyzer
+
+    analyzer.clear_severity_cache()
+    with patch.object(analyzer, "measure_image", wraps=analyzer.measure_image) as spy:
+        first = analyze_image(flat_gray_image)
+        second = analyze_image(flat_gray_image.copy())
+    assert spy.call_count == 1
+    assert first.defect_severity == second.defect_severity
 
 
 # =============================================================================

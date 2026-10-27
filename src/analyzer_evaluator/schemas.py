@@ -20,23 +20,24 @@ class TechnicalMetrics(BaseModel):
         ..., ge=0.0, le=255.0, description="Độ sáng trung bình mức xám [0, 255]"
     )
     brightness_level: Literal["underexposed", "normal", "overexposed"] = Field(
-        ..., description="Phân loại phơi sáng: underexposed (<70), normal, overexposed (>185)"
+        ..., description="Phân loại phơi sáng theo severity hiệu chỉnh (calibration.yaml)"
     )
     contrast_std: float = Field(
         ..., ge=0.0, description="Độ lệch chuẩn mức xám thể hiện độ tương phản động"
     )
     contrast_level: Literal["low", "normal", "high"] = Field(
-        ..., description="Mức độ tương phản: low (<40), normal (40-80), high (>80)"
+        ...,
+        description="Tương phản: low theo severity hiệu chỉnh; high khi std > ngưỡng prior (80)",
     )
     noise_variance: float = Field(..., ge=0.0, description="Ước lượng phương sai nhiễu tần số cao")
     noise_level: Literal["clean", "low", "medium", "severe"] = Field(
-        ..., description="Mức độ nhiễu cảm nhận: clean (<3), low (<8), medium (<15), severe (>=15)"
+        ..., description="Mức nhiễu = severity hiệu chỉnh 0/1/2/3 (σ luma Liu 2013)"
     )
     sharpness_laplacian_var: float = Field(
         ..., ge=0.0, description="Phương sai toán tử vi phân bậc hai Laplacian"
     )
     blur_level: Literal["sharp", "mild_blur", "severe_blur"] = Field(
-        ..., description="Mức độ mờ nét: severe_blur (<100), mild_blur (100-300), sharp (>=300)"
+        ..., description="Mức mờ = severity hiệu chỉnh: 0 sharp, 1 mild_blur, ≥2 severe_blur"
     )
     color_cast: Optional[str] = Field(
         default="none",
@@ -46,6 +47,11 @@ class TechnicalMetrics(BaseModel):
         default_factory=dict,
         description="Thống kê phân bố: min, max, skewness, clipping, RGB/HSV stats",
     )
+    defect_severity: Dict[str, int] = Field(
+        default_factory=dict,
+        description="Severity 0–3 theo bảng hiệu chỉnh cho các lỗi mà *_level biểu diễn",
+    )
+    calibration_version: str = Field(default="", description="Phiên bản calibration.yaml đã dùng")
 
 
 class EvaluationResult(BaseModel):

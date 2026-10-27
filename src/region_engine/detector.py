@@ -25,7 +25,9 @@ from .segmentation_backend import (
     GroundingDetection,
     SegmentationInferenceError,
     SegmentationUnavailableError,
+    _ensure_encoder_locked,
     _get_backend_locked,
+    _reset_encoder_locked,
 )
 from .spatial import _validate_feather_radius, create_quadrant_mask
 
@@ -341,7 +343,7 @@ def resolve_prompt_instances(
             instances: list[np.ndarray] = []
             primary_error: BaseException | None = None
             try:
-                backend.set_image(contiguous_image)
+                _ensure_encoder_locked(backend, contiguous_image)
                 for index, detection in enumerate(detections):
                     instances.append(
                         _mask_from_backend(backend.predict(detection.box), image_shape, index)
@@ -351,7 +353,7 @@ def resolve_prompt_instances(
                 raise
             finally:
                 try:
-                    backend.reset_image()
+                    _reset_encoder_locked(backend)
                 except Exception:
                     if primary_error is None:
                         raise

@@ -1,0 +1,71 @@
+# Playbook card — Lỗi toolbox 5 công cụ không sửa được (Analysis v2 D2).
+# Chỉ tư vấn (auto_apply: false, không có recipe): fusion đánh dấu các lỗi này fixable=False,
+# planner không lập action cho chúng và loại thao tác bị chống chỉ định (contraindications).
+
+- id: motion-blur-limits
+  title: Mờ chuyển động (rung máy, vật chuyển động) — không sửa được bằng toolbox
+  priority: 45
+  auto_apply: false
+  defects:
+    - {types: [motion_blur], region: any, min_severity: 1}
+  blocked_by: [soft_focus]
+  avoid:
+    - "Không làm nét để 'chữa' mờ chuyển động: unsharp mask tạo viền đôi (ringing) dọc hướng mờ, không thu lại chi tiết (contraindication no_sharpen từ mức 2)."
+    - "Không khử nhiễu mạnh: làm mất nốt phần chi tiết còn lại theo hướng vuông góc với vệt mờ."
+  rationale: >-
+    Mờ chuyển động là tích chập với một hàm trải điểm dạng đoạn thẳng theo hướng chuyển động; khôi
+    phục cần giải chập (Wiener, Richardson–Lucy) nằm ngoài toolbox. Báo cho người dùng, giữ nguyên
+    độ nét hiện có.
+  tags: [motion blur, mờ chuyển động, rung máy, giải chập, ringing, giới hạn]
+  sources:
+    - "Gonzalez & Woods, Digital Image Processing (4th ed.), ch.5 — motion blur degradation model"
+
+- id: jpeg-artifacts-limits
+  title: Khối nén JPEG — không sửa được bằng toolbox
+  priority: 45
+  auto_apply: false
+  defects:
+    - {types: [jpeg_artifacts], region: any, min_severity: 1}
+  avoid:
+    - "Không làm nét: sharpen khuếch đại biên khối 8×8 và vệt răng cưa quanh cạnh (contraindication no_sharpen)."
+    - "CLAHE và tăng tương phản mạnh làm khối nén lộ rõ hơn ở vùng phẳng (trời, da)."
+  rationale: >-
+    Nén JPEG lượng tử hóa hệ số DCT trên từng khối 8×8; thông tin đã mất không khôi phục được.
+    Bộ lọc khử khối chuyên dụng không có trong toolbox, nên chỉ tránh các thao tác làm lộ khối.
+  tags: [jpeg, nén, blockiness, khối, artifact, răng cưa]
+  sources:
+    - "Wallace, The JPEG Still Picture Compression Standard, CACM 1991"
+
+- id: haze-limits
+  title: Sương mù/khói làm bạc màu — không khử được bằng toolbox
+  priority: 40
+  auto_apply: false
+  defects:
+    - {types: [haze], region: any, min_severity: 1}
+  blocked_by: [muted_colors]
+  avoid:
+    - "CLAHE mạnh trên ảnh sương làm nhiễu và khối nén ở vùng xa lộ ra, không trả lại độ trong."
+    - "Không hứa khử sương: cần ước lượng bản đồ truyền qua (dark channel prior), ngoài toolbox."
+  rationale: >-
+    Sương mù cộng một lớp ánh sáng khí quyển tăng theo khoảng cách; khử cần mô hình tán xạ và
+    bản đồ độ sâu. Toolbox chỉ chỉnh tương phản toàn cục/cục bộ nên không phục hồi được.
+  tags: [haze, sương mù, khói, bạc màu, dark channel, giới hạn]
+  sources:
+    - "He, Sun & Tang, Single Image Haze Removal Using Dark Channel Prior, CVPR 2009"
+
+- id: highlight-clipping-limits
+  title: Vùng cháy trắng mất chi tiết — không khôi phục được
+  priority: 45
+  auto_apply: false
+  defects:
+    - {types: [highlight_clipping], region: any, min_severity: 1}
+  blocked_by: [high_key]
+  avoid:
+    - "Không làm sáng toàn ảnh (gamma > 1 trên 'full'): đẩy thêm pixel sang vùng cháy (contraindication no_brighten từ mức 2)."
+    - "Giảm gamma không khôi phục chi tiết đã cháy: vùng 255 chỉ chuyển thành mảng xám phẳng."
+  rationale: >-
+    Pixel đã chạm mức tối đa của cảm biến/định dạng mất toàn bộ thông tin; không phép biến đổi tông
+    nào tạo lại được. Chỉ có thể tránh làm cháy thêm và xử lý vùng còn lại một cách cục bộ.
+  tags: [highlight, cháy sáng, clipping, mất chi tiết, giới hạn]
+  sources:
+    - "Gonzalez & Woods, Digital Image Processing (4th ed.), ch.3 — intensity transformations"

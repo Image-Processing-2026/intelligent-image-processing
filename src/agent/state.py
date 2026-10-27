@@ -9,10 +9,14 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, TypedDict
 import numpy as np
 from pydantic import BaseModel, Field
 
+from src.analyzer_evaluator.measurement import MeasurementReport, RegionStats
+from src.analyzer_evaluator.metadata import ImageMetadata
+
 PlanSource = Literal["vlm", "rule_based", "vlm_fallback"]
 
-# Từ vựng chẩn đoán (giai đoạn Perceive). Chỉ gồm lỗi mà toolbox 5 công cụ xử lý được
-# hoặc cần nhận diện để KHÔNG xử lý sai.
+# Từ vựng chẩn đoán (giai đoạn Perceive). Gồm lỗi mà toolbox 5 công cụ xử lý được và lỗi cần
+# nhận diện để KHÔNG xử lý sai (D2: motion_blur, jpeg_artifacts, haze, highlight_clipping có
+# fixable=False — báo người dùng, sinh contraindication, không lập action).
 DEFECT_TYPES: tuple[str, ...] = (
     "underexposed",
     "overexposed",
@@ -25,6 +29,10 @@ DEFECT_TYPES: tuple[str, ...] = (
     "color_cast_green",
     "oversaturated",
     "undersaturated",
+    "motion_blur",
+    "jpeg_artifacts",
+    "haze",
+    "highlight_clipping",
 )
 SCENE_TYPES: tuple[str, ...] = (
     "portrait",
@@ -54,6 +62,15 @@ PRESERVE_ASPECTS: tuple[str, ...] = (
 )
 
 
+class Evidence(BaseModel):
+    """Một bằng chứng cho lỗi: số đo, quan sát của VLM, EXIF hoặc lời người dùng (C6)."""
+
+    source: Literal["measured", "vlm", "exif", "user"]
+    metric: str = ""
+    value: Optional[float] = None
+    text: str = ""
+
+
 class Defect(BaseModel):
     """Một lỗi kỹ thuật được chẩn đoán trên một vùng."""
 
@@ -64,6 +81,12 @@ class Defect(BaseModel):
     # vlm: VLM chẩn đoán; rule: luật từ metric toàn cục; measured: suy ra từ số đo theo vùng;
     # user: người dùng yêu cầu sửa (Phase 4)
     origin: Literal["vlm", "rule", "measured", "user"] = "vlm"
+    # Analysis v2 (C6): độ tin cậy (VLM: tỉ lệ đồng thuận self-consistency), bằng chứng có cấu
+    # trúc, lỗi toolbox sửa được hay không, và điều cần tránh khi xử lý
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    evidence_items: List[Evidence] = Field(default_factory=list)
+    fixable: bool = True
+    contraindications: List[str] = Field(default_factory=list)
 
 
 class PreserveItem(BaseModel):
@@ -102,11 +125,28 @@ class DiagnosisReport(BaseModel):
     summary: str = ""
     region_metrics: Dict[str, RegionMetrics] = Field(default_factory=dict)
     source: PlanSource = "vlm"
+    # Analysis v2 (C6). rejected: giả thuyết bị loại (ví dụ không đủ đồng thuận); ask_user: cần
+    # hỏi người dùng; measurement: tóm tắt đo toàn ảnh; region_stats: số đo gộp theo vùng
+    # (luôn có 'full' và 'background' khi đo được)
+    rejected: List[Defect] = Field(default_factory=list)
+    ask_user: List[Defect] = Field(default_factory=list)
+    measurement: Optional[MeasurementReport] = None
+    region_stats: Dict[str, RegionStats] = Field(default_factory=dict)
+    # bbox Gemini (ymin, xmin, ymax, xmax) 0..1000 của từng subject; executor dùng lại để phân
+    # giải cùng mask. Không đưa vào prompt Plan (prompt Plan cấm bbox)
+    subject_boxes: Dict[str, List[int]] = Field(default_factory=dict)
+    # Bản đồ tile của lần đo (MAP_KEYS → np.ndarray): chỉ dùng trong tiến trình, không
+    # serialize ra JSON/HistoryItem/API
+    measurement_maps: Optional[Any] = Field(default=None, exclude=True, repr=False)
+    # Nhật ký bảng quyết định hợp nhất (P6), mỗi giả thuyết một dòng: để giải thích và benchmark
+    fusion_notes: List[str] = Field(default_factory=list)
+    # Phân tích khác biệt so với ảnh gốc ở vòng ≥ 2 (P7, measurement.diff.DiffReport dạng dict)
+    diff: Optional[Dict[str, Any]] = None
 
     @property
     def actionable_defects(self) -> List[Defect]:
-        """Các lỗi có severity >= 1 (cần lập kế hoạch xử lý)."""
-        return [defect for defect in self.defects if defect.severity >= 1]
+        """Các lỗi có severity >= 1 mà toolbox sửa được (cần lập kế hoạch xử lý)."""
+        return [defect for defect in self.defects if defect.severity >= 1 and defect.fixable]
 
 
 class RegionOperation(BaseModel):
@@ -189,6 +229,10 @@ class HistoryItem(BaseModel):
     rolled_back: bool = Field(
         default=False, description="True nếu vòng này suy thoái và đã rollback về ảnh trước đó"
     )
+    side_effects: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Tác dụng phụ do xử lý của vòng này (measurement.diff.SideEffect dạng dict)",
+    )
 
 
 # Phong cách người dùng có thể chọn (khớp id phong cách trong variants.STYLES)
@@ -262,3 +306,5 @@ class DoctorState(TypedDict):
     user_id: str  # Chủ của các ca trong bộ nhớ (Phase 5)
     # Vì sao phiên bản được đề xuất: "intent" | "preference" | "critic" | "score"
     recommended_reason: Optional[str]
+    # Metadata EXIF/JPEG của file gốc (Phase 3); None khi không có. Perceive đưa prior vào prompt.
+    image_metadata: Optional[ImageMetadata]

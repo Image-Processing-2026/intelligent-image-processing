@@ -1,0 +1,249 @@
+# Bảng hiệu chỉnh severity (Analysis v2 P2, hợp đồng C4). SINH TỰ ĐỘNG, không sửa tay:
+#   python scripts/calibrate_severity.py
+# severity = số ngưỡng (tăng dần) mà điểm đạt tới; điểm tính bằng hàm `score` trong
+# src/analyzer_evaluator/measurement/calibration.py. thresholds rỗng = không đo được → (0, 0.0).
+version: p2-20261026
+date: '2026-10-26'
+dataset:
+  path: data/synthetic/calibration
+  generator: scripts/build_calibration_set.py (seed 7, max side 1024)
+  images: 150
+  sources:
+  - already_good_01
+  - already_good_02
+  - already_good_03
+  - clean_grass_01
+  - clean_landscape_01
+  measurement_fingerprint: 0c8572d8c8d3
+method: ordinal thresholds minimising sum |severity - label| over all synthetic cases; kept only when
+  leave-one-source-out balanced MAE beats the all-zero predictor
+reference_long_side: 1024
+levels:
+  contrast_high_std: 80.0
+defects:
+  noise:
+    score: noise_sigma
+    params:
+      dark_weight: 0.5
+      chroma_weight: 0.669
+    fit:
+      cases: 150
+      positives: 45
+      mae_all: 0.14
+      loso_mae: 0.2867
+      loso_balanced_mae: 0.2937
+      null_balanced_mae: 1.0556
+    thresholds:
+    - 2.8609
+    - 2.8609
+    - 8.9961
+    fitted: true
+    reliability: 0.722
+  blur:
+    score: defocus
+    params:
+      defocus_bias: 0.1415
+    combine_max:
+    - motion_blur
+    fit:
+      cases: 140
+      positives: 20
+      mae_all: 0.05
+      loso_mae: 0.3643
+      loso_balanced_mae: 0.4
+      null_balanced_mae: 1.0
+    thresholds:
+    - 1.2247
+    - 1.2247
+    - 2.3173
+    fitted: true
+    reliability: 0.6
+  motion_blur:
+    score: motion_extent
+    params:
+      min_anisotropy: 1.2824
+      min_extent: 0.7256
+      noisy_sigma: 3.0
+      noisy_extra_extent: 0.2
+    fit:
+      cases: 150
+      positives: 10
+      mae_all: 0.0267
+      loso_mae: 0.04
+      loso_balanced_mae: 0.3
+      null_balanced_mae: 1.0
+    thresholds:
+    - -.inf
+    - 1.4757
+    - 1.4757
+    fitted: true
+    reliability: 0.7
+  underexposed:
+    score: darkness
+    params: {}
+    fit:
+      cases: 150
+      positives: 15
+      mae_all: 0.16
+      loso_mae: 0.48
+      loso_balanced_mae: 1.037
+      null_balanced_mae: 1.1667
+    thresholds:
+    - 16.2709
+    - 16.2709
+    - 28.9471
+    fitted: true
+    reliability: 0.111
+  overexposed:
+    score: brightness
+    params: {}
+    fit:
+      cases: 150
+      positives: 10
+      mae_all: 0.0733
+      loso_mae: 0.1067
+      loso_balanced_mae: 0.6607
+      null_balanced_mae: 1.0
+    thresholds:
+    - 17.4081
+    - 21.0428
+    - 21.0428
+    fitted: true
+    reliability: 0.339
+  low_contrast:
+    score: flatness
+    params: {}
+    fit:
+      cases: 150
+      positives: 10
+      mae_all: 0.12
+      loso_mae: 0.4267
+      loso_balanced_mae: 0.9714
+      null_balanced_mae: 1.0
+    thresholds:
+    - 74.6674
+    - 74.6674
+    - .inf
+    fitted: true
+    reliability: 0.029
+  color_cast_warm:
+    score: cast_warm
+    params: {}
+    fit:
+      cases: 150
+      positives: 10
+      mae_all: 0.0333
+      loso_mae: 0.0733
+      loso_balanced_mae: 0.3643
+      null_balanced_mae: 1.0
+    thresholds:
+    - 0.3466
+    - 0.8012
+    - 0.8012
+    fitted: true
+    reliability: 0.636
+  color_cast_cool:
+    score: cast_cool
+    params: {}
+    fit:
+      cases: 150
+      positives: 5
+      mae_all: 0.0267
+      loso_mae: 0.1333
+      loso_balanced_mae: 0.4552
+      null_balanced_mae: 0.5
+    thresholds:
+    - 0.4856
+    - .inf
+    - .inf
+    fitted: true
+    reliability: 0.09
+  color_cast_green:
+    score: cast_green
+    params: {}
+    fit:
+      cases: 150
+      positives: 5
+      mae_all: 0.0333
+      loso_mae: 0.22
+      loso_balanced_mae: 0.5
+      null_balanced_mae: 0.5
+    thresholds: []
+    fitted: false
+    reason: leave-one-source-out balanced MAE does not beat the all-zero predictor
+  oversaturated:
+    score: chroma
+    params: {}
+    fit:
+      cases: 150
+      positives: 5
+      mae_all: 0.0267
+      loso_mae: 0.18
+      loso_balanced_mae: 0.4793
+      null_balanced_mae: 0.5
+    thresholds:
+    - 65.9028
+    - .inf
+    - .inf
+    fitted: true
+    reliability: 0.041
+  undersaturated:
+    score: low_chroma
+    params: {}
+    fit:
+      cases: 150
+      positives: 5
+      mae_all: 0.0667
+      loso_mae: 0.0667
+      loso_balanced_mae: 1.0
+      null_balanced_mae: 1.0
+    thresholds: []
+    fitted: false
+    reason: leave-one-source-out balanced MAE does not beat the all-zero predictor
+  haze:
+    score: dark_channel
+    params: {}
+    fit:
+      cases: 150
+      positives: 5
+      mae_all: 0.0533
+      loso_mae: 0.1333
+      loso_balanced_mae: 0.8414
+      null_balanced_mae: 1.0
+    thresholds:
+    - 0.449
+    - 0.449
+    - .inf
+    fitted: true
+    reliability: 0.159
+  jpeg_artifacts:
+    score: blockiness
+    params: {}
+    fit:
+      cases: 150
+      positives: 10
+      mae_all: 0.0267
+      loso_mae: 0.06
+      loso_balanced_mae: 0.3571
+      null_balanced_mae: 0.75
+    thresholds:
+    - 1.4539
+    - 1.5273
+    - .inf
+    fitted: true
+    reliability: 0.524
+  highlight_clipping:
+    score: clip_blob
+    params: {}
+    thresholds:
+    - 0.005
+    - 0.03
+    - 0.1
+    fitted: false
+    reason: no labelled synthetic cases; prior thresholds
+  backlit_subject:
+    score: null
+    params: {}
+    thresholds: []
+    fitted: false
+    reason: needs two regions

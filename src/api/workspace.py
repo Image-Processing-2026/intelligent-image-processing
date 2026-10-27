@@ -28,6 +28,7 @@ from src.agent.session import (
     start_session,
 )
 from src.agent.state import RegionOperation, TreatmentPlan
+from src.analyzer_evaluator.metadata import read_metadata
 
 from .auth import current_user, user_settings
 from .config import AppSettings
@@ -191,15 +192,18 @@ def create_session(
     )
 
     if has_file:
-        image = decode_image(read_limited(file.file, settings), settings)
+        content = read_limited(file.file, settings)
         default_title = title_from_filename(file.filename)
     else:
         path = _sample_path(sample or "")
         if path is None:
             raise ApiError(422, "validation", fields={"sample": "Ảnh mẫu không tồn tại."})
         with path.open("rb") as stream:
-            image = decode_image(read_limited(stream, settings), settings)
+            content = read_limited(stream, settings)
         default_title = f"Ảnh mẫu: {SAMPLES[sample][1]}"
+    image = decode_image(content, settings)
+    # EXIF/bảng lượng tử JPEG đọc từ bytes gốc (không bao giờ raise), cho prior của Perceive
+    metadata = read_metadata(content)
 
     truth: Optional[np.ndarray] = None
     if ground_truth is not None and ground_truth.filename:
@@ -241,6 +245,7 @@ def create_session(
             max_iterations=iterations,
             num_variants=variants,
             user_id=str(user.id),
+            image_metadata=metadata,
         )
         record_analyze(db, item, result, duration, original)
     except Exception as exc:

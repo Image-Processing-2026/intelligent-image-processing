@@ -23,15 +23,23 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import Send, interrupt
 
 from src.analyzer_evaluator.analyzer import analyze_image
+from src.analyzer_evaluator.measurement.diff import SideEffect, side_effects
+from src.analyzer_evaluator.metadata import ImageMetadata
 from src.analyzer_evaluator.no_reference_eval import evaluate_no_reference
 from src.analyzer_evaluator.reference_eval import evaluate_reference
 
-from .executor import execute_plan
+from .executor import execute_plan, image_cache_key
+from .fusion import plan_contraindications
 from .imaging import downscale
 from .intent import apply_intent, build_questions, intent_from_answers, intent_prompt
 from .memory import DEFAULT_USER, experience_prompt, get_case_memory
 from .perception import perceive
-from .planner import action_region, apply_preserve_guard, validate_and_sort_plan
+from .planner import (
+    action_region,
+    apply_contraindications,
+    apply_preserve_guard,
+    validate_and_sort_plan,
+)
 from .state import DiagnosisReport, DoctorState, HistoryItem, IntentProfile, TreatmentPlan
 from .variants import (
     is_noisy,
@@ -56,6 +64,8 @@ REAL_MIN_GAIN = 1.0  # Điểm tăng ít hơn mức này so với vòng trước
 # Vòng vừa xử lý lỗi từ mức này trở lên → chưa SHIP theo điểm toàn cục, chẩn đoán lại để xác nhận
 # (điểm toàn cục gần như không phản ánh lỗi trên vùng nhỏ như khuôn mặt ngược sáng)
 VERIFY_SEVERITY = 2
+# Tác dụng phụ do xử lý (P7, measurement.diff) từ mức này → coi như suy thoái, rollback
+SIDE_EFFECT_ROLLBACK_SEVERITY = 2
 
 
 # ---------------------------------------------------------
@@ -75,6 +85,7 @@ def perceive_node(state: DoctorState) -> Dict[str, Any]:
         iteration=state["iteration"],
         history=state.get("history", []),
         original_image=state.get("original_image"),
+        metadata=state.get("image_metadata"),
     )
     # Ý định người dùng (đã hỏi ở vòng 1) ghi đè chẩn đoán của mọi vòng
     return {"diagnosis": apply_intent(diagnosis, state.get("intent"))}
@@ -141,6 +152,7 @@ def plan_treatment(
     validated_plan = validate_and_sort_plan(plan)
     if diagnosis is not None:
         validated_plan = apply_preserve_guard(validated_plan, diagnosis.preserve)
+        validated_plan = apply_contraindications(validated_plan, plan_contraindications(diagnosis))
     return validated_plan
 
 
@@ -188,7 +200,14 @@ def process_node(state: DoctorState) -> Dict[str, Any]:
     if not state.get("treatment_plan") or not state["treatment_plan"].actions:
         return {"current_image": state["current_image"], "previous_image": prev_img}
 
-    processed_img = execute_plan(state["current_image"], state["treatment_plan"])
+    # Vùng Perceive đã định vị bằng bbox dùng lại mask đã đo (cache theo ảnh gốc của lượt chạy)
+    diagnosis = state.get("diagnosis")
+    processed_img = execute_plan(
+        state["current_image"],
+        state["treatment_plan"],
+        subject_boxes=diagnosis.subject_boxes if diagnosis is not None else None,
+        cache_key=image_cache_key(state["original_image"]),
+    )
     return {"current_image": processed_img, "previous_image": prev_img}
 
 
@@ -314,6 +333,15 @@ def _needs_verification(
     )
 
 
+def _side_effects(previous: np.ndarray, current: np.ndarray) -> List[SideEffect]:
+    """Tác dụng phụ của vòng vừa xử lý (diff ảnh trước/sau vòng); lỗi đo không chặn pipeline."""
+    try:
+        return side_effects(previous, current)
+    except Exception as exc:
+        logger.warning("Side-effect analysis failed: %s", exc)
+        return []
+
+
 def _create_thumbnail(image: np.ndarray, max_size: int = 512) -> np.ndarray:
     """Resize ảnh xuống thumbnail để tiết kiệm bộ nhớ."""
     h, w = image.shape[:2]
@@ -372,6 +400,21 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
             else _is_degraded_real(eval_result, history)
         )
     )
+    # P7: tác dụng phụ do xử lý của vòng này (halo, nhiễu vùng tối tăng, banding…), ảnh thực.
+    # Severity ≥ SIDE_EFFECT_ROLLBACK_SEVERITY → coi như suy thoái → rollback
+    effects = (
+        _side_effects(previous_image, state["current_image"])
+        if has_actions and not unchanged and not is_syn and previous_image is not None
+        else []
+    )
+    history_entry.side_effects = [effect.model_dump() for effect in effects]
+    if any(effect.severity >= SIDE_EFFECT_ROLLBACK_SEVERITY for effect in effects):
+        logger.warning(
+            "Iteration %d introduced processing side effects %s; treating it as degraded.",
+            iteration,
+            [(effect.kind, effect.severity) for effect in effects],
+        )
+        degraded = True
 
     if degraded:
         decision = "STOP_BEST_EFFORT"
@@ -560,6 +603,7 @@ def run_pipeline(
     num_variants: int = 1,
     intent: Optional[IntentProfile] = None,
     user_id: str = DEFAULT_USER,
+    image_metadata: Optional[ImageMetadata] = None,
 ) -> DoctorState:
     """
     Hàm giao tiếp ngoài để chạy toàn bộ chu trình xử lý ảnh.
@@ -567,10 +611,18 @@ def run_pipeline(
     num_variants > 1 (tối đa 3): sau vòng lặp, sinh các phiên bản phong cách trên ảnh preview
     (state["variants"], đã xếp hạng); current_image vẫn là kết quả full-res của phác đồ.
     intent: ý định người dùng có sẵn (không hỏi). Chạy tương tác: xem src/agent/session.py.
+    image_metadata: metadata của file gốc (metadata.read_metadata); chỉ được lưu vào state.
     """
     app = build_doctor_graph()
     initial_state = initial_doctor_state(
-        image, ground_truth, is_synthetic, max_iterations, num_variants, intent, user_id=user_id
+        image,
+        ground_truth,
+        is_synthetic,
+        max_iterations,
+        num_variants,
+        intent,
+        user_id=user_id,
+        image_metadata=image_metadata,
     )
     return app.invoke(initial_state)
 
@@ -584,6 +636,7 @@ def initial_doctor_state(
     intent: Optional[IntentProfile] = None,
     interactive: bool = False,
     user_id: str = DEFAULT_USER,
+    image_metadata: Optional[ImageMetadata] = None,
 ) -> DoctorState:
     """State khởi đầu của pipeline (dùng chung cho chạy thường và chạy tương tác)."""
     initial_state: DoctorState = {
@@ -612,5 +665,6 @@ def initial_doctor_state(
         "intent": intent,
         "user_id": user_id,
         "recommended_reason": None,
+        "image_metadata": image_metadata,
     }
     return initial_state

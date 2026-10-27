@@ -3,20 +3,23 @@ Chẩn đoán bệnh lý ảnh bằng mô hình đa phương thức Gemini (VLM 
 Kết hợp chỉ số kỹ thuật từ Module 1 và thị giác máy tính để xây dựng kế hoạch điều trị.
 """
 
+import io
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+import time
+from typing import Any, Dict, List, Optional, Tuple
 
-import cv2
 import numpy as np
 from PIL import Image
 from pydantic import ValidationError
 
 try:
+    import httpx
     from google import genai
     from google.genai import types as genai_types
 except ImportError:
+    httpx = None
     genai = None
     genai_types = None
 
@@ -39,8 +42,18 @@ logger = logging.getLogger(__name__)
 
 # Model mặc định; ghi đè bằng biến môi trường GEMINI_MODEL
 DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
-# Cạnh dài tối đa của ảnh gửi VLM: đủ để chẩn đoán, giảm token và độ trễ
-VLM_MAX_SIDE = 1024
+# Ảnh gửi VLM giữ nguyên độ phân giải: thu nhỏ trung bình hóa nhiễu, che mờ nhẹ và lỗi nén.
+# Giữ request dưới giới hạn inline 20 MB theo tài liệu Gemini (base64 +33%) → ảnh thô ≤ 14 MB.
+VLM_INLINE_IMAGE_BUDGET = 14 * 1024 * 1024
+# Ảnh PNG vượt phần ngân sách của nó → JPEG chất lượng cao, không lấy mẫu con màu (4:4:4)
+VLM_JPEG_QUALITY = 95
+# Gọi lại khi server Gemini lỗi tạm thời (500 INTERNAL, 503 quá tải); lỗi khác thì fallback ngay
+GEMINI_RETRYABLE_CODES = frozenset({500, 503})
+GEMINI_MAX_ATTEMPTS = 3
+# Thời gian chờ trước lần thử thứ n+1 = GEMINI_RETRY_BASE_DELAY * 2**(n-1) giây (1s, 2s)
+GEMINI_RETRY_BASE_DELAY = 1.0
+# Timeout mỗi lần gọi (ms); SDK mặc định không có timeout nên một request treo sẽ chờ vô hạn
+GEMINI_TIMEOUT_MS = 90_000
 
 SYSTEM_PROMPT = """
 Bạn là "AI Image Doctor" - một chuyên gia chẩn đoán và xử lý ảnh theo phương pháp kinh điển (Classical Image Processing).
@@ -68,6 +81,12 @@ Nhiệm vụ của bạn:
 7. Nếu có CHẨN ĐOÁN (giai đoạn 1): chỉ lập kế hoạch cho các defect có severity >= 1,
    dùng region của defect làm target_prompt và type của defect làm detected_issue;
    cường độ tham số tỉ lệ với severity (1 nhẹ tay, 3 mạnh tay).
+   Defect có "fixable": false (motion_blur, jpeg_artifacts, haze, highlight_clipping) là lỗi
+   toolbox KHÔNG sửa được: không lập action cho chúng, chỉ dùng để tránh làm nặng thêm.
+   Tôn trọng "contraindications" của defect: "no_sharpen" → không dùng sharpen;
+   "no_brighten" → không gamma_correct > 1.0 trên toàn ảnh. Thao tác vi phạm sẽ bị loại bỏ.
+   Nếu có "diff" (vòng ≥ 2): đó là so sánh đo đạc với ảnh gốc (trạng thái lỗi cũ, tác dụng phụ
+   như halo, nhiễu vùng tối tăng); tránh lặp lại thao tác đã gây tác dụng phụ.
    Dùng region_metrics (số đo thật theo vùng) để chọn tham số cho từng vùng.
    TUYỆT ĐỐI giữ nguyên các đặc điểm trong "preserve"; thao tác vi phạm sẽ bị hệ thống loại bỏ.
 8. Nếu có TRI THỨC CHUYÊN MÔN: tham số trong playbook đã được hiệu chỉnh bằng đo đạc trên chính
@@ -305,16 +324,53 @@ def _rule_based_plan(
 
 
 def to_vlm_image(image: np.ndarray) -> Image.Image:
-    """Thu nhỏ ảnh (giữ tỉ lệ) để cạnh dài không vượt VLM_MAX_SIDE rồi chuyển sang PIL."""
+    """Chuyển ảnh sang PIL ở độ phân giải gốc (không thu nhỏ) để gửi VLM."""
     if image.ndim == 3 and image.shape[2] == 1:
         image = image[:, :, 0]
-    height, width = image.shape[:2]
-    longest = max(height, width)
-    if longest > VLM_MAX_SIDE:
-        scale = VLM_MAX_SIDE / longest
-        size = (max(1, round(width * scale)), max(1, round(height * scale)))
-        image = cv2.resize(image, size, interpolation=cv2.INTER_AREA)
     return Image.fromarray(np.clip(image, 0, 255).astype(np.uint8))
+
+
+def _encode_image(image: Image.Image, budget: int) -> Tuple[bytes, str]:
+    """
+    Mã hóa ảnh gửi Gemini: PNG không mất mát nếu vừa ngân sách byte, ngược lại JPEG
+    chất lượng VLM_JPEG_QUALITY (4:4:4). Trả về (bytes, mime_type).
+    """
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG")
+    if buffer.tell() <= budget:
+        return buffer.getvalue(), "image/png"
+    buffer = io.BytesIO()
+    image.save(buffer, "JPEG", quality=VLM_JPEG_QUALITY, subsampling=0)
+    if buffer.tell() > budget:
+        logger.warning(
+            "Image %dx%d is %.1f MB as JPEG, over the %.1f MB inline budget; "
+            "the request may be slow or rejected.",
+            image.width,
+            image.height,
+            buffer.tell() / 2**20,
+            budget / 2**20,
+        )
+    return buffer.getvalue(), "image/jpeg"
+
+
+def _encode_contents(contents: List[Any]) -> List[Any]:
+    """
+    Thay mỗi ảnh PIL trong nội dung bằng Part đã mã hóa, chung ngân sách
+    VLM_INLINE_IMAGE_BUDGET. Ảnh nhỏ (crop, overlay) được mã hóa trước; phần ngân sách còn lại
+    chia đều cho các ảnh lớn hơn, nên crop 512 px không làm ảnh toàn khung mất ngân sách.
+    """
+    images = [index for index, part in enumerate(contents) if isinstance(part, Image.Image)]
+    if not images:
+        return contents
+    encoded: List[Any] = list(contents)
+    remaining = VLM_INLINE_IMAGE_BUDGET
+    by_size = sorted(images, key=lambda index: contents[index].width * contents[index].height)
+    for position, index in enumerate(by_size):
+        budget = remaining // (len(by_size) - position)
+        data, mime_type = _encode_image(contents[index], budget)
+        remaining = max(0, remaining - len(data))
+        encoded[index] = genai_types.Part.from_bytes(data=data, mime_type=mime_type)
+    return encoded
 
 
 def image_parts(
@@ -332,6 +388,19 @@ def image_parts(
     return parts
 
 
+# Trường DiagnosisReport không đưa vào prompt Plan
+_PLAN_DIAGNOSIS_EXCLUDE = {
+    "source",
+    "iteration",
+    "measurement",
+    "region_stats",
+    "subject_boxes",
+    "rejected",
+    "ask_user",
+    "fusion_notes",
+}
+
+
 def _build_contents(
     image: np.ndarray,
     metrics: Dict[str, Any],
@@ -347,7 +416,8 @@ def _build_contents(
     """
     prompt = f"Chỉ số kỹ thuật hiện tại:\n{json.dumps(metrics, indent=2, default=str)}\n"
     if diagnosis is not None:
-        diagnosis_json = diagnosis.model_dump(mode="json", exclude={"source", "iteration"})
+        # Bỏ số đo v2 (dài, đã tóm vào region_metrics) và bbox subject: prompt Plan cấm bbox
+        diagnosis_json = diagnosis.model_dump(mode="json", exclude=_PLAN_DIAGNOSIS_EXCLUDE)
         prompt += (
             "CHẨN ĐOÁN (giai đoạn 1, kèm region_metrics đo thực tế theo vùng):\n"
             f"{json.dumps(diagnosis_json, indent=2, ensure_ascii=False)}\n"
@@ -372,28 +442,63 @@ def _parse_json_text(text: Optional[str]) -> Any:
     return json.loads(text.strip())
 
 
+def _is_retryable_gemini_error(exc: Exception) -> bool:
+    """
+    Lỗi tạm thời thì đáng gọi lại: lỗi server (google.genai ServerError mang thuộc tính
+    `code`) hoặc request quá GEMINI_TIMEOUT_MS.
+    """
+    if httpx is not None and isinstance(exc, httpx.TimeoutException):
+        return True
+    return isinstance(exc, TimeoutError) or getattr(exc, "code", None) in GEMINI_RETRYABLE_CODES
+
+
 def call_gemini_json(
-    api_key: str, system_prompt: str, contents: List[Any], schema: Dict[str, Any]
+    api_key: str,
+    system_prompt: str,
+    contents: List[Any],
+    schema: Dict[str, Any],
+    temperature: Optional[float] = None,
 ) -> Any:
     """
     Gọi Gemini với structured output (JSON theo schema) và trả về JSON đã parse.
     Dùng chung cho giai đoạn Perceive và Plan; mọi lỗi được ném ra để bên gọi fallback.
+    temperature: None = mặc định của model; Perceive self-consistency dùng 0.7.
+    Lỗi 500/503 và timeout được gọi lại tối đa GEMINI_MAX_ATTEMPTS lần, thời gian chờ tăng gấp đôi.
     """
     if genai is None or genai_types is None:
         raise RuntimeError("google-genai is not installed")
 
-    client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
-        contents=contents,
-        config=genai_types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            response_mime_type="application/json",
-            response_json_schema=schema,
-            # Không khai báo tool nào → tắt AFC để SDK không cảnh báo/không tự gọi hàm
-            automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(disable=True),
-        ),
+    client = genai.Client(
+        api_key=api_key, http_options=genai_types.HttpOptions(timeout=GEMINI_TIMEOUT_MS)
     )
+    config = genai_types.GenerateContentConfig(
+        system_instruction=system_prompt,
+        response_mime_type="application/json",
+        response_json_schema=schema,
+        # Không khai báo tool nào → tắt AFC để SDK không cảnh báo/không tự gọi hàm
+        automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(disable=True),
+        # Ngân sách token ảnh lớn nhất: model tự lấy mẫu lại ảnh theo ngân sách này
+        media_resolution=genai_types.MediaResolution.MEDIA_RESOLUTION_HIGH,
+        temperature=temperature,
+    )
+    contents = _encode_contents(contents)
+    model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+    for attempt in range(1, GEMINI_MAX_ATTEMPTS + 1):
+        try:
+            response = client.models.generate_content(model=model, contents=contents, config=config)
+            break
+        except Exception as exc:
+            if attempt == GEMINI_MAX_ATTEMPTS or not _is_retryable_gemini_error(exc):
+                raise
+            delay = GEMINI_RETRY_BASE_DELAY * 2 ** (attempt - 1)
+            logger.warning(
+                "Gemini call failed with %s (attempt %d/%d); retrying in %.1fs.",
+                getattr(exc, "code", None) or type(exc).__name__,
+                attempt,
+                GEMINI_MAX_ATTEMPTS,
+                delay,
+            )
+            time.sleep(delay)
     return _parse_json_text(response.text)
 
 

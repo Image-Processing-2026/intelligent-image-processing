@@ -43,19 +43,37 @@ class TechnicalMetrics(BaseModel):
     blur_level: Literal["sharp", "mild_blur", "severe_blur"]
     color_cast: Optional[str] = Field(None, description="e.g., 'warm', 'cool', 'greenish', 'none'")
     histogram_stats: Dict[str, Any] = Field(default_factory=dict)
+    # Analysis v2 (D4): every *_level above and defect_severity come from the calibrated
+    # measurement (measurement.calibration, calibration.yaml): one threshold source.
+    defect_severity: Dict[str, int] = Field(default_factory=dict)  # LEVEL_DEFECTS -> 0..3
+    calibration_version: str = ""      # calibration.yaml version used
 
 
 # ---------------------------------------------------------
 # Module 4: Diagnosis Schema (Perceive stage, src/agent/state.py)
 # ---------------------------------------------------------
+class Evidence(BaseModel):             # Analysis v2: one structured piece of evidence
+    source: Literal["measured", "vlm", "exif", "user"]
+    metric: str = ""                   # e.g. "noise.sigma_luma"
+    value: Optional[float] = None
+    text: str = ""
+
+
 class Defect(BaseModel):
     type: Literal[DEFECT_TYPES]        # underexposed, overexposed, backlit_subject, low_contrast,
                                        # noise, blur, color_cast_{warm,cool,green},
-                                       # oversaturated, undersaturated
+                                       # oversaturated, undersaturated; not fixable by the toolbox
+                                       # (D2, fixable=False): motion_blur, jpeg_artifacts, haze,
+                                       # highlight_clipping
     region: str = "full"               # "full" or a subject target_prompt
     severity: int                      # 0 negligible … 3 severe
     evidence: str = ""
-    origin: Literal["vlm", "rule", "measured"] = "vlm"
+    origin: Literal["vlm", "rule", "measured", "user"] = "vlm"
+    # Analysis v2 (all defaulted, backward compatible)
+    confidence: float = 1.0            # 0..1; VLM: self-consistency agreement
+    evidence_items: List[Evidence] = []
+    fixable: bool = True               # False -> no action is planned for it
+    contraindications: List[str] = []  # e.g. "no_sharpen", "no_brighten"
 
 
 class PreserveItem(BaseModel):
@@ -87,6 +105,20 @@ class DiagnosisReport(BaseModel):
     summary: str = ""
     region_metrics: Dict[str, RegionMetrics]
     source: Literal["vlm", "rule_based", "vlm_fallback"] = "vlm"
+    # Analysis v2 (all defaulted)
+    rejected: List[Defect] = []        # hypotheses dropped (e.g. below self-consistency quorum)
+    ask_user: List[Defect] = []        # needs a user decision (clarify)
+    measurement: Optional[MeasurementReport] = None  # whole-image measurement summary
+    region_stats: Dict[str, RegionStats] = {}  # per-region measurement; 'full', 'background'
+    subject_boxes: Dict[str, List[int]] = {}   # Gemini box_2d (ymin, xmin, ymax, xmax) 0..1000,
+                                       # reused by the executor; never sent to the Plan prompt
+    measurement_maps: Optional[Any] = None     # tile maps, in-process only (excluded from JSON)
+    fusion_notes: List[str] = []       # one line per fusion decision (P6), not sent to Plan
+    diff: Optional[Dict[str, Any]] = None  # iteration >= 2: measurement.diff.DiffReport as dict
+
+    @property
+    def actionable_defects(self) -> List[Defect]:  # severity >= 1 and fixable
+        ...
 
 
 # ---------------------------------------------------------
@@ -161,6 +193,64 @@ class EvaluationResult(BaseModel):
 def analyze_image(image: np.ndarray) -> TechnicalMetrics:
     """Tính toán toàn bộ các chỉ số kỹ thuật của ảnh (độ sáng, tương phản, nhiễu, độ mờ)."""
     ...
+
+
+# src/analyzer_evaluator/measurement/ — local measurement (Analysis v2, P1)
+def measure_image(image: np.ndarray, *, tile_size: int = 64) -> MeasurementResult:
+    """Đo theo tile: phơi sáng (L*, clip), nhiễu (σ luma, Liu 2013), độ nét (defocus σ, độ rộng
+    cạnh, hướng mờ chuyển động), nguồn sáng (pixel trung tính), blockiness, dark channel.
+    MeasurementResult = report (MeasurementReport, JSON được) + maps (lưới tile, NaN = không đo)."""
+    ...
+
+
+def aggregate(result: MeasurementResult, mask: np.ndarray, region: str = "full") -> RegionStats:
+    """Gộp bản đồ tile theo soft mask (H, W) thành số đo của một vùng (MAP_KEYS)."""
+    ...
+
+
+# src/analyzer_evaluator/measurement/calibration.py + calibration.yaml (Analysis v2, P2)
+def severity_from_measurement(
+    defect_type: str, stats: RegionStats | MeasurementReport, *, long_side: Optional[int] = None
+) -> Tuple[int, float]:
+    """(severity 0..3, confidence 0..1) theo ngưỡng hiệu chỉnh trên bộ synthetic; lỗi không đo
+    được → (0, 0.0). long_side: cạnh dài ảnh gốc để quy σ mờ của RegionStats về 1024 px."""
+    ...
+
+
+def calibration_version() -> str: ...
+
+
+# src/analyzer_evaluator/measurement/diff.py — iteration >= 2 (Analysis v2, P7)
+class SideEffect(BaseModel):
+    kind: Literal["halo", "dark_noise", "banding", "channel_clipping", "oversaturation"]
+    region: str = "full"
+    severity: int                      # 0..3
+    value: float
+    before: Optional[float] = None
+    after: Optional[float] = None
+    evidence: str = ""
+
+
+def compare(original: np.ndarray, current: np.ndarray,
+            regions: Optional[Dict[str, np.ndarray]] = None, *,
+            defects: Sequence[Tuple[str, str]] = (), original_measurement=None,
+            current_measurement=None, assess=None) -> DiffReport:
+    """Trạng thái từng lỗi (resolved/improved/unchanged/worse) + tác dụng phụ so với ảnh gốc."""
+    ...
+
+
+def side_effects(original: np.ndarray, current: np.ndarray) -> List[SideEffect]:
+    """Tác dụng phụ mức ≥ 1 do xử lý, đo trên ảnh ≤ 3000 px."""
+    ...
+
+
+# src/analyzer_evaluator/metadata.py — EXIF priors (Analysis v2, P3)
+def read_metadata(file_bytes: bytes) -> ImageMetadata:  # never raises; failures -> None fields
+    ...
+
+
+def metadata_priors(meta: ImageMetadata) -> List[Prior]:  # noise, motion_blur, bokeh,
+    ...                                                    # no_sharpen, edited (prompt hints)
 
 
 def evaluate_reference(current_image: np.ndarray, ground_truth: np.ndarray) -> EvaluationResult:
@@ -238,7 +328,31 @@ def detect_face_ovals(image: np.ndarray, *, num_faces: int = 4) -> List[FaceOval
 def create_soft_mask(binary_mask: np.ndarray, feather_radius: int = 15) -> np.ndarray:
     """Làm mịn biên mặt nạ (Gaussian feathering) để tránh tạo viền khi ghép ảnh."""
     ...
+
+
+# Subject masks shared by Perceive (measurement) and the executor (processing), Analysis v2 P4a
+@dataclass(frozen=True)
+class SubjectMask:
+    mask: np.ndarray          # float32 [0, 1], (H, W), feathered
+    source: Literal["face_mediapipe", "dino_sam", "gemini_sam", "gemini_grabcut", "quadrant", "full"]
+    confidence: float
+    box: Optional[Tuple[float, float, float, float]]  # final pixel box (xmin, ymin, xmax, ymax)
+
+
+def resolve_subject_mask(
+    image: np.ndarray, name: str, box_2d: Optional[Tuple[int, int, int, int]] = None, *,
+    use_semantic: Optional[bool] = None, cache_key: Optional[str] = None,
+) -> SubjectMask:
+    """face → MediaPipe; có model → GroundingDINO theo `name`, khớp bbox Gemini (IoU ≥ 0.3) →
+    MobileSAM, không khớp → SAM trên bbox Gemini; không model → GrabCut trên bbox Gemini.
+    Không bbox: DINO điểm cao nhất (confidence ≤ 0.5) → quadrant theo từ khóa → full."""
+    ...
+
+
+def subject_capabilities() -> Dict[str, bool]:  # {"face": ..., "semantic_models": ...}, no loading
+    ...
 ```
+`region_engine.capabilities()` (controller readiness, nested dict) is unchanged.
 
 ### 3.3 Module 3: Image Processing Engine (`src/processing_engine/`)
 All operations implement the standard wrapped signature:
@@ -296,13 +410,18 @@ def apply_color_balance(
 from langgraph.graph import StateGraph
 
 
-def run_doctor_pipeline(
-    image_bytes: bytes,
+# src/agent/graph.py
+def run_pipeline(
+    image: np.ndarray,
+    ground_truth: Optional[np.ndarray] = None,
     is_synthetic: bool = False,
-    ground_truth_bytes: Optional[bytes] = None,
     max_iterations: int = 3,
-) -> Dict[str, Any]:
-    """Khởi chạy toàn bộ vòng lặp khép kín: Analyze -> Diagnose -> Plan -> Process -> Eval -> Decision."""
+    num_variants: int = 1,
+    intent: Optional[IntentProfile] = None,
+    user_id: str = DEFAULT_USER,
+    image_metadata: Optional[ImageMetadata] = None,  # Analysis v2: EXIF priors for Perceive
+) -> DoctorState:
+    """Khởi chạy toàn bộ vòng lặp khép kín: Analyze → Perceive → Plan → Process → Eval → Decide."""
     ...
 
 
@@ -319,17 +438,75 @@ def diagnose_and_plan(
     ...
 
 
-# src/agent/perception.py — stage 1 (Perceive)
+# src/agent/perception.py — stage 1 (Perceive v2)
 def perceive(
     image: np.ndarray,
     metrics: Dict[str, Any],
     iteration: int = 1,
     history: Optional[List[HistoryItem]] = None,
     original_image: Optional[np.ndarray] = None,
+    metadata: Optional[ImageMetadata] = None,   # EXIF priors, added to the prompt as hints
+    cache_key: Optional[str] = None,            # subject-mask cache key (original image)
 ) -> DiagnosisReport:
-    """Gemini diagnosis (or rule-based) → per-region measurement through Module 2 masks →
-    defects inferred from measurements (e.g. backlit face) → defects that conflict with
-    `preserve` dropped."""
+    """measure_image → Gemini with the full frame, ≤ 6 evidence crops at 100 %, overlays and
+    the measurement summary (or the rule-based diagnosis) → defects conflicting with `preserve`
+    dropped → subject masks (resolve_subject_mask with the Gemini box_2d) → region_stats and
+    region_metrics → fusion.fuse (with verify). From iteration 2: re-measure, compare with
+    the original (measurement.diff) and call the VLM only for open semantic defects or side
+    effects to judge.
+    PERCEIVE_SAMPLES Gemini samples (default 1, env PERCEIVE_SAMPLES) are merged by
+    self-consistency; hypotheses below quorum go to `rejected`."""
+    ...
+
+
+# src/agent/fusion.py — cross-check and fusion (Analysis v2, P6)
+def fuse(
+    hypotheses: DiagnosisReport,                 # VLM (merged samples) or rule-based diagnosis
+    measurement: Optional[MeasurementReport],
+    region_stats: Dict[str, RegionStats],
+    priors: Sequence[Prior] = (),
+    intent: Optional[IntentProfile] = None,
+    *,
+    verifier: Optional[Verifier] = None,         # closed-question Gemini verify; None = none
+    long_side: Optional[int] = None,
+    crops_for: Optional[Callable[[str, str], List[str]]] = None,
+    use_weak: Optional[bool] = None,             # rejected hypotheses as weak evidence (D3)
+) -> DiagnosisReport:
+    """Bảng quyết định tất định: defects = confirmed (confidence, evidence_items, fixable,
+    contraindications), rejected, ask_user, preserve (+ aspect verify xác nhận chủ ý)."""
+    ...
+
+
+def plan_contraindications(report: Optional[DiagnosisReport]) -> List[str]: ...
+
+
+# src/agent/planner.py
+def apply_contraindications(plan: TreatmentPlan, contraindications: Sequence[str]) -> TreatmentPlan:
+    """no_sharpen → bỏ mọi sharpen; no_brighten → bỏ gamma_correct > 1 toàn ảnh."""
+    ...
+
+
+# src/agent/evidence.py — evidence for the VLM (Analysis v2, P4b)
+def select_evidence(image: np.ndarray, measurement: MeasurementResult,
+                    region_masks: Optional[Dict[str, np.ndarray]] = None) -> List[EvidenceCrop]:
+    """≤ MAX_CROPS (6) crops of 512 px at 100 %, labelled A, B, …: face → largest clip →
+    flattest patch → noisiest patch → strongest edge on the subject → on the background.
+    No crops when the long side ≤ 768 px."""
+    ...
+
+
+def build_overlays(image: np.ndarray, measurement: MeasurementResult) -> List[EvidenceOverlay]:
+    """≤ 2 downscaled overlays (clipping map, …) sent with the crops."""
+    ...
+
+
+# src/agent/executor.py
+def resolve_region_mask(
+    image: np.ndarray, target_prompt: str, feather_radius: int = 15,
+    box_2d: Optional[Sequence[int]] = None, cache_key: Optional[str] = None,
+) -> Tuple[bool, Optional[np.ndarray], Optional[str]]:
+    """Semantic region with a box_2d → resolve_subject_mask (the mask Perceive measured);
+    otherwise face/full/quadrant/semantic through the controller."""
     ...
 
 
@@ -342,8 +519,9 @@ def plan_treatment(
     history: Optional[List[HistoryItem]] = None,
     original_image: Optional[np.ndarray] = None,
 ) -> TreatmentPlan:
-    """No defect with severity >= 1 → empty plan without a second VLM call. Otherwise
-    diagnose_and_plan() → validate_and_sort_plan() → apply_preserve_guard()."""
+    """No actionable defect (severity >= 1 and fixable) → empty plan without a second VLM call.
+    Otherwise diagnose_and_plan() → validate_and_sort_plan() → apply_preserve_guard() →
+    apply_contraindications(plan, fusion.plan_contraindications(diagnosis))."""
     ...
 
 
@@ -359,7 +537,7 @@ operation's parameters. Parameters that belong to another operation are dropped.
 The rule-based plan (no API key, or Gemini failed) runs the recipes of the `auto_apply`
 playbook cards that match the diagnosis plus the defects implied by the Module 1 levels.
 
-Graph: `analyze → perceive → diagnose_and_plan → process → evaluate → decide`, then, when
+Graph: `analyze → perceive → clarify → diagnose_and_plan → process → evaluate → decide`, then, when
 `num_variants > 1`, `decide → render_variant ×N (parallel, LangGraph Send) → rank_variants → END`.
 `POST /api/v1/diagnose` returns `{technical_metrics, diagnosis, treatment_plan}`.
 

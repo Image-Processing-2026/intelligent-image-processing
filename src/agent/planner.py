@@ -358,3 +358,53 @@ def apply_preserve_guard(plan: TreatmentPlan, preserve: Sequence[PreserveItem]) 
     if notes:
         plan.reasoning = f"{plan.reasoning}\n[Giữ chủ ý thẩm mỹ] " + "; ".join(notes) + "."
     return plan
+
+
+# ---------------------------------------------------------
+# Contraindication: điều cần tránh do chẩn đoán (Analysis v2 P6)
+# ---------------------------------------------------------
+# Tên contraindication → (operation, tham số, điều kiện vi phạm, vùng áp dụng); tham số None →
+# bỏ cả action. Vùng None = mọi vùng; "full" = chỉ action toàn ảnh.
+CONTRAINDICATION_RULES: Dict[
+    str, List[Tuple[str, Optional[str], Optional[Callable[[float], bool]], Optional[str]]]
+] = {
+    # Làm nét khuếch đại khối JPEG và tạo viền quanh vệt mờ chuyển động
+    "no_sharpen": [("sharpen", None, None, None)],
+    # Làm sáng toàn ảnh đẩy thêm vùng đã cháy; làm sáng một vùng (mặt) vẫn được
+    "no_brighten": [("gamma_correct", "gamma", lambda v: v > 1, "full")],
+}
+
+
+def apply_contraindications(plan: TreatmentPlan, contraindications: Sequence[str]) -> TreatmentPlan:
+    """
+    Bỏ tất định các action mà chẩn đoán chống chỉ định (Defect.contraindications), ví dụ
+    no_sharpen → loại mọi sharpen. Contraindication lạ bị bỏ qua.
+    """
+    rules = [rule for name in contraindications for rule in CONTRAINDICATION_RULES.get(name, [])]
+    if not rules:
+        return plan
+    kept: List[RegionOperation] = []
+    notes: List[str] = []
+    for action in plan.actions:
+        region = action_region(action)
+        dropped = False
+        for operation, parameter, violates, scope in rules:
+            if operation != action.operation or (scope is not None and region != scope):
+                continue
+            value = action.parameters.get(parameter) if parameter else None
+            if parameter is None or (
+                value is not None and violates is not None and violates(float(value))
+            ):
+                dropped = True
+        if dropped:
+            logger.warning(
+                "Contraindication removed '%s' on region '%s'.", action.operation, region
+            )
+            notes.append(f"bỏ {action.operation} trên '{region}'")
+            continue
+        kept.append(action)
+    plan.actions = kept
+    if notes:
+        names = ", ".join(sorted(set(contraindications)))
+        plan.reasoning = f"{plan.reasoning}\n[Chống chỉ định: {names}] " + "; ".join(notes) + "."
+    return plan
