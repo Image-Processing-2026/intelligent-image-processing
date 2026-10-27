@@ -23,23 +23,24 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import Send, interrupt
 
 from src.analyzer_evaluator.analyzer import analyze_image
-from src.analyzer_evaluator.measurement.diff import SideEffect, side_effects
+from src.analyzer_evaluator.measurement.diff import DefectChange, SideEffect, compare, side_effects
 from src.analyzer_evaluator.metadata import ImageMetadata
 from src.analyzer_evaluator.no_reference_eval import evaluate_no_reference
 from src.analyzer_evaluator.reference_eval import evaluate_reference
 
-from .executor import execute_plan, image_cache_key
-from .fusion import plan_contraindications
+from .executor import execute_plan, image_cache_key, subject_cache_key
+from .fusion import measure_hypothesis, plan_contraindications
 from .imaging import downscale
 from .intent import apply_intent, build_questions, intent_from_answers, intent_prompt
 from .memory import DEFAULT_USER, experience_prompt, get_case_memory
-from .perception import perceive
+from .perception import _measure, perceive, resolve_subject_masks
 from .planner import (
     action_region,
     apply_contraindications,
     apply_preserve_guard,
     validate_and_sort_plan,
 )
+from .regions import canonical_region
 from .state import DiagnosisReport, DoctorState, HistoryItem, IntentProfile, TreatmentPlan
 from .variants import (
     is_noisy,
@@ -342,6 +343,85 @@ def _side_effects(previous: np.ndarray, current: np.ndarray) -> List[SideEffect]
         return []
 
 
+def _targeted_defects(
+    diagnosis: Optional[DiagnosisReport], plan: Optional[TreatmentPlan]
+) -> List[Tuple[str, str]]:
+    """
+    Các lỗi (loại, vùng chuẩn hóa) toolbox sửa được mà kế hoạch vòng này nhắm tới: action trên
+    đúng vùng của lỗi, hoặc trên toàn ảnh (cùng quy ước với _needs_verification).
+    """
+    if diagnosis is None or plan is None:
+        return []
+    touched = {action_region(action) for action in plan.actions}
+    targeted: List[Tuple[str, str]] = []
+    for defect in diagnosis.actionable_defects:
+        region = canonical_region(defect.region)
+        if ("full" in touched or region in touched) and (defect.type, region) not in targeted:
+            targeted.append((defect.type, region))
+    return targeted
+
+
+def _track_defects(state: DoctorState, plan: TreatmentPlan) -> List[DefectChange]:
+    """
+    Trạng thái (resolved/improved/unchanged/worse) của các lỗi mục tiêu so với ảnh gốc, đo trên
+    đúng vùng của lỗi bằng cùng mask Perceive đã dựng (cache theo ảnh gốc của lượt chạy).
+    Không theo dõi được lỗi nào (thiếu số đo/mask) hoặc lỗi đo → [], decide_node dùng logic cũ.
+    """
+    diagnosis = state.get("diagnosis")
+    original = state.get("original_image")
+    defects = _targeted_defects(diagnosis, plan)
+    if diagnosis is None or original is None or not defects:
+        return []
+    try:
+        before, after = _measure(original), _measure(state["current_image"])
+        if before is None or after is None:
+            return []
+        boxes = {canonical_region(name): box for name, box in diagnosis.subject_boxes.items()}
+        names = sorted({region for _, region in defects if region != "full"})
+        masks = resolve_subject_masks(
+            original,
+            names,
+            boxes,
+            subject_cache_key(image_cache_key(original), original.shape),
+        )
+        long_side = max(original.shape[:2])
+
+        def assess(
+            defect_type: str, region: str, report: Any, stats: Dict[str, Any]
+        ) -> Optional[Tuple[int, float]]:
+            measured = measure_hypothesis(defect_type, region, report, stats, long_side)
+            return None if measured is None else (measured.severity, measured.confidence)
+
+        diff = compare(
+            original,
+            state["current_image"],
+            {name: subject.mask for name, subject in masks.items()},
+            defects=defects,
+            original_measurement=before,
+            current_measurement=after,
+            assess=assess,
+        )
+    except Exception as exc:
+        logger.warning("Defect tracking failed: %s", exc)
+        return []
+    return [change for change in diff.defects if change.before >= 1]
+
+
+def _decide_tracked(changes: List[DefectChange]) -> str:
+    """
+    Quyết định theo trạng thái lỗi mục tiêu (không kể trường hợp worse, đã xử lý như suy thoái):
+    - mọi lỗi resolved → SHIP;
+    - có lỗi resolved/improved nhưng còn lỗi chưa hết → RE_PROCESS (decide_node áp giới hạn vòng);
+    - mọi lỗi unchanged → STOP_BEST_EFFORT (xử lý không tác động được thêm).
+    """
+    statuses = {change.status for change in changes}
+    if statuses == {"resolved"}:
+        return "SHIP"
+    if statuses & {"resolved", "improved"}:
+        return "RE_PROCESS"
+    return "STOP_BEST_EFFORT"
+
+
 def _create_thumbnail(image: np.ndarray, max_size: int = 512) -> np.ndarray:
     """Resize ảnh xuống thumbnail để tiết kiệm bộ nhớ."""
     h, w = image.shape[:2]
@@ -391,15 +471,17 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
         and previous_image is not None
         and np.array_equal(state["current_image"], previous_image)
     )
-    degraded = (
-        has_actions
-        and not unchanged
-        and (
-            _is_degraded_synthetic(eval_result, history)
-            if is_syn
-            else _is_degraded_real(eval_result, history)
-        )
-    )
+    # Ảnh thực: thành công = lỗi đã chẩn đoán được sửa trên đúng vùng của nó (đo so với ảnh gốc),
+    # không phải điểm toàn ảnh tăng. Có theo dõi được lỗi nào thì chỉ lỗi `worse` mới là suy thoái
+    tracked = _track_defects(state, plan) if has_actions and not unchanged and not is_syn else []
+    history_entry.defect_status = [change.model_dump() for change in tracked]
+    if is_syn:
+        regressed = _is_degraded_synthetic(eval_result, history)
+    elif tracked:
+        regressed = any(change.status == "worse" for change in tracked)
+    else:
+        regressed = _is_degraded_real(eval_result, history)
+    degraded = has_actions and not unchanged and regressed
     # P7: tác dụng phụ do xử lý của vòng này (halo, nhiễu vùng tối tăng, banding…), ảnh thực.
     # Severity ≥ SIDE_EFFECT_ROLLBACK_SEVERITY → coi như suy thoái → rollback
     effects = (
@@ -432,20 +514,20 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
     else:
         # 2. Phân nhánh Synthetic vs Real (xét trước giới hạn vòng để vòng cuối đạt
         #    mục tiêu vẫn được báo SHIP)
-        decision = (
-            _decide_synthetic(eval_result, history)
-            if is_syn
-            else _decide_real(eval_result, history)
-        )
-        # 3. Ảnh thực: SHIP theo điểm chỉ được chấp nhận khi chẩn đoán xác nhận lỗi rõ đã hết.
-        #    Vòng cuối không còn cơ hội xác nhận → giữ SHIP (đã đạt điểm mục tiêu)
-        if (
-            decision == "SHIP"
-            and not is_syn
-            and iteration < max_iters
-            and _needs_verification(state.get("diagnosis"), plan)
-        ):
-            decision = "RE_PROCESS"
+        if is_syn:
+            decision = _decide_synthetic(eval_result, history)
+        elif tracked:
+            decision = _decide_tracked(tracked)
+        else:
+            decision = _decide_real(eval_result, history)
+            # 3. Ảnh thực không theo dõi được lỗi: SHIP theo điểm chỉ được chấp nhận khi chẩn
+            #    đoán xác nhận lỗi rõ đã hết. Vòng cuối không còn cơ hội xác nhận → giữ SHIP
+            if (
+                decision == "SHIP"
+                and iteration < max_iters
+                and _needs_verification(state.get("diagnosis"), plan)
+            ):
+                decision = "RE_PROCESS"
         # 4. Giới hạn cứng: hết vòng lặp mà chưa đạt → dừng nỗ lực tốt nhất
         if decision == "RE_PROCESS" and iteration >= max_iters:
             decision = "STOP_BEST_EFFORT"

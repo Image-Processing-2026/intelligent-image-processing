@@ -233,6 +233,13 @@ class HistoryItem(BaseModel):
         default_factory=list,
         description="Tác dụng phụ do xử lý của vòng này (measurement.diff.SideEffect dạng dict)",
     )
+    defect_status: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Trạng thái các lỗi mục tiêu của vòng này so với ảnh gốc, đo trên đúng vùng của lỗi "
+            "(measurement.diff.DefectChange dạng dict); rỗng nếu không theo dõi được"
+        ),
+    )
 
 
 # Phong cách người dùng có thể chọn (khớp id phong cách trong variants.STYLES)
