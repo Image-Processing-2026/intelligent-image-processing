@@ -7,7 +7,7 @@ import logging
 import threading
 from typing import Any, Iterator, Optional
 
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, inspect, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -40,7 +40,22 @@ class Database:
         event.listen(self.engine, "connect", _sqlite_pragmas)
         self.sessionmaker = sessionmaker(self.engine, expire_on_commit=False)
         Base.metadata.create_all(self.engine)
+        self._add_missing_columns()
         self._recover_interrupted()
+
+    def _add_missing_columns(self) -> None:
+        """
+        create_all không sửa bảng đã có: thêm cột mới vào CSDL cũ bằng ALTER TABLE (chưa dùng
+        Alembic). Mỗi phần tử là (bảng, cột, kiểu SQL kèm giá trị mặc định).
+        """
+        additions = (("processing_sessions", "draft_edits", "JSON DEFAULT '[]'"),)
+        inspector = inspect(self.engine)
+        with self.engine.begin() as connection:
+            for table, column, ddl in additions:
+                existing = {col["name"] for col in inspector.get_columns(table)}
+                if column not in existing:
+                    connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+                    logger.info("Added column %s.%s to the existing database.", table, column)
 
     def _recover_interrupted(self) -> None:
         """

@@ -655,6 +655,24 @@ list of `RegionOperation`) returns `{image_base64, width, height, applied_action
 - `POST /api/v1/sessions/{id}/answers` (JSON `{answers, notes}`) →
   `{status: "done", result: ProcessResponse}`. Returns 404 for an unknown session and 409 when
   the session is not waiting for input. `DELETE /api/v1/sessions/{id}` → 204.
+- **Workspace (web app, `/api/v1/workspace`) — analysis chat before processing:**
+  - `POST /sessions/{id}/analysis-notes` (JSON `{message}`, ≤ 1000 chars) parses one Vietnamese
+    message with `user_analysis.parse_edits` against the draft diagnosis, appends the edits to
+    `ProcessingSession.draft_edits` (max 20, else 422) and stores two messages: `analysis_note`
+    (user) and `analysis_update` (`{text, edits, source, draft_diagnosis, unparsed}`). Only valid
+    while the session is `awaiting_answers` (else 409 `invalid_state`). A message that yields no
+    edit has `unparsed=true` and is appended to `notes` when processing starts.
+  - `DELETE /sessions/{id}/analysis-edits/{index}` removes one edit (0-based; 404 if out of range).
+  - `POST /sessions/{id}/answers` passes `draft_edits` to `answer_session(..., edits=...)` (or
+    `intent_from_answers(..., edits=...)` for ground-truth sessions); `POST /sessions/{id}/clarify`
+    clears them.
+  - `SessionDetailOut` adds `draft_edits`, `draft_diagnosis` (diagnosis + edits, only while
+    awaiting answers), `region_overlay_url` and `regions: [{name, source, confidence}]`. The
+    overlay (`region_overlay.png`, artifact kind `region_overlay`) is built with
+    `region_overlay.diagnosis_region_overlay` after the diagnosis and rebuilt when an edit changes
+    the set of regions; a failure only logs a warning and leaves the URL `null`.
+  - `processing_sessions.draft_edits` is added to an existing SQLite file at startup
+    (`Database._add_missing_columns`); there is no Alembic.
 - `POST /api/v1/refine` (file, `actions` JSON, `feedback`) →
   `{image_base64, width, height, actions, adjustments, notes, source}`, where `source` is
   `rules`, `vlm` or `none`. Send the returned `actions` back with the next feedback.

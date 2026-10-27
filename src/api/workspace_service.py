@@ -18,7 +18,11 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.agent.region_overlay import diagnosis_region_overlay
+from src.agent.regions import canonical_region
 from src.agent.session import SessionResult
+from src.agent.state import DiagnosisEdit, DiagnosisReport
+from src.agent.user_analysis import apply_edits, validate_edits
 from src.agent.variants import treatment_recipe
 from src.agent.vlm_diagnostician import DEFAULT_GEMINI_MODEL
 
@@ -327,16 +331,114 @@ def record_process(
 
 
 def answers_content(
-    questions: List[Dict[str, Any]], answers: Dict[str, str], notes: str
+    questions: List[Dict[str, Any]],
+    answers: Dict[str, str],
+    notes: str,
+    edits: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Nội dung message 'answers': giá trị thô + nhãn dễ đọc theo câu hỏi đã lưu."""
+    """Nội dung message 'answers': giá trị thô + nhãn dễ đọc theo câu hỏi đã lưu (+ edit nháp)."""
     labelled = []
     for question in questions:
         value = answers.get(question.get("id", ""))
         choice = next((c for c in question.get("choices", []) if c.get("value") == value), None)
         if choice is not None:
             labelled.append({"question": question.get("text", ""), "answer": choice.get("label")})
-    return {"answers": answers, "labels": labelled, "notes": notes}
+    content: Dict[str, Any] = {"answers": answers, "labels": labelled, "notes": notes}
+    if edits:
+        content["edits"] = edits
+    return content
+
+
+# ---------------- chat bổ sung phân tích ----------------
+REGION_OVERLAY_NAME = "region_overlay.png"
+
+
+def original_diagnosis(db: Session, item: ProcessingSession) -> Optional[DiagnosisReport]:
+    """Chẩn đoán vòng 1 đã lưu của lần analyze mới nhất (chưa áp edit của người dùng)."""
+    analyze = _latest_run(db, item, "analyze")
+    raw = analyze.result.get("diagnosis") if analyze else None
+    if not raw:
+        return None
+    try:
+        return DiagnosisReport.model_validate(raw)
+    except ValueError:
+        logger.warning("Stored diagnosis of session %s is not valid.", item.id, exc_info=True)
+        return None
+
+
+def stored_edits(item: ProcessingSession) -> List[DiagnosisEdit]:
+    """Edit nháp của phiên (edit hỏng bị bỏ và ghi log)."""
+    return validate_edits(item.draft_edits or [])
+
+
+def draft_diagnosis(db: Session, item: ProcessingSession) -> Optional[DiagnosisReport]:
+    """Chẩn đoán đã lưu + các edit đã lưu của người dùng (bản nháp trước khi xử lý)."""
+    base = original_diagnosis(db, item)
+    return apply_edits(base, stored_edits(item)) if base is not None else None
+
+
+def _overlay_region_names(diagnosis: DiagnosisReport) -> List[str]:
+    """Tên vùng (chuẩn hóa, trừ 'full') mà overlay của chẩn đoán này sẽ vẽ."""
+    names = list(diagnosis.subjects) + [defect.region for defect in diagnosis.defects]
+    return sorted({canonical_region(name) for name in names} - {"full"})
+
+
+def overlay_artifact(db: Session, item: ProcessingSession) -> Optional[Artifact]:
+    """Artifact overlay vùng của phiên (không thuộc run nào)."""
+    return db.scalar(
+        select(Artifact).where(
+            Artifact.session_id == item.id,
+            Artifact.kind == "region_overlay",
+            Artifact.run_id.is_(None),
+        )
+    )
+
+
+def overlay_is_stale(item: ProcessingSession, diagnosis: DiagnosisReport) -> bool:
+    """Tập vùng của chẩn đoán đã khác với tập vùng của overlay đang lưu."""
+    stored = (item.options or {}).get("overlay_regions")
+    return stored != _overlay_region_names(diagnosis)
+
+
+def refresh_region_overlay(
+    db: Session,
+    settings: AppSettings,
+    item: ProcessingSession,
+    image: np.ndarray,
+    diagnosis: DiagnosisReport,
+) -> Optional[Artifact]:
+    """
+    Dựng lại overlay vùng của chẩn đoán trên ảnh gốc và lưu cạnh original.png (thay bản cũ).
+    Mask lấy từ cùng cache với Perceive/executor. Lỗi dựng overlay chỉ ghi log và trả None,
+    không chặn phiên. Người gọi commit.
+    """
+    try:
+        with pipeline_slot(settings):
+            overlay, masks = diagnosis_region_overlay(image, diagnosis)
+        saved = save_png(overlay, session_path(settings, item), REGION_OVERLAY_NAME)
+    except Exception:
+        logger.warning("Could not build region overlay for session %s", item.id, exc_info=True)
+        return None
+    artifact = overlay_artifact(db, item)
+    if artifact is None:
+        artifact = Artifact(session_id=item.id, kind="region_overlay", rel_path=saved.rel_path)
+        db.add(artifact)
+    artifact.rel_path = saved.rel_path
+    artifact.width, artifact.height, artifact.bytes = saved.width, saved.height, saved.bytes
+    options = dict(item.options or {})
+    # Tên vùng đã yêu cầu (kể cả vùng không định vị được) để biết khi nào cần dựng lại
+    options["overlay_regions"] = _overlay_region_names(diagnosis)
+    options["regions"] = [
+        {
+            "name": name,
+            "source": str(getattr(subject.source, "value", subject.source)),
+            "confidence": round(float(subject.confidence), 3),
+        }
+        for name, subject in sorted(masks.items())
+    ]
+    item.options = options
+    db.flush()
+    return artifact
 
 
 # ---------------- dựng response ----------------
@@ -405,6 +507,8 @@ def session_detail(db: Session, item: ProcessingSession) -> SessionDetailOut:
         select(Treatment).where(Treatment.session_id == item.id).order_by(Treatment.version)
     ).all()
     ratings = db.scalars(select(Rating).where(Rating.session_id == item.id)).all()
+    draft = draft_diagnosis(db, item) if item.status == "awaiting_answers" else None
+    overlay = by_kind.get("region_overlay")
     return SessionDetailOut(
         **summary.model_dump(),
         options=item.options or {},
@@ -429,6 +533,10 @@ def session_detail(db: Session, item: ProcessingSession) -> SessionDetailOut:
         ratings=[rating_dict(rating) for rating in ratings],
         error=_error(item),
         artifacts=[artifact_out(artifact) for artifact in artifacts],
+        draft_edits=list(item.draft_edits or []),
+        draft_diagnosis=draft.model_dump(mode="json") if draft is not None else None,
+        region_overlay_url=artifact_out(overlay).url if overlay is not None else None,
+        regions=list((item.options or {}).get("regions", [])) if overlay is not None else [],
     )
 
 
@@ -518,6 +626,7 @@ def export_payload(db: Session, item: ProcessingSession) -> Dict[str, Any]:
             "title": item.title,
             "status": item.status,
             "options": item.options or {},
+            "draft_edits": item.draft_edits or [],
             "created_at": item.created_at,
             "updated_at": item.updated_at,
             "case_id": item.case_id,
