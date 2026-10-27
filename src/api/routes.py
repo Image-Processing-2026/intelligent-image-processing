@@ -28,7 +28,7 @@ from src.agent.session import (
     start_session,
 )
 from src.agent.state import RegionOperation, TreatmentPlan
-from src.agent.variants import treatment_recipe
+from src.agent.treatment import treatment_recipe
 from src.analyzer_evaluator.analyzer import analyze_image
 from src.analyzer_evaluator.metadata import ImageMetadata, read_metadata
 
@@ -40,7 +40,6 @@ from .schemas import (
     RefineResponse,
     RenderResponse,
     SessionResponse,
-    VariantOut,
 )
 
 router = APIRouter(prefix="/api/v1")
@@ -96,7 +95,6 @@ async def process_image_endpoint(
     file: UploadFile = File(...),
     ground_truth: UploadFile = File(None),
     max_iterations: int = Form(3),
-    num_variants: int = Form(1),
     user_id: str = Form(DEFAULT_USER),
 ):
     """Thực thi toàn bộ chu trình xử lý ảnh khép kín với LangGraph."""
@@ -118,7 +116,6 @@ async def process_image_endpoint(
             ground_truth=gt_img,
             is_synthetic=is_synthetic,
             max_iterations=max_iterations,
-            num_variants=num_variants,
             user_id=user_id,
             image_metadata=read_metadata(content),
         )
@@ -142,25 +139,15 @@ def _process_response(
         intermediate_images_base64=[
             _encode_image_to_base64(img) for img in result_state.get("intermediate_images", [])
         ],
-        variants=[
-            VariantOut(
-                **variant.model_dump(exclude={"image"}),
-                preview_base64=_encode_image_to_base64(variant.image),
-            )
-            for variant in result_state.get("variants") or []
-        ],
-        recommended_variant=result_state.get("recommended_variant"),
-        variant_ranking_source=result_state.get("variant_ranking_source"),
         treatment=treatment_recipe(history),
         intent=result_state.get("intent"),
-        recommended_reason=result_state.get("recommended_reason"),
         case_id=case_id,
         image_metadata=result_state.get("image_metadata"),
     )
 
 
 def _parse_actions(raw: str) -> list:
-    """Parse danh sách thao tác (JSON) của một phiên bản; lỗi định dạng → HTTP 422."""
+    """Parse danh sách thao tác (JSON) của một phác đồ; lỗi định dạng → HTTP 422."""
     try:
         items = json.loads(raw)
         if not isinstance(items, list):
@@ -171,17 +158,13 @@ def _parse_actions(raw: str) -> list:
 
 
 @router.post("/render", response_model=RenderResponse)
-async def render_variant_endpoint(
+async def render_endpoint(
     file: UploadFile = File(...),
     actions: str = Form(...),
-    case_id: Optional[str] = Form(None),
-    variant_id: Optional[str] = Form(None),
 ):
     """
-    Render một phiên bản đã chọn ở độ phân giải gốc: áp đúng danh sách thao tác của phiên bản
-    (trường `actions` trong /process) lên ảnh gốc. Thao tác được lọc và kẹp như planner nhưng
-    GIỮ NGUYÊN thứ tự, để kết quả khớp với ảnh preview người dùng đã chọn.
-    case_id + variant_id (tùy chọn): ghi lựa chọn này vào bộ nhớ ca bệnh.
+    Render lại một phác đồ ở độ phân giải gốc: áp đúng danh sách thao tác (trường `treatment`
+    trong /process) lên ảnh gốc. Thao tác được lọc và kẹp như planner nhưng GIỮ NGUYÊN thứ tự.
     """
     parsed = _parse_actions(actions)
     try:
@@ -189,9 +172,6 @@ async def render_variant_endpoint(
         applied = sanitize_actions(parsed)
         plan = TreatmentPlan(reasoning="render", actions=applied)
         rendered = await run_in_threadpool(execute_plan, img, plan)
-        memory = get_case_memory()
-        if memory is not None and case_id and variant_id:
-            memory.record_choice(case_id, variant_id)
         return RenderResponse(
             image_base64=_encode_image_to_base64(rendered),
             width=int(rendered.shape[1]),
@@ -255,7 +235,6 @@ def _session_response(result: SessionResult) -> SessionResponse:
 async def start_session_endpoint(
     file: UploadFile = File(...),
     max_iterations: int = Form(3),
-    num_variants: int = Form(3),
     user_id: str = Form(DEFAULT_USER),
 ):
     """
@@ -268,7 +247,6 @@ async def start_session_endpoint(
             start_session,
             img,
             max_iterations=max_iterations,
-            num_variants=num_variants,
             user_id=user_id,
         )
         return _session_response(result)

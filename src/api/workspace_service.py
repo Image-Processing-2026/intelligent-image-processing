@@ -22,8 +22,8 @@ from src.agent.region_overlay import diagnosis_region_overlay
 from src.agent.regions import canonical_region
 from src.agent.session import SessionResult
 from src.agent.state import DiagnosisEdit, DiagnosisReport
+from src.agent.treatment import treatment_recipe
 from src.agent.user_analysis import apply_edits, validate_edits
-from src.agent.variants import treatment_recipe
 from src.agent.vlm_diagnostician import DEFAULT_GEMINI_MODEL
 
 from .config import AppSettings
@@ -265,25 +265,6 @@ def record_process(
         add_image("intermediate", image, f"iter_{index + 1}.png").id
         for index, image in enumerate(state.get("intermediate_images") or [])
     ]
-    recommended = state.get("recommended_variant")
-    for variant in state.get("variants") or []:
-        preview = add_image("variant_preview", variant.image, f"variant_{variant.id}.png")
-        db.add(
-            Variant(
-                session_id=item.id,
-                run_id=run.id,
-                style_id=variant.id,
-                label=variant.label,
-                description=variant.description,
-                rank=variant.rank,
-                quality_score=plain(variant.quality_score),
-                quality_improved=variant.quality_improved,
-                critic_note=variant.critic_note,
-                actions=plain(variant.actions),
-                preview_artifact_id=preview.id,
-                recommended=variant.id == recommended,
-            )
-        )
 
     run.result = {
         "total_iterations": int(state.get("iteration", 1)) - 1,
@@ -292,9 +273,6 @@ def record_process(
         "history": plain(history),
         "treatment": plain(treatment_recipe(history)),
         "intent": plain(state.get("intent")),
-        "recommended_variant": recommended,
-        "recommended_reason": state.get("recommended_reason"),
-        "variant_ranking_source": state.get("variant_ranking_source"),
         "rolled_back": bool(state.get("rolled_back")),
         "is_synthetic": bool(state.get("is_synthetic")),
         "case_id": case_id,
@@ -541,7 +519,7 @@ def session_detail(db: Session, item: ProcessingSession) -> SessionDetailOut:
 
 
 def variant_dict(item: Variant) -> Dict[str, Any]:
-    """Variant → JSON cho client."""
+    """Variant cũ (phiên trước khi bỏ phong cách, chỉ đọc) → JSON cho client."""
     return {
         "id": item.id,
         "run_id": item.run_id,

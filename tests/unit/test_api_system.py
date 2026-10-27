@@ -54,15 +54,12 @@ def test_memory_is_scoped_to_the_signed_in_user(
     _login(bob, "bob")
     alice_id = _user_id(app_db, "alice")
     bob_id = _user_id(app_db, "bob")
-    for index, (owner, style) in enumerate(
-        [(alice_id, "natural"), (alice_id, "natural"), (bob_id, "vivid")]
-    ):
+    for index, owner in enumerate([alice_id, alice_id, bob_id]):
         store._save(
             CaseRecord(
                 id=f"case{index}",
                 user_id=owner,
                 created_at=f"2026-10-22T10:0{index}:00+00:00",
-                chosen_variant=style,
                 feedback=["cooler@face:1"],
             )
         )
@@ -71,12 +68,10 @@ def test_memory_is_scoped_to_the_signed_in_user(
     assert mine == {
         "enabled": True,
         "cases": 2,
-        "choices": {"natural": 2},
         "feedback": {"cooler": 2},
-        "preferred_style": None,  # cần ít nhất 3 lần chọn
     }
     theirs = bob.get("/api/v1/workspace/memory").json()
-    assert theirs["cases"] == 1 and theirs["choices"] == {"vivid": 1}
+    assert theirs["cases"] == 1
     # Không có cách xem bộ nhớ người khác qua tham số client
     spoofed = alice.get("/api/v1/workspace/memory", params={"user_id": bob_id}).json()
     assert spoofed["cases"] == 2

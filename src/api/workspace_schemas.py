@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-# Giới hạn giống Gradio (frontend/app.py) và variants.MAX_VARIANTS; không đặt ngưỡng mới
+# Giới hạn giống Gradio (frontend/app.py); không đặt ngưỡng mới
 MAX_ITERATIONS_RANGE = (1, 5)
 NUM_VARIANTS_RANGE = (1, 3)
 # Số chỉnh sửa chẩn đoán tối đa người dùng tích lũy trong một phiên (chat bổ sung phân tích)
@@ -27,6 +27,7 @@ class UserSettings(BaseModel):
     """Cài đặt mặc định của người dùng cho phiên xử lý mới."""
 
     max_iterations: int = DEFAULT_USER_SETTINGS["max_iterations"]
+    # Deprecated: không còn nhiều phiên bản; giữ để client cũ đọc/ghi cài đặt không lỗi
     num_variants: int = DEFAULT_USER_SETTINGS["num_variants"]
 
 

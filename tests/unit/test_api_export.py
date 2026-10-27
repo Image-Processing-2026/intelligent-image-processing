@@ -25,7 +25,7 @@ def client(app_db: Database) -> TestClient:
 
 @pytest.fixture
 def done_session(client: TestClient) -> dict:
-    created = _create(client, variants=1)
+    created = _create(client)
     body = _answer(client, created["id"], style="natural").json()
     assert body["status"] == "done"
     return body

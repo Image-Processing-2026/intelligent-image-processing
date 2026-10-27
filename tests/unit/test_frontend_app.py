@@ -113,34 +113,14 @@ def _dark_image() -> np.ndarray:
     return np.repeat(gradient[:, :, None], 3, axis=2)
 
 
-def test_process_with_variants_and_render_choice():
-    """Phase 3: một lần chạy cho 3 phiên bản; xuất bản 'balanced' khớp ảnh kết quả."""
-    from frontend.app import process_with_variants, render_chosen_variant
+def test_process_image_returns_one_result_and_case_id():
+    """Một lần chạy cho một kết quả: 5 đầu ra của process_interface cộng id ca (None khi tắt)."""
+    from frontend.app import process_image
 
-    img = _dark_image()
-    outputs = process_with_variants(img, None, 2, 3)
-    assert len(outputs) == 10
-    out_img, _, _, _, _, variants_gallery, variants_md, choice, actions, case_id = outputs
-    assert case_id is None  # bộ nhớ tắt trong test
-
-    assert len(variants_gallery) == 3
-    assert "Xếp hạng theo" in variants_md
-    assert choice["value"] in actions
-    assert sorted(actions) == ["balanced", "natural", "vivid"]
-
-    rendered, status = render_chosen_variant(img, "balanced", actions)
-    assert np.array_equal(rendered, out_img)
-    assert "48×48" in status
-
-
-def test_process_with_single_variant_and_missing_choice():
-    from frontend.app import process_with_variants, render_chosen_variant
-
-    outputs = process_with_variants(_dark_image(), None, 1, 1)
-    assert outputs[5] == [] and outputs[8] == {}
-    rendered, status = render_chosen_variant(_dark_image(), None, {})
-    assert rendered is None and "chọn một phiên bản" in status
-    assert len(process_with_variants(None, None, 1, 3)) == 10
+    outputs = process_image(_dark_image(), None, 2)
+    assert len(outputs) == 6
+    assert outputs[0].shape == (48, 48, 3) and outputs[-1] is None
+    assert len(process_image(None, None, 1)) == 6
 
 
 def test_chat_flow_asks_answers_and_refines():
@@ -155,12 +135,9 @@ def test_chat_flow_asks_answers_and_refines():
     assert "Chẩn đoán" in history[-1]["content"]
 
     answers = [q["default"] for q in questions] + [None] * (QUESTION_SLOTS - len(questions))
-    history, out, gallery, choice, variant_actions, current, case_id = chat_answer(
-        session_id, questions, *answers, "", history
-    )
+    history, out, current, case_id = chat_answer(session_id, questions, *answers, "", history)
     assert case_id is None
     assert out.shape == img.shape and "Xong" in history[-1]["content"]
-    assert choice["value"] in variant_actions
 
     history, refined, new_actions, cleared = chat_feedback(img, current, "tối quá", history)
     assert "Đã chỉnh" in history[-1]["content"] and cleared == ""
@@ -179,31 +156,17 @@ def test_chat_without_image_or_session():
     assert history == []
 
 
-def test_ui_records_the_chosen_variant(tmp_path):
-    """Phase 5: xuất phiên bản trong UI ghi lựa chọn vào bộ nhớ ca bệnh."""
-    from frontend.app import process_with_variants, render_chosen_variant
-    from src.agent.memory import configure_case_memory
-
-    memory = configure_case_memory(tmp_path / "cases.sqlite")
-    img = _dark_image()
-    *_, actions, case_id = process_with_variants(img, None, 1, 3)
-    assert case_id is not None
-    render_chosen_variant(img, "vivid", actions, case_id)
-    assert memory.get(case_id).chosen_variant == "vivid"
-
-
 def test_resets_clear_image_dependent_state():
     from frontend.app import chat_reset, processing_reset
 
     result = processing_reset()
-    assert len(result) == 10
-    assert result[0] is None and result[2] == [] and result[4] == "{}"
-    assert result[7]["value"] is None and result[8:] == ({}, None)
+    assert len(result) == 6
+    assert result[0] is None and result[2] == [] and result[4] == "{}" and result[5] is None
     chat = chat_reset()
-    assert len(chat) == 14
+    assert len(chat) == 11
     assert chat[:3] == ([], None, [])
     assert all(radio["visible"] is False for radio in chat[3:6])
-    assert chat[6] is None and chat[9:12] == ({}, [], None)
+    assert chat[6] is None and chat[7:9] == ([], None)
 
 
 def test_ui_job_success_calls_once_and_preserves_choice_updates():
@@ -268,56 +231,28 @@ def test_processing_wrapper_invokes_pipeline_once(monkeypatch):
     pipeline = Mock(return_value={"current_image": image, "decision": "SHIP", "iteration": 2})
     monkeypatch.setattr(app, "run_pipeline", pipeline)
     monkeypatch.setattr(app, "remember_run", lambda state: None)
-    result = app.process_with_variants(image, None, 1, 1)
-    assert len(result) == 10 and result[7]["value"] is None and result[8] == {}
+    result = app.process_image(image, None, 1)
+    assert len(result) == 6 and result[-1] is None
     pipeline.assert_called_once()
 
 
-def test_chat_ui_consumes_session_and_keeps_variant_choices_during_refinement(monkeypatch):
+def test_chat_ui_consumes_session_and_keeps_result_during_refinement(monkeypatch):
     import frontend.app as app
 
     demo = app.create_app()
     handlers = {fn.fn.__name__: fn for fn in demo.fns.values()}
     image = _dark_image()
-    answer = Mock(
-        return_value=(
-            [],
-            image,
-            [],
-            gr.update(choices=["balanced"], value="balanced"),
-            {"balanced": []},
-            [],
-            None,
-        )
-    )
+    answer = Mock(return_value=([], image, [], None))
     monkeypatch.setattr(app, "chat_answer", answer)
     handler = handlers["answer_job"]
     result = list(handler.fn("session-a", [], None, None, None, "", []))[-1]
     answer.assert_called_once()
     assert result[handler.outputs[1]] is None
-    assert result[handler.outputs[8]]["choices"] == ["balanced"]
+    assert result[handler.outputs[6]] is image
     feedback = Mock(return_value=([], image, [], ""))
     monkeypatch.setattr(app, "chat_feedback", feedback)
-    snapshot = [
-        [],
-        None,
-        [],
-        None,
-        None,
-        None,
-        image,
-        [],
-        "balanced",
-        {"balanced": []},
-        [],
-        None,
-        "",
-        "",
-    ]
+    snapshot = [[], None, [], None, None, None, image, [], None, "", ""]
     job = handlers["feedback_job"].fn(image, [], "tối quá", [], None, *snapshot)
-    waiting = next(job)
-    choice = handlers["feedback_job"].outputs[8]
-    assert "choices" not in waiting[choice]
+    next(job)
     final = next(job)
-    assert final[choice]["value"] == "balanced"
-    feedback.assert_called_once()
+    assert final[handlers["feedback_job"].outputs[6]] is image

@@ -178,7 +178,7 @@ class TestInteractivePipeline:
         assert "__interrupt__" not in state
 
     def test_session_asks_then_applies_the_intent(self):
-        started = start_session(_dark_image(), max_iterations=2, num_variants=3)
+        started = start_session(_dark_image(), max_iterations=2)
         assert started.status == "needs_input"
         assert [q.id for q in started.questions] == ["mood"]
         assert started.diagnosis is not None
@@ -195,7 +195,7 @@ class TestInteractivePipeline:
 
     def test_session_still_pauses_without_questions(self, monkeypatch):
         monkeypatch.setattr("src.agent.graph.build_questions", lambda diagnosis: [])
-        started = start_session(_dark_image(), max_iterations=1, num_variants=1)
+        started = start_session(_dark_image(), max_iterations=1)
         assert started.status == "needs_input"
         assert started.questions == []
         assert answer_session(started.session_id, {}).status == "done"
@@ -204,7 +204,7 @@ class TestInteractivePipeline:
     def test_answering_unknown_or_finished_sessions_fails(self):
         with pytest.raises(SessionNotFoundError):
             answer_session("no-such-session", {})
-        started = start_session(_dark_image(), max_iterations=1, num_variants=1)
+        started = start_session(_dark_image(), max_iterations=1)
         answer_session(started.session_id, {})
         with pytest.raises(ValueError, match="not waiting"):
             answer_session(started.session_id, {})
@@ -212,8 +212,8 @@ class TestInteractivePipeline:
 
     def test_old_sessions_are_evicted(self, monkeypatch):
         monkeypatch.setattr(session_module, "MAX_SESSIONS", 1)
-        first = start_session(_dark_image(), max_iterations=1, num_variants=1)
-        second = start_session(_dark_image(), max_iterations=1, num_variants=1)
+        first = start_session(_dark_image(), max_iterations=1)
+        second = start_session(_dark_image(), max_iterations=1)
         with pytest.raises(SessionNotFoundError):
             answer_session(first.session_id, {})
         assert answer_session(second.session_id, {}).status == "done"
@@ -240,7 +240,7 @@ class TestInteractivePipeline:
         models.generate_content.side_effect = generate_content
         mock_genai.Client.return_value.models = models
 
-        started = start_session(_dark_image(), max_iterations=1, num_variants=1)
+        started = start_session(_dark_image(), max_iterations=1)
         answer_session(started.session_id, {}, "giữ tông ấm")
         end_session(started.session_id)
 
@@ -288,7 +288,7 @@ class TestClarifyEdits:
         # Ảnh sáng vừa: số đo toàn ảnh không thêm underexposed@full (sẽ chặn card dark-region)
         gradient = np.tile(np.linspace(100, 160, 48), (48, 1)).astype(np.uint8)
         image = np.repeat(gradient[:, :, None], 3, axis=2)
-        started = start_session(image, max_iterations=1, num_variants=1)
+        started = start_session(image, max_iterations=1)
         edit = DiagnosisEdit(op="add_defect", type="underexposed", region="face", severity=3)
         done = answer_session(started.session_id, {}, "", [edit])
         state = done.state
@@ -303,7 +303,7 @@ class TestClarifyEdits:
         end_session(started.session_id)
 
     def test_resume_with_broken_edit_still_finishes(self, caplog):
-        started = start_session(_dark_image(), max_iterations=1, num_variants=1)
+        started = start_session(_dark_image(), max_iterations=1)
         done = answer_session(started.session_id, {}, "", [{"op": "add_defect"}])
         assert done.status == "done"
         assert done.state["intent"].edits == []

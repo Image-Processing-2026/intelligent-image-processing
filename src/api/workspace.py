@@ -15,11 +15,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from src.agent.executor import execute_plan
 from src.agent.graph import run_pipeline
 from src.agent.intent import Question, intent_from_answers
 from src.agent.memory import get_case_memory, remember_run
-from src.agent.planner import sanitize_actions
 from src.agent.refine import refine
 from src.agent.session import (
     SessionNotFoundError,
@@ -27,7 +25,7 @@ from src.agent.session import (
     end_session,
     start_session,
 )
-from src.agent.state import RegionOperation, TreatmentPlan
+from src.agent.state import RegionOperation
 from src.agent.user_analysis import apply_edits, parse_edits
 from src.analyzer_evaluator.metadata import read_metadata
 
@@ -43,7 +41,6 @@ from .models import (
     Run,
     Treatment,
     User,
-    Variant,
     new_id,
     utc_now,
 )
@@ -63,7 +60,6 @@ from .storage import (
 from .workspace_schemas import (
     MAX_DRAFT_EDITS,
     MAX_ITERATIONS_RANGE,
-    NUM_VARIANTS_RANGE,
     AnalysisNoteIn,
     AnswersIn,
     RatingIn,
@@ -177,7 +173,6 @@ def create_session(
     sample: Optional[str] = Form(None),
     ground_truth: Optional[UploadFile] = File(None),
     max_iterations: Optional[int] = Form(None),
-    num_variants: Optional[int] = Form(None),
     title: Optional[str] = Form(None),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
@@ -194,9 +189,6 @@ def create_session(
     defaults = user_settings(user)
     iterations = _check_range(
         max_iterations or defaults.max_iterations, MAX_ITERATIONS_RANGE, "max_iterations"
-    )
-    variants = _check_range(
-        num_variants or defaults.num_variants, NUM_VARIANTS_RANGE, "num_variants"
     )
 
     if has_file:
@@ -226,7 +218,7 @@ def create_session(
         status="running",
         options={
             "max_iterations": iterations,
-            "num_variants": variants,
+            "num_variants": 1,  # Deprecated: luôn một kết quả mỗi lần chạy; giữ cho client cũ
             "has_ground_truth": truth is not None,
             "sample": sample if not has_file else None,
         },
@@ -251,7 +243,6 @@ def create_session(
             start_session,
             image,
             max_iterations=iterations,
-            num_variants=variants,
             user_id=str(user.id),
             image_metadata=metadata,
         )
@@ -546,7 +537,6 @@ def answer_questions(
                 ground_truth=truth,
                 is_synthetic=True,
                 max_iterations=int(item.options.get("max_iterations", 3)),
-                num_variants=int(item.options.get("num_variants", 3)),
                 intent=intent,
                 user_id=str(user.id),
             )
@@ -609,7 +599,6 @@ def clarify_again(
             start_session,
             _load_session_image(settings, item, original),
             max_iterations=int(item.options.get("max_iterations", 3)),
-            num_variants=int(item.options.get("num_variants", 3)),
             user_id=str(user.id),
         )
         record_analyze(db, item, result, duration, original)
@@ -631,12 +620,7 @@ def clarify_again(
     return session_detail(db, item)
 
 
-# ---------------- render phiên bản ----------------
-def _render_actions(raw: List[Dict[str, Any]]) -> List[RegionOperation]:
-    """Phác đồ đã lưu → RegionOperation đã lọc/kẹp, GIỮ NGUYÊN thứ tự (không sắp xếp lại)."""
-    return sanitize_actions([RegionOperation.model_validate(action) for action in raw])
-
-
+# ---------------- lỗi render/refine ----------------
 def _record_failed_run(db: Session, item: ProcessingSession, kind: str, exc: Exception) -> None:
     """Render/refine lỗi: chỉ thêm run 'failed', phiên vẫn 'done' (spec §3.3)."""
     db.rollback()
@@ -650,87 +634,6 @@ def _record_failed_run(db: Session, item: ProcessingSession, kind: str, exc: Exc
         )
     )
     db.commit()
-
-
-@router.post("/sessions/{session_id}/variants/{variant_id}/render", response_model=SessionDetailOut)
-def render_variant(
-    session_id: str,
-    variant_id: str,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-    settings: AppSettings = Depends(get_settings),
-) -> SessionDetailOut:
-    """
-    Render phiên bản đã chọn ở độ phân giải gốc: áp đúng phác đồ của phiên bản (lọc/kẹp như
-    planner nhưng giữ thứ tự) lên ảnh gốc đã lưu, rồi ghi lựa chọn vào bộ nhớ ca bệnh.
-    """
-    item = owned_session(db, user, session_id)
-    variant = db.get(Variant, variant_id) if len(variant_id) == 32 else None
-    if variant is None or variant.session_id != item.id:
-        raise ApiError(404, "not_found")
-    if item.status != "done":
-        raise ApiError(409, "session_busy" if item.status == "running" else "invalid_state")
-    try:
-        actions = _render_actions(variant.actions)
-        original = _load_session_image(settings, item, _session_artifact(db, item, "original"))
-        plan = TreatmentPlan(reasoning="render", actions=actions)
-        rendered, duration = run_timed(settings, execute_plan, original, plan)
-        run = Run(
-            session_id=item.id,
-            kind="render",
-            status="done",
-            result={"variant_id": variant.id, "style_id": variant.style_id},
-            duration_ms=duration,
-        )
-        db.add(run)
-        db.flush()
-        artifact = save_run_image(
-            db, settings, item, run, "render", rendered, f"render_{variant.style_id}.png"
-        )
-        treatment = Treatment(
-            session_id=item.id,
-            parent_id=item.active_treatment_id,
-            version=next_version(db, item),
-            source="variant",
-            variant_id=variant.id,
-            actions=plain(actions),
-            artifact_id=artifact.id,
-            run_id=run.id,
-        )
-        db.add(treatment)
-        db.flush()
-        db.execute(update(Variant).where(Variant.session_id == item.id).values(chosen=False))
-        variant.chosen = True
-        item.active_treatment_id = treatment.id
-        add_message(
-            db,
-            item,
-            "assistant",
-            "render_result",
-            {
-                "run_id": run.id,
-                "variant_id": variant.id,
-                "label": variant.label,
-                "artifact_id": artifact.id,
-                "treatment_id": treatment.id,
-                "width": artifact.width,
-                "height": artifact.height,
-            },
-        )
-        db.commit()
-    except ApiError:
-        raise
-    except Exception as exc:
-        logger.exception("Render failed for processing session %s", item.id)
-        _record_failed_run(db, item, "render", exc)
-        raise ApiError(500, "pipeline_failed")
-    memory = get_case_memory()
-    if memory is not None and item.case_id:
-        try:
-            memory.record_choice(item.case_id, variant.style_id)
-        except Exception:
-            logger.warning("Could not record the variant choice for case %s", item.case_id)
-    return session_detail(db, item)
 
 
 # ---------------- tinh chỉnh theo góp ý ----------------

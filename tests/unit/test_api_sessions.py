@@ -117,7 +117,7 @@ def test_create_from_upload_runs_diagnosis(
     body = response.json()
     assert body["status"] == "awaiting_answers"
     assert body["title"] == "My photo"
-    assert body["options"]["max_iterations"] == 3 and body["options"]["num_variants"] == 3
+    assert body["options"]["max_iterations"] == 3
     assert [m["kind"] for m in body["messages"]] == ["diagnosis", "questions"]
     assert body["diagnosis"]["source"] == "rule_based"
     assert [q["id"] for q in body["questions"]] == ["mood"]
@@ -136,11 +136,11 @@ def test_create_from_upload_runs_diagnosis(
 
 
 def test_create_uses_user_default_settings(client: TestClient, agent: FakeAgent) -> None:
-    client.patch("/api/v1/auth/me/settings", json={"max_iterations": 2, "num_variants": 1})
+    client.patch("/api/v1/auth/me/settings", json={"max_iterations": 2})
     body = _create(client, _png()).json()
     assert body["options"]["max_iterations"] == 2
-    assert agent.started[0]["max_iterations"] == 2 and agent.started[0]["num_variants"] == 1
-    explicit = _create(client, _png(), max_iterations=5, num_variants=3).json()
+    assert agent.started[0]["max_iterations"] == 2
+    explicit = _create(client, _png(), max_iterations=5).json()
     assert explicit["options"]["max_iterations"] == 5
 
 
@@ -377,7 +377,7 @@ def test_create_with_real_rule_based_diagnosis(client: TestClient) -> None:
     dark = np.full((48, 64, 3), 25, dtype=np.uint8)
     buffer = BytesIO()
     Image.fromarray(dark).save(buffer, format="PNG")
-    response = _create(client, buffer.getvalue(), max_iterations=1, num_variants=1)
+    response = _create(client, buffer.getvalue(), max_iterations=1)
     assert response.status_code == 201
     body = response.json()
     assert body["status"] == "awaiting_answers"
