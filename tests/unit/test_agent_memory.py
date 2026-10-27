@@ -56,7 +56,7 @@ class TestRecording:
         assert path.exists()
 
     def test_record_run_from_pipeline_state(self, memory: CaseMemory):
-        state = run_pipeline(_dark_image(), max_iterations=2, num_variants=2)
+        state = run_pipeline(_dark_image(), max_iterations=2)
         case = memory.get(remember_run(state))
 
         assert case is not None and case.user_id == "default"
@@ -64,23 +64,19 @@ class TestRecording:
         assert any(item.startswith("underexposed@full") for item in case.defects)
         assert [a["operation"] for a in case.treatment][0] == "gamma_correct"
         assert case.final_score is not None
-        assert case.recommended_variant == state["recommended_variant"]
 
-    def test_choice_and_feedback_are_appended(self, memory: CaseMemory):
+    def test_feedback_is_appended(self, memory: CaseMemory):
         memory._save(_case("abc"))
-        assert memory.record_choice("abc", "vivid")
         assert memory.record_feedback("abc", "tối quá", [Adjustment(kind="brighter", strength=2)])
         assert memory.record_feedback(
             "abc", "da hơi vàng", [Adjustment(kind="cooler", region="face")]
         )
         case = memory.get("abc")
-        assert case.chosen_variant == "vivid"
         assert case.feedback == ["brighter@full:2", "cooler@face:1"]
         assert case.feedback_texts == ["tối quá", "da hơi vàng"]
 
     def test_unknown_case_is_reported(self, memory: CaseMemory):
         assert memory.get("nope") is None
-        assert not memory.record_choice("nope", "vivid")
         assert not memory.record_feedback("nope", "x", [])
 
     def test_records_persist_across_instances(self, tmp_path: Path):
@@ -138,25 +134,11 @@ class TestRetrieval:
         assert [c.id for c in memory.cases("an")] == ["mine"]
         assert {c.id for c in memory.cases()} == {"mine", "theirs"}
 
-    @pytest.mark.parametrize(
-        "choices,expected",
-        [
-            (["vivid", "vivid"], None),  # chưa đủ MIN_CHOICES
-            (["vivid", "vivid", "natural"], "vivid"),
-            (["vivid", "natural", "balanced"], None),  # không phong cách nào đủ tỉ lệ
-        ],
-    )
-    def test_preferred_style(self, memory: CaseMemory, choices, expected):
-        for index, choice in enumerate(choices):
-            memory._save(_case(f"c{index}", chosen_variant=choice))
-        assert memory.preferred_style() == expected
-
     def test_stats(self, memory: CaseMemory):
-        memory._save(_case("a", chosen_variant="vivid", feedback=["brighter@full:2"]))
+        memory._save(_case("a", feedback=["brighter@full:2"]))
         memory._save(_case("b", feedback=["brighter@face:1", "cooler@full:1"]))
         stats = memory.stats()
         assert stats["cases"] == 2
-        assert stats["choices"] == {"vivid": 1}
         assert stats["feedback"] == {"brighter": 2, "cooler": 1}
 
     def test_experience_prompt(self):
@@ -177,7 +159,6 @@ class TestRetrieval:
                 },
             ],
             final_score=85.8,
-            chosen_variant="vivid",
             feedback=["brighter@full:2"],
             feedback_texts=["tối quá"],
         )
@@ -185,7 +166,7 @@ class TestRetrieval:
         assert text.startswith("KINH NGHIỆM TỪ CA TƯƠNG TỰ")
         assert "[abcdef12]" in text
         assert "gamma_correct(gamma=1.5) → gamma_correct@face(gamma=1.4)" in text
-        assert "chọn bản 'vivid'" in text and '"tối quá"' in text
+        assert '"tối quá"' in text
         assert experience_prompt([]) == ""
 
 
@@ -193,17 +174,6 @@ class TestRetrieval:
 # Tích hợp vào pipeline
 # ============================================================
 class TestPipelineIntegration:
-    def test_preference_drives_the_recommendation(self, memory: CaseMemory):
-        for index in range(3):
-            memory._save(_case(f"p{index}", chosen_variant="natural"))
-        state = run_pipeline(_dark_image(), max_iterations=1, num_variants=3)
-        assert state["recommended_variant"] == "natural"
-        assert state["recommended_reason"] == "preference"
-
-    def test_without_memory_reason_is_the_ranking_source(self):
-        state = run_pipeline(_dark_image(), max_iterations=1, num_variants=2)
-        assert state["recommended_reason"] == "score"
-
     @patch.dict("os.environ", FAKE_KEY)
     @patch("src.agent.vlm_diagnostician.genai")
     def test_similar_case_reaches_the_plan_prompt(self, mock_genai, memory: CaseMemory):

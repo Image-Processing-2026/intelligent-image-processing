@@ -82,7 +82,6 @@ def _result(session_id: str, output: Dict[str, Any]) -> SessionResult:
 def start_session(
     image: np.ndarray,
     max_iterations: int = 3,
-    num_variants: int = 3,
     session_id: Optional[str] = None,
     user_id: str = DEFAULT_USER,
     image_metadata: Optional[ImageMetadata] = None,
@@ -96,7 +95,6 @@ def start_session(
     state = initial_doctor_state(
         image,
         max_iterations=max_iterations,
-        num_variants=num_variants,
         interactive=True,
         user_id=user_id,
         image_metadata=image_metadata,

@@ -44,14 +44,14 @@ def _login(client: TestClient, username: str) -> None:
     assert response.status_code == 201
 
 
-def _create(client: TestClient, ground_truth: Any = None, variants: int = 2) -> dict:
+def _create(client: TestClient, ground_truth: Any = None) -> dict:
     files = {"file": ("dark.png", _png(_dark_image()), "image/png")}
     if ground_truth is not None:
         files["ground_truth"] = ("gt.png", _png(ground_truth), "image/png")
     response = client.post(
         "/api/v1/workspace/sessions",
         files=files,
-        data={"max_iterations": "1", "num_variants": str(variants)},
+        data={"max_iterations": "1"},
     )
     assert response.status_code == 201, response.text
     body = response.json()
@@ -124,11 +124,6 @@ def test_answer_runs_pipeline_and_persists_everything(
     for artifact_id in process["artifacts"]["intermediate"]:
         assert client.get(artifacts[artifact_id]["url"]).status_code == 200
 
-    assert len(body["variants"]) == 2
-    assert sum(v["recommended"] for v in body["variants"]) <= 1
-    for variant in body["variants"]:
-        assert client.get(artifacts[variant["preview_artifact_id"]]["url"]).status_code == 200
-
     [treatment] = body["treatments"]
     assert treatment["source"] == "pipeline" and treatment["version"] == 1
     assert body["active_treatment_id"] == treatment["id"]
@@ -162,7 +157,7 @@ def test_answer_runs_pipeline_and_persists_everything(
 def test_ground_truth_branch_uses_run_pipeline(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    created = _create(client, ground_truth=_dark_image() + 60, variants=1)
+    created = _create(client, ground_truth=_dark_image() + 60)
     assert created["options"]["has_ground_truth"] is True
     _forbid(monkeypatch, "answer_session")
 
@@ -176,7 +171,7 @@ def test_ground_truth_branch_uses_run_pipeline(
 
 # ---------------- thread hết hạn và hỏi ý lại ----------------
 def test_expired_thread_then_clarify_again(client: TestClient, app_db: Database) -> None:
-    sid = _create(client, variants=1)["id"]
+    sid = _create(client)["id"]
     end_session(_thread_id(app_db, sid))  # mô phỏng restart server
 
     expired = _answer(client, sid, style="natural")
@@ -199,7 +194,7 @@ def test_expired_thread_then_clarify_again(client: TestClient, app_db: Database)
 def test_pipeline_failure_is_reported_without_details(
     client: TestClient, app_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    sid = _create(client, variants=1)["id"]
+    sid = _create(client)["id"]
 
     def broken(*_args: Any, **_kwargs: Any) -> None:
         raise RuntimeError("secret stack detail C:/data/app")
@@ -225,7 +220,7 @@ def test_pipeline_failure_is_reported_without_details(
 def test_running_session_rejects_second_request(
     client: TestClient, app_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    sid = _create(client, variants=1)["id"]
+    sid = _create(client)["id"]
     with app_db.sessionmaker() as db:
         db.get(ProcessingSession, sid).status = "running"
         db.commit()
@@ -238,7 +233,7 @@ def test_running_session_rejects_second_request(
 def test_other_user_cannot_answer_or_clarify(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    sid = _create(client, variants=1)["id"]
+    sid = _create(client)["id"]
     _forbid(monkeypatch, "answer_session", "start_session", "run_pipeline")
     bob = TestClient(app)
     _login(bob, "bob")
@@ -247,7 +242,7 @@ def test_other_user_cannot_answer_or_clarify(
 
 
 def test_answers_payload_is_bounded(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    sid = _create(client, variants=1)["id"]
+    sid = _create(client)["id"]
     _forbid(monkeypatch, "answer_session")
     too_long = client.post(
         f"/api/v1/workspace/sessions/{sid}/answers", json={"answers": {}, "notes": "x" * 1001}

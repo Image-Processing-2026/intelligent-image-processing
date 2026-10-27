@@ -4,7 +4,7 @@ Quản lý chu trình khép kín: Analyze -> Diagnose -> Plan -> Process -> Eval
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -20,7 +20,7 @@ except ImportError:
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, StateGraph
-from langgraph.types import Send, interrupt
+from langgraph.types import interrupt
 
 from src.analyzer_evaluator.analyzer import analyze_image
 from src.analyzer_evaluator.measurement.diff import DefectChange, SideEffect, compare, side_effects
@@ -30,7 +30,6 @@ from src.analyzer_evaluator.reference_eval import evaluate_reference
 
 from .executor import execute_plan, image_cache_key, subject_cache_key
 from .fusion import measure_hypothesis, plan_contraindications
-from .imaging import downscale
 from .intent import apply_intent, build_questions, intent_from_answers, intent_prompt
 from .memory import DEFAULT_USER, experience_prompt, get_case_memory
 from .perception import _measure, perceive, resolve_subject_masks
@@ -43,14 +42,6 @@ from .planner import (
 from .regions import canonical_region
 from .state import DiagnosisReport, DoctorState, HistoryItem, IntentProfile, TreatmentPlan
 from .user_analysis import validate_edits
-from .variants import (
-    is_noisy,
-    merged_preserve,
-    rank_variants,
-    render_variant,
-    styles_for,
-    treatment_recipe,
-)
 from .vlm_diagnostician import diagnose_and_plan
 
 logger = logging.getLogger(__name__)
@@ -574,68 +565,9 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
     }
 
 
-def should_continue(state: DoctorState) -> Union[str, List[Send]]:
-    """
-    Điều hướng sau decide: lặp lại, kết thúc, hoặc (num_variants > 1) tỏa ra các nhánh render
-    phiên bản song song bằng Send, mỗi nhánh một phong cách.
-    """
-    if state["decision"] == "RE_PROCESS":
-        return "re_process"
-    style_ids = styles_for(state.get("num_variants", 1))
-    if len(style_ids) < 2:
-        return "ship"
-    history = state.get("history") or []
-    payload = {
-        "original": downscale(state["original_image"]),
-        "recipe": treatment_recipe(history),
-        "preserve": merged_preserve(history),
-        "noisy": is_noisy(history),
-    }
-    return [Send("render_variant", {**payload, "style_id": style}) for style in style_ids]
-
-
-def render_variant_node(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Node render một phong cách trên ảnh preview (chạy song song qua Send)."""
-    variant = render_variant(
-        payload["original"],
-        payload["style_id"],
-        payload["recipe"],
-        payload["preserve"],
-        payload["noisy"],
-    )
-    return {"variant_candidates": [variant]}
-
-
-def rank_variants_node(state: DoctorState) -> Dict[str, Any]:
-    """Node gom các phiên bản: bỏ trùng, xếp hạng (VLM critic hoặc điểm Module 1)."""
-    history = state.get("history") or []
-    first = history[0].diagnosis if history else None
-    diagnosis = (
-        first.model_copy(update={"preserve": merged_preserve(history)})
-        if first is not None
-        else None
-    )
-    ranked, recommended, source = rank_variants(
-        downscale(state["original_image"]), state.get("variant_candidates") or [], diagnosis
-    )
-    # Ưu tiên: phong cách người dùng hay chọn > xếp hạng
-    available = {variant.id for variant in ranked}
-    reason = source
-    memory = get_case_memory()
-    if memory is not None:
-        try:
-            preferred = memory.preferred_style(state.get("user_id") or DEFAULT_USER)
-        except Exception as exc:
-            logger.warning("Case memory preference lookup failed: %s", exc)
-            preferred = None
-        if preferred in available:
-            recommended, reason = preferred, "preference"
-    return {
-        "variants": ranked,
-        "recommended_variant": recommended,
-        "variant_ranking_source": source,
-        "recommended_reason": reason if ranked else None,
-    }
+def should_continue(state: DoctorState) -> str:
+    """Điều hướng sau decide: lặp lại vòng xử lý hoặc kết thúc."""
+    return "re_process" if state["decision"] == "RE_PROCESS" else "ship"
 
 
 # ---------------------------------------------------------
@@ -652,8 +584,6 @@ def build_doctor_graph(checkpointer: Optional[BaseCheckpointSaver] = None):
     workflow.add_node("process", process_node)
     workflow.add_node("evaluate", evaluate_node)
     workflow.add_node("decide", decide_node)
-    workflow.add_node("render_variant", render_variant_node)
-    workflow.add_node("rank_variants", rank_variants_node)
 
     workflow.set_entry_point("analyze")
 
@@ -667,11 +597,8 @@ def build_doctor_graph(checkpointer: Optional[BaseCheckpointSaver] = None):
     workflow.add_conditional_edges(
         "decide",
         should_continue,
-        {"re_process": "analyze", "ship": END, "render_variant": "render_variant"},
+        {"re_process": "analyze", "ship": END},
     )
-    # LangGraph chờ mọi nhánh Send xong rồi mới chạy rank_variants một lần
-    workflow.add_edge("render_variant", "rank_variants")
-    workflow.add_edge("rank_variants", END)
 
     return workflow.compile(checkpointer=checkpointer)
 
@@ -681,7 +608,6 @@ def run_pipeline(
     ground_truth: Optional[np.ndarray] = None,
     is_synthetic: bool = False,
     max_iterations: int = 3,
-    num_variants: int = 1,
     intent: Optional[IntentProfile] = None,
     user_id: str = DEFAULT_USER,
     image_metadata: Optional[ImageMetadata] = None,
@@ -689,8 +615,6 @@ def run_pipeline(
     """
     Hàm giao tiếp ngoài để chạy toàn bộ chu trình xử lý ảnh.
     user_id: chủ của các ca trong bộ nhớ (kinh nghiệm và sở thích được tách theo người dùng).
-    num_variants > 1 (tối đa 3): sau vòng lặp, sinh các phiên bản phong cách trên ảnh preview
-    (state["variants"], đã xếp hạng); current_image vẫn là kết quả full-res của phác đồ.
     intent: ý định người dùng có sẵn (không hỏi). Chạy tương tác: xem src/agent/session.py.
     image_metadata: metadata của file gốc (metadata.read_metadata); chỉ được lưu vào state.
     """
@@ -700,7 +624,6 @@ def run_pipeline(
         ground_truth,
         is_synthetic,
         max_iterations,
-        num_variants,
         intent,
         user_id=user_id,
         image_metadata=image_metadata,
@@ -713,7 +636,6 @@ def initial_doctor_state(
     ground_truth: Optional[np.ndarray] = None,
     is_synthetic: bool = False,
     max_iterations: int = 3,
-    num_variants: int = 1,
     intent: Optional[IntentProfile] = None,
     interactive: bool = False,
     user_id: str = DEFAULT_USER,
@@ -737,15 +659,9 @@ def initial_doctor_state(
         "decision": "INITIALIZING",
         "rolled_back": False,
         "error_message": None,
-        "num_variants": num_variants,
-        "variant_candidates": [],
-        "variants": [],
-        "recommended_variant": None,
-        "variant_ranking_source": None,
         "interactive": interactive,
         "intent": intent,
         "user_id": user_id,
-        "recommended_reason": None,
         "image_metadata": image_metadata,
     }
     return initial_state

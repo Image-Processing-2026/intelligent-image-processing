@@ -143,37 +143,19 @@ def _create_dark_png_bytes(width: int = 64, height: int = 64) -> bytes:
     return buf.getvalue()
 
 
-def test_process_endpoint_returns_ranked_variants():
-    """Phase 3: num_variants=3 → các phiên bản đã xếp hạng, kèm preview và phác đồ."""
-    response = client.post(
-        "/api/v1/process",
-        files={"file": ("dark.png", _create_dark_png_bytes(), "image/png")},
-        data={"max_iterations": "2", "num_variants": "3"},
-    )
-    assert response.status_code == 200
-    data = response.json()
-    variants = data["variants"]
-    assert sorted(v["id"] for v in variants) == ["balanced", "natural", "vivid"]
-    assert [v["rank"] for v in variants] == [1, 2, 3]
-    assert data["recommended_variant"] in {v["id"] for v in variants}
-    assert data["variant_ranking_source"] == "score"
-    assert all(_decode(v["preview_base64"]).shape == (64, 64, 3) for v in variants)
-
-
-def test_render_reproduces_the_chosen_variant():
-    """Render full-res phiên bản 'balanced' phải khớp ảnh kết quả của /process."""
+def test_render_reproduces_the_process_result():
+    """Render full-res phác đồ `treatment` phải khớp ảnh kết quả của /process."""
     image_bytes = _create_dark_png_bytes()
     processed = client.post(
         "/api/v1/process",
         files={"file": ("dark.png", image_bytes, "image/png")},
-        data={"max_iterations": "2", "num_variants": "2"},
+        data={"max_iterations": "2"},
     ).json()
-    balanced = next(v for v in processed["variants"] if v["id"] == "balanced")
 
     response = client.post(
         "/api/v1/render",
         files={"file": ("dark.png", image_bytes, "image/png")},
-        data={"actions": json.dumps(balanced["actions"])},
+        data={"actions": json.dumps(processed["treatment"])},
     )
     assert response.status_code == 200
     rendered = response.json()
@@ -224,7 +206,7 @@ def test_session_flow_asks_then_returns_the_result():
     started = client.post(
         "/api/v1/sessions",
         files={"file": ("dark.png", _create_dark_png_bytes(), "image/png")},
-        data={"max_iterations": "1", "num_variants": "2"},
+        data={"max_iterations": "1"},
     )
     assert started.status_code == 200
     body = started.json()
@@ -264,46 +246,33 @@ def test_refine_endpoint_applies_feedback():
     assert (body["width"], body["height"]) == (64, 64)
 
 
-def test_memory_records_runs_choices_and_feedback(tmp_path):
-    """Phase 5: /process ghi ca; /render và /refine kèm case_id ghi lựa chọn và góp ý."""
+def test_memory_records_runs_and_feedback(tmp_path):
+    """Phase 5: /process ghi ca; /refine kèm case_id ghi góp ý."""
     from src.agent.memory import configure_case_memory
 
     assert client.get("/api/v1/memory").json() == {
         "enabled": False,
         "cases": 0,
-        "choices": {},
         "feedback": {},
-        "preferred_style": None,
     }
     memory = configure_case_memory(tmp_path / "cases.sqlite")
     image_bytes = _create_dark_png_bytes()
     processed = client.post(
         "/api/v1/process",
         files={"file": ("dark.png", image_bytes, "image/png")},
-        data={"max_iterations": "1", "num_variants": "2", "user_id": "an"},
+        data={"max_iterations": "1", "user_id": "an"},
     ).json()
     case_id = processed["case_id"]
     assert case_id and memory.get(case_id).user_id == "an"
 
-    natural = next(v for v in processed["variants"] if v["id"] == "natural")
-    client.post(
-        "/api/v1/render",
-        files={"file": ("dark.png", image_bytes, "image/png")},
-        data={
-            "actions": json.dumps(natural["actions"]),
-            "case_id": case_id,
-            "variant_id": "natural",
-        },
-    )
     client.post(
         "/api/v1/refine",
         files={"file": ("dark.png", image_bytes, "image/png")},
         data={"actions": "[]", "feedback": "tối quá", "case_id": case_id},
     )
     case = memory.get(case_id)
-    assert case.chosen_variant == "natural"
     assert case.feedback == ["brighter@full:2"]
 
     stats = client.get("/api/v1/memory", params={"user_id": "an"}).json()
     assert stats["enabled"] is True and stats["cases"] == 1
-    assert stats["choices"] == {"natural": 1} and stats["feedback"] == {"brighter": 1}
+    assert stats["feedback"] == {"brighter": 1}

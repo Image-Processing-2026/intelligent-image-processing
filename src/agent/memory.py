@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from pydantic import BaseModel, Field
 
 from .state import DiagnosisReport, DoctorState
+from .treatment import treatment_recipe
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +38,6 @@ MAX_SIMILAR = 3
 MAX_DISTANCE = 0.6
 DEFECT_WEIGHT = 0.5
 SCENE_BONUS = 0.2
-# Sở thích phong cách: cần ít nhất chừng này lần chọn, và một phong cách chiếm đủ tỉ lệ
-MIN_CHOICES = 3
-MIN_STYLE_SHARE = 0.6
 
 
 class CaseRecord(BaseModel):
@@ -56,8 +54,6 @@ class CaseRecord(BaseModel):
     treatment: List[Dict[str, Any]] = Field(default_factory=list)
     final_score: Optional[float] = None
     decision: str = ""
-    recommended_variant: Optional[str] = None
-    chosen_variant: Optional[str] = None
     feedback: List[str] = Field(default_factory=list, description="'kind@region:strength'")
     feedback_texts: List[str] = Field(default_factory=list)
 
@@ -154,9 +150,6 @@ class CaseMemory:
     # ---------------- ghi ----------------
     def record_run(self, state: DoctorState, user_id: str = DEFAULT_USER) -> str:
         """Ghi một lần xử lý đã xong; trả về id của ca."""
-        # Import muộn: variants kéo theo executor/Module 2-3, memory cần nhẹ khi import
-        from .variants import treatment_recipe
-
         history = state.get("history") or []
         first = history[0] if history else None
         diagnosis = first.diagnosis if first is not None else None
@@ -184,18 +177,9 @@ class CaseMemory:
             treatment=[a.model_dump(mode="json") for a in treatment_recipe(history)],
             final_score=max(scores) if scores else None,
             decision=str(state.get("decision") or ""),
-            recommended_variant=state.get("recommended_variant"),
         )
         self._save(case)
         return case.id
-
-    def record_choice(self, case_id: str, variant_id: str) -> bool:
-        """Ghi phiên bản người dùng đã chọn/xuất; False nếu không có ca."""
-        case = self.get(case_id)
-        if case is None:
-            return False
-        self._save(case.model_copy(update={"chosen_variant": variant_id}))
-        return True
 
     def record_feedback(self, case_id: str, text: str, adjustments: Sequence[Any]) -> bool:
         """Ghi một góp ý và các điều chỉnh đã hiểu được; False nếu không có ca."""
@@ -228,23 +212,13 @@ class CaseMemory:
         close = [pair for pair in scored if pair[1] <= MAX_DISTANCE]
         return sorted(close, key=lambda pair: pair[1])[:k]
 
-    def preferred_style(self, user_id: str = DEFAULT_USER) -> Optional[str]:
-        """Phong cách người dùng chọn nhiều nhất, nếu đủ MIN_CHOICES lần và MIN_STYLE_SHARE."""
-        choices = [case.chosen_variant for case in self.cases(user_id) if case.chosen_variant]
-        if len(choices) < MIN_CHOICES:
-            return None
-        style, count = Counter(choices).most_common(1)[0]
-        return style if count / len(choices) >= MIN_STYLE_SHARE else None
-
     def stats(self, user_id: Optional[str] = None) -> Dict[str, Any]:
-        """Thống kê gọn: số ca, lựa chọn phong cách, góp ý hay gặp, phong cách ưa thích."""
+        """Thống kê gọn: số ca và các góp ý hay gặp."""
         cases = self.cases(user_id)
         feedback = Counter(item.split("@", 1)[0] for case in cases for item in case.feedback)
         return {
             "cases": len(cases),
-            "choices": dict(Counter(c.chosen_variant for c in cases if c.chosen_variant)),
             "feedback": dict(feedback.most_common()),
-            "preferred_style": self.preferred_style(user_id or DEFAULT_USER),
         }
 
 
@@ -272,8 +246,6 @@ def experience_prompt(cases: Sequence[Tuple[CaseRecord, float]]) -> str:
         )
         if case.final_score is not None:
             line += f", điểm {case.final_score}"
-        if case.chosen_variant:
-            line += f"; người dùng chọn bản '{case.chosen_variant}'"
         if case.feedback_texts:
             quoted = "; ".join(f'"{text}"' for text in case.feedback_texts)
             line += f"; người dùng góp ý: {quoted} ({', '.join(case.feedback)})"

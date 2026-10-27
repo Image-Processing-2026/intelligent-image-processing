@@ -18,7 +18,6 @@ if __name__ == "__main__" and not __package__:
     # Direct script launch puts frontend/, rather than the repo root, on sys.path.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.agent.executor import execute_plan
 from src.agent.graph import run_pipeline
 from src.agent.memory import (
     DEFAULT_MEMORY_PATH,
@@ -29,11 +28,10 @@ from src.agent.memory import (
     remember_run,
 )
 from src.agent.perception import preload_region_models
-from src.agent.planner import sanitize_actions
 from src.agent.refine import refine
 from src.agent.session import SessionNotFoundError, answer_session, start_session
-from src.agent.state import DiagnosisReport, RegionOperation, TreatmentPlan
-from src.agent.variants import treatment_recipe
+from src.agent.state import DiagnosisReport, RegionOperation
+from src.agent.treatment import treatment_recipe
 from src.analyzer_evaluator.analyzer import analyze_image
 
 _SEVERITY_LABELS = {0: "không đáng kể", 1: "nhẹ", 2: "rõ", 3: "nặng"}
@@ -237,109 +235,28 @@ def _format_result(
     return output_img, status_md, gallery_images, reasoning_md, details_json
 
 
-VariantActions = Dict[str, List[Dict[str, Any]]]
-
-
-RECOMMENDATION_REASONS = {
-    "intent": "theo phong cách bạn đã chọn",
-    "preference": "theo phong cách bạn hay chọn trước đây (bộ nhớ)",
-}
-
-
-def _variant_outputs(
-    result_state: Dict[str, Any],
-) -> Tuple[List[Tuple[np.ndarray, str]], str, Any, VariantActions]:
-    """
-    Đầu ra phần "Chọn phiên bản": gallery preview, mô tả xếp hạng, radio chọn (mặc định là
-    phiên bản đề xuất) và phác đồ của từng phiên bản (giữ trong gr.State để render full-res).
-    """
-    variants = result_state.get("variants") or []
-    if not variants:
-        return [], "*Chỉ có một kết quả (số phiên bản = 1).*", gr.update(choices=[], value=None), {}
-
-    recommended = result_state.get("recommended_variant")
-    source = result_state.get("variant_ranking_source")
-    source_text = "VLM critic so sánh trực quan" if source == "critic" else "điểm Module 1"
-    gallery: List[Tuple[np.ndarray, str]] = []
-    lines = [f"**Xếp hạng theo:** {source_text}"]
-    reason = RECOMMENDATION_REASONS.get(result_state.get("recommended_reason") or "")
-    if reason:
-        lines.append(f"**Đề xuất:** {reason}")
-    for variant in variants:
-        star = " ⭐ đề xuất" if variant.id == recommended else ""
-        gallery.append((variant.image, f"#{variant.rank} {variant.label}{star}"))
-        note = f" — _{variant.critic_note}_" if variant.critic_note else ""
-        lines.append(
-            f"{variant.rank}. **{variant.label}**{star}: {variant.description} "
-            f"(điểm `{variant.quality_score}`){note}"
-        )
-    choices = [(variant.label, variant.id) for variant in variants]
-    actions = {
-        variant.id: [action.model_dump(mode="json") for action in variant.actions]
-        for variant in variants
-    }
-    return (
-        gallery,
-        "\n".join(lines),
-        gr.update(choices=choices, value=recommended if recommended in actions else variants[0].id),
-        actions,
-    )
-
-
-def process_with_variants(
+def process_image(
     input_image: Optional[np.ndarray],
     ground_truth: Optional[np.ndarray],
     max_iters: int,
-    num_variants: int,
 ) -> Tuple[Any, ...]:
     """
-    Chạy pipeline một lần, trả về 5 đầu ra của process_interface cộng 4 đầu ra của phần
-    chọn phiên bản (gallery, mô tả, radio, phác đồ) và id ca trong bộ nhớ (None nếu tắt).
+    Chạy pipeline một lần, trả về 5 đầu ra của process_interface cộng id ca trong bộ nhớ
+    (None nếu tắt).
     """
     if input_image is None:
-        empty = process_interface(None, None, max_iters)
-        return (*empty, [], "*Chưa có phiên bản.*", gr.update(choices=[], value=None), {}, None)
+        return (*process_interface(None, None, max_iters), None)
     is_synthetic = ground_truth is not None
     result_state = run_pipeline(
         image=input_image,
         ground_truth=ground_truth,
         is_synthetic=is_synthetic,
         max_iterations=int(max_iters),
-        num_variants=int(num_variants),
     )
     return (
         *_format_result(input_image, is_synthetic, max_iters, result_state),
-        *_variant_outputs(result_state),
         remember_run(result_state),
     )
-
-
-def _record_choice(case_id: Optional[str], variant_id: str) -> None:
-    """Ghi phiên bản người dùng chọn vào bộ nhớ (nếu bộ nhớ bật và có ca)."""
-    memory = get_case_memory()
-    if memory is not None and case_id:
-        memory.record_choice(case_id, variant_id)
-
-
-def render_chosen_variant(
-    input_image: Optional[np.ndarray],
-    choice: Optional[str],
-    variant_actions: Optional[VariantActions],
-    case_id: Optional[str] = None,
-) -> Tuple[Optional[np.ndarray], str]:
-    """
-    Render phiên bản đã chọn ở độ phân giải gốc: áp lại đúng phác đồ của phiên bản (giữ
-    nguyên thứ tự, đã kẹp tham số) lên ảnh đầu vào, và ghi lựa chọn vào bộ nhớ.
-    """
-    if input_image is None or not choice or not variant_actions or choice not in variant_actions:
-        return None, "⚠️ **Hãy chạy xử lý với số phiên bản > 1 rồi chọn một phiên bản.**"
-    actions = sanitize_actions(
-        [RegionOperation.model_validate(raw) for raw in variant_actions[choice]]
-    )
-    rendered = execute_plan(input_image, TreatmentPlan(reasoning=choice, actions=actions))
-    _record_choice(case_id, choice)
-    height, width = rendered.shape[:2]
-    return rendered, f"✅ Đã xuất phiên bản **{choice}** ở độ phân giải gốc ({width}×{height})."
 
 
 # ==================== Trò chuyện với Doctor (Phase 4) ====================
@@ -385,8 +302,13 @@ def chat_start(
     history.append(
         {
             "role": "assistant",
-            "content": f"🩺 **Chẩn đoán:** {summary}\n\nTrước khi xử lý, mình muốn hỏi bạn "
-            f"{len(questions)} câu để chỉnh đúng ý bạn (chọn ở bên dưới).",
+            "content": f"🩺 **Chẩn đoán:** {summary}\n\n"
+            + (
+                f"Trước khi xử lý, mình muốn hỏi bạn {len(questions)} câu để chỉnh đúng ý bạn "
+                "(chọn ở bên dưới)."
+                if questions
+                else "Bạn có thể ghi thêm mong muốn rồi bấm xử lý."
+            ),
         }
     )
     return (history, result.session_id, questions, *_question_updates(questions))
@@ -405,11 +327,10 @@ def chat_answer(
     Gửi câu trả lời, chạy tiếp pipeline.
 
     Returns:
-        (lịch sử chat, ảnh kết quả, gallery phiên bản, cập nhật radio phiên bản,
-        phác đồ từng phiên bản, phác đồ hiện tại, id ca trong bộ nhớ).
+        (lịch sử chat, ảnh kết quả, phác đồ hiện tại, id ca trong bộ nhớ).
     """
     history = list(history or [])
-    empty = (None, [], gr.update(choices=[], value=None), {}, [], None)
+    empty = (None, [], None)
     if not session_id:
         history.append({"role": "assistant", "content": "Hãy bấm 'Phân tích & hỏi ý' trước."})
         return (history, *empty)
@@ -432,49 +353,15 @@ def chat_answer(
         )
         return (history, *empty)
     state = result.state or {}
-    gallery, _, choice_update, variant_actions = _variant_outputs(state)
-    recommended = state.get("recommended_variant")
-    current = variant_actions.get(recommended) if recommended else None
-    if current is None:
-        current = [
-            action.model_dump(mode="json") for action in treatment_recipe(state.get("history", []))
-        ]
-    label = next((v.label for v in state.get("variants") or [] if v.id == recommended), None)
+    current = [
+        action.model_dump(mode="json") for action in treatment_recipe(state.get("history", []))
+    ]
     message = f"✅ Xong ({state.get('decision')})."
-    if label:
-        reason = RECOMMENDATION_REASONS.get(state.get("recommended_reason") or "")
-        why = f" ({reason})" if reason else ""
-        message += f" Mình đề xuất bản **{label}**{why}; bạn có thể chọn bản khác bên dưới."
     message += " Nếu chưa ưng, hãy góp ý (ví dụ: 'da hơi vàng', 'trời gắt quá')."
     history.append({"role": "assistant", "content": message})
     output = state.get("current_image")
-    if current and recommended and recommended != "balanced":
-        output = _render_actions(state["original_image"], current)
     case_id = remember_run(state, state.get("user_id") or DEFAULT_USER)
-    return (history, output, gallery, choice_update, variant_actions, current, case_id)
-
-
-def _render_actions(image: np.ndarray, actions: List[Dict[str, Any]]) -> np.ndarray:
-    """Render một phác đồ (dạng dict) lên ảnh gốc, giữ nguyên thứ tự thao tác."""
-    parsed = sanitize_actions([RegionOperation.model_validate(raw) for raw in actions])
-    return execute_plan(image, TreatmentPlan(reasoning="render", actions=parsed))
-
-
-def chat_select_variant(
-    input_image: Optional[np.ndarray],
-    choice: Optional[str],
-    variant_actions: Optional[VariantActions],
-    case_id: Optional[str] = None,
-) -> Tuple[Optional[np.ndarray], List[Dict[str, Any]]]:
-    """
-    Chọn một phiên bản: render full-res, lấy phác đồ của nó làm phác đồ hiện tại và ghi
-    lựa chọn vào bộ nhớ.
-    """
-    if input_image is None or not choice or not variant_actions or choice not in variant_actions:
-        return None, []
-    actions = variant_actions[choice]
-    _record_choice(case_id, choice)
-    return _render_actions(input_image, actions), actions
+    return (history, output, current, case_id)
 
 
 def chat_feedback(
@@ -525,10 +412,6 @@ def processing_reset():
         [],
         "",
         "{}",
-        [],
-        "Chưa có phiên bản.",
-        gr.update(choices=[], value=None),
-        {},
         None,
     )
 
@@ -540,9 +423,6 @@ def chat_reset():
         [],
         *_question_updates([]),
         None,
-        [],
-        gr.update(choices=[], value=None),
-        {},
         [],
         None,
         "",
@@ -620,9 +500,6 @@ def create_app() -> gr.Blocks:
                                 max_iter_slider = gr.Slider(
                                     1, 5, value=3, step=1, label="Số vòng tối đa"
                                 )
-                                variants_slider = gr.Slider(
-                                    1, 3, value=3, step=1, label="Số phiên bản"
-                                )
                                 gt_img = gr.Image(
                                     label="Ảnh chuẩn tương ứng (ground truth)", type="numpy"
                                 )
@@ -645,14 +522,7 @@ def create_app() -> gr.Blocks:
                             )
                             status_box = gr.Markdown(processing_reset()[1])
                             job_status = gr.Markdown("")
-                    with gr.Accordion("Các phiên bản ảnh", open=False) as variants_panel:
-                        variants_gallery = gr.Gallery(
-                            label="Các phiên bản", columns=3, object_fit="contain"
-                        )
-                        variants_box = gr.Markdown("Chưa có phiên bản.")
-                        variant_choice = gr.Radio(label="Phiên bản đã chọn", choices=[])
-                        btn_render = gr.Button("Áp dụng phiên bản đã chọn", interactive=False)
-                    variant_actions, case_state = gr.State({}), gr.State(None)
+                    case_state = gr.State(None)
                     gr.Markdown("### 3. Quá trình xử lý")
                     gallery = gr.Gallery(
                         label="Timeline qua từng vòng", columns=4, object_fit="contain"
@@ -679,57 +549,27 @@ def create_app() -> gr.Blocks:
                                 label="Kết quả", type="numpy", interactive=False, height=300
                             )
                     chat_status = gr.Markdown("")
-                    chat_gallery = gr.Gallery(
-                        label="Các phiên bản", columns=3, object_fit="contain"
-                    )
-                    chat_choice = gr.Radio(label="Chọn phiên bản", choices=[])
                     feedback_box = gr.Textbox(
                         label="3. Góp ý để chỉnh tiếp", placeholder="Da hơi vàng, trời gắt quá"
                     )
                     btn_feedback = gr.Button("Chỉnh theo góp ý", interactive=False)
                     session_state, questions_state = gr.State(None), gr.State([])
-                    chat_variant_actions, current_actions, chat_case = (
-                        gr.State({}),
-                        gr.State([]),
-                        gr.State(None),
-                    )
+                    current_actions, chat_case = gr.State([]), gr.State(None)
 
-            process_outputs = [
-                out_img,
-                status_box,
-                gallery,
-                reasoning_box,
-                details_box,
-                variants_gallery,
-                variants_box,
-                variant_choice,
-                variant_actions,
-                case_state,
-            ]
+            process_outputs = [out_img, status_box, gallery, reasoning_box, details_box, case_state]
             process_controls = [
                 in_img,
                 gt_img,
                 max_iter_slider,
-                variants_slider,
                 btn_run,
                 btn_reset,
-                variant_choice,
-                btn_render,
                 *[b for b, _ in sample_buttons],
             ]
 
-            def render_gate(v):
-                return v.get(variant_choice, {}).get("value") in v.get(variant_actions, {})
-
             def reset_process():
-                return (
-                    *processing_reset(),
-                    gr.update(interactive=False),
-                    gr.update(open=False),
-                    "",
-                )
+                return (*processing_reset(), "")
 
-            reset_outputs = [*process_outputs, btn_render, variants_panel, job_status]
+            reset_outputs = [*process_outputs, job_status]
             for image in [in_img, gt_img]:
                 image.change(reset_process, outputs=reset_outputs, queue=False)
             btn_reset.click(
@@ -741,51 +581,16 @@ def create_app() -> gr.Blocks:
                 button.click(lambda path=path: str(path), outputs=in_img, queue=False)
 
             def process_job(*args):
-                for update in ui_job(
-                    process_with_variants,
+                yield from ui_job(
+                    process_image,
                     args,
                     process_outputs,
                     process_controls,
                     processing_reset(),
                     job_status,
-                    {btn_render: render_gate},
-                ):
-                    update[variants_panel] = gr.update(open=bool(update.get(variant_actions)))
-                    yield update
+                    {},
+                )
 
-            def render_job(*args):
-                # Preserve variant state on success; discard every stale result on failure.
-                yield {
-                    **{c: gr.update(interactive=False) for c in process_controls},
-                    job_status: WAITING,
-                }
-                try:
-                    image, message = render_chosen_variant(*args)
-                    values = {out_img: image, status_box: message}
-                    valid = bool(args[1] and args[2] and args[1] in args[2])
-                except Exception:
-                    LOGGER.exception("Variant rendering failed")
-                    values = dict(zip(process_outputs, processing_reset()))
-                    message, valid = ERROR, False
-                for control in process_controls:
-                    previous = values.get(control)
-                    values[control] = (
-                        {**previous, "interactive": True}
-                        if isinstance(previous, dict) and previous.get("__type__") == "update"
-                        else gr.update(interactive=True)
-                    )
-                yield {
-                    **values,
-                    btn_render: gr.update(interactive=valid),
-                    job_status: message,
-                }
-
-            variant_choice.input(
-                lambda choice, actions: gr.update(interactive=bool(choice in (actions or {}))),
-                [variant_choice, variant_actions],
-                btn_render,
-                queue=False,
-            )
             common = dict(
                 trigger_mode="once",
                 concurrency_limit=1,
@@ -794,15 +599,7 @@ def create_app() -> gr.Blocks:
             )
             btn_run.click(
                 process_job,
-                [in_img, gt_img, max_iter_slider, variants_slider],
-                list(
-                    dict.fromkeys([*process_outputs, *process_controls, job_status, variants_panel])
-                ),
-                **common,
-            )
-            btn_render.click(
-                render_job,
-                [in_img, variant_choice, variant_actions, case_state],
+                [in_img, gt_img, max_iter_slider],
                 list(dict.fromkeys([*process_outputs, *process_controls, job_status])),
                 **common,
             )
@@ -813,9 +610,6 @@ def create_app() -> gr.Blocks:
                 questions_state,
                 *question_radios,
                 chat_out,
-                chat_gallery,
-                chat_choice,
-                chat_variant_actions,
                 current_actions,
                 chat_case,
                 notes_box,
@@ -826,7 +620,6 @@ def create_app() -> gr.Blocks:
                 btn_start,
                 btn_answer,
                 btn_feedback,
-                chat_choice,
                 notes_box,
                 feedback_box,
                 *question_radios,
@@ -860,14 +653,11 @@ def create_app() -> gr.Blocks:
                         values[0] = result[0]
                         # answer_session consumes the session; require a new start for another answer.
                         values[1:6] = [None, [], *_question_updates([])]
-                        values[6:12] = result[1:]
-                    elif kind == "feedback":
+                        values[6:9] = result[1:]
+                    else:
                         result = chat_feedback(*args[:5])
                         values = list(args[5:])
-                        values[0], values[6], values[10], values[13] = result
-                    else:
-                        values = list(args[4:])
-                        values[6], values[10] = chat_select_variant(*args[:4])
+                        values[0], values[6], values[7], values[10] = result
                     return tuple(values)
 
                 yield from ui_job(
@@ -884,9 +674,6 @@ def create_app() -> gr.Blocks:
             def feedback_job(*args):
                 yield from chat_job("feedback", *args)
 
-            def select_job(*args):
-                yield from chat_job("select", *args)
-
             btn_start.click(
                 start_job,
                 [chat_img, chatbot],
@@ -902,12 +689,6 @@ def create_app() -> gr.Blocks:
             btn_feedback.click(
                 feedback_job,
                 [chat_img, current_actions, feedback_box, chatbot, chat_case, *chat_outputs],
-                list(dict.fromkeys([*chat_outputs, *chat_controls, chat_status])),
-                **common,
-            )
-            chat_choice.input(
-                select_job,
-                [chat_img, chat_choice, chat_variant_actions, chat_case, *chat_outputs],
                 list(dict.fromkeys([*chat_outputs, *chat_controls, chat_status])),
                 **common,
             )

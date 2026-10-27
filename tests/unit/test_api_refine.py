@@ -30,7 +30,7 @@ def client(app_db: Database) -> TestClient:
 @pytest.fixture
 def done_session(client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict:
     monkeypatch.setattr(case_memory, "_MEMORY", CaseMemory(tmp_path / "cases.sqlite"))
-    created = _create(client, variants=1)
+    created = _create(client)
     body = _answer(client, created["id"], style="natural").json()
     assert body["status"] == "done"
     return body
@@ -89,7 +89,6 @@ def test_refine_chains_on_active_version_and_activate_goes_back(
         raise AssertionError("activate must not run the pipeline")
 
     monkeypatch.setattr(workspace, "refine", forbidden)
-    monkeypatch.setattr(workspace, "execute_plan", forbidden)
     back = client.post(f"/api/v1/workspace/sessions/{sid}/treatments/{v1['id']}/activate")
     assert back.status_code == 200
     assert back.json()["active_treatment_id"] == v1["id"]
@@ -123,7 +122,7 @@ def test_unknown_feedback_keeps_actions(client: TestClient, done_session: dict) 
 def test_refine_validation_and_state(
     client: TestClient, app_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    created = _create(client, variants=1)
+    created = _create(client)
     sid = created["id"]
     assert _refine(client, sid, "da hơi vàng").status_code == 409  # chưa có kết quả
     _answer(client, sid, style="natural")

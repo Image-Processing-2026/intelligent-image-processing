@@ -416,7 +416,6 @@ def run_pipeline(
     ground_truth: Optional[np.ndarray] = None,
     is_synthetic: bool = False,
     max_iterations: int = 3,
-    num_variants: int = 1,
     intent: Optional[IntentProfile] = None,
     user_id: str = DEFAULT_USER,
     image_metadata: Optional[ImageMetadata] = None,  # Analysis v2: EXIF priors for Perceive
@@ -537,40 +536,15 @@ operation's parameters. Parameters that belong to another operation are dropped.
 The rule-based plan (no API key, or Gemini failed) runs the recipes of the `auto_apply`
 playbook cards that match the diagnosis plus the defects implied by the Module 1 levels.
 
-Graph: `analyze → perceive → clarify → diagnose_and_plan → process → evaluate → decide`, then, when
-`num_variants > 1`, `decide → render_variant ×N (parallel, LangGraph Send) → rank_variants → END`.
+Graph: `analyze → perceive → clarify → diagnose_and_plan → process → evaluate → decide`, then
+`RE_PROCESS` loops back to `analyze` and anything else ends. Each run yields one result.
 `POST /api/v1/diagnose` returns `{technical_metrics, diagnosis, treatment_plan}`.
 
-**Variants (Phase 3, `src/agent/variants.py`):**
-```python
-class Variant(BaseModel):              # src/agent/state.py
-    id: str                            # "balanced" | "natural" | "vivid"
-    label: str
-    description: str = ""
-    actions: List[RegionOperation]     # styled treatment; re-render with POST /render
-    image: Optional[np.ndarray]        # ≤1024 px preview, excluded from model_dump/JSON
-    quality_score: Optional[float]     # Module 1 no-reference score of the preview
-    quality_improved: Optional[bool]
-    rank: Optional[int]                # 1 = best
-    critic_note: str = ""              # VLM critic comment (when GEMINI_API_KEY is set)
-
-def run_pipeline(image, ground_truth=None, is_synthetic=False, max_iterations=3,
-                 num_variants=1) -> DoctorState
-# num_variants > 1 (max 3) adds state["variants"] (ranked), state["recommended_variant"] and
-# state["variant_ranking_source"] ("critic" | "score"). state["current_image"] is unchanged:
-# the full-resolution result of the loop, i.e. the "balanced" style.
-```
-- The treatment is the actions of every iteration that was not rolled back, in order.
-- Styles are deterministic transforms of that treatment: balanced is the treatment as is;
-  natural is gentler (×0.5–0.8) with no sharpening; vivid is stronger, and adds CLAHE 1.5
-  (skipped on noisy images) and saturation 1.12 when the treatment lacks them.
-  Every style is clamped and passes `apply_preserve_guard`.
-- Ranking: a VLM critic compares the original with every variant in one call and only judges
-  (ADR-001). Without a key, or when the critic fails, the Module 1 score decides: variants
-  that did not improve rank last, and a 0.5-point tie tolerance favours `balanced`. Variants
-  whose images are identical are dropped.
-- `planner.sanitize_actions(actions)` drops unknown operations and clamps parameters and region
-  fields **without reordering**, so a variant re-rendered at full resolution matches its preview.
+**Treatment (`src/agent/treatment.py`):** `treatment_recipe(history)` returns the actions of every
+iteration that was not rolled back, in order. Multi-style variants (balanced/natural/vivid) were
+removed; old sessions keep their `variants` rows read-only in the workspace DB.
+`planner.sanitize_actions(actions)` drops unknown operations and clamps parameters and region
+fields **without reordering**, so a re-render at full resolution matches the original result.
 
 **Intent conversation (Phase 4, `src/agent/intent.py`, `session.py`, `refine.py`):**
 ```python
@@ -582,7 +556,7 @@ class IntentProfile(BaseModel):        # src/agent/state.py
     notes: str = ""                    # free text, also sent to the Plan prompt
     answers: Dict[str, str]            # raw question id -> chosen value
 
-def start_session(image, max_iterations=3, num_variants=3) -> SessionResult   # pauses
+def start_session(image, max_iterations=3) -> SessionResult                    # pauses
 def answer_session(session_id, answers, notes="", edits=None) -> SessionResult # resumes
 def refine(original, actions, feedback) -> RefineResult                        # stateless
 
@@ -631,30 +605,41 @@ def apply_edits(diagnosis, edits) -> DiagnosisReport                       # det
   it). The DB opens lazily on first use, and the test suite disables memory for every test.
 - A `CaseRecord` is stored per finished run: user id, scene, a normalised 6-value metric
   signature of the original image, defects, preserve, intent style, treatment, best score,
-  recommended variant, then the **chosen variant** and **feedback** (texts and parsed
-  adjustments) as the user acts. **No images are stored.**
+  then **feedback** (texts and parsed adjustments) as the user acts. **No images are stored.**
 - `similar(diagnosis, metrics, user_id)` returns up to 3 cases with distance ≤ 0.6. The
   distance is the RMS signature distance, plus 0.5 × (1 − Jaccard of defect types), minus
   0.2 for the same scene. On iteration 1 they go into the Plan prompt as
   "KINH NGHIỆM TỪ CA TƯƠNG TỰ", and VLM plans list them in `knowledge` as `case:<id8>`.
-- `preferred_style(user_id)`: after ≥ 3 choices, a style chosen ≥ 60% of the time becomes the
-  recommended variant (`recommended_reason="preference"`). An explicit intent style still wins
-  (`"intent"`).
 
-**API:** `POST /api/v1/process` accepts the form field `num_variants` and returns `variants`
-(`VariantOut`: the fields above plus `preview_base64`), `recommended_variant` and
-`variant_ranking_source`. `POST /api/v1/render` (multipart `file` + form `actions` as a JSON
-list of `RegionOperation`) returns `{image_base64, width, height, applied_actions}`.
-`ProcessResponse` also carries `treatment` (the result's actions), `intent`,
-`recommended_reason` and `case_id`. `/process` and `/sessions` accept `user_id` (default
-`"default"`). `/render` accepts optional `case_id` + `variant_id` to record a choice, and
-`/refine` accepts an optional `case_id` to record understood feedback.
-`GET /api/v1/memory?user_id=` returns `{enabled, cases, choices, feedback, preferred_style}`.
-- `POST /api/v1/sessions` (file, `max_iterations`, `num_variants`) →
+**API:** `POST /api/v1/process` returns `ProcessResponse`: `treatment` (the result's actions),
+`intent` and `case_id` plus the usual result fields. `POST /api/v1/render` (multipart `file` +
+form `actions` as a JSON list of `RegionOperation`) returns
+`{image_base64, width, height, applied_actions}`. `/process` and `/sessions` accept `user_id`
+(default `"default"`). `/refine` accepts an optional `case_id` to record understood feedback.
+`GET /api/v1/memory?user_id=` returns `{enabled, cases, feedback}`.
+- `POST /api/v1/sessions` (file, `max_iterations`) →
   `{session_id, status: "needs_input", questions, diagnosis}`.
 - `POST /api/v1/sessions/{id}/answers` (JSON `{answers, notes}`) →
   `{status: "done", result: ProcessResponse}`. Returns 404 for an unknown session and 409 when
   the session is not waiting for input. `DELETE /api/v1/sessions/{id}` → 204.
+- **Workspace (web app, `/api/v1/workspace`) — analysis chat before processing:**
+  - `POST /sessions/{id}/analysis-notes` (JSON `{message}`, ≤ 1000 chars) parses one Vietnamese
+    message with `user_analysis.parse_edits` against the draft diagnosis, appends the edits to
+    `ProcessingSession.draft_edits` (max 20, else 422) and stores two messages: `analysis_note`
+    (user) and `analysis_update` (`{text, edits, source, draft_diagnosis, unparsed}`). Only valid
+    while the session is `awaiting_answers` (else 409 `invalid_state`). A message that yields no
+    edit has `unparsed=true` and is appended to `notes` when processing starts.
+  - `DELETE /sessions/{id}/analysis-edits/{index}` removes one edit (0-based; 404 if out of range).
+  - `POST /sessions/{id}/answers` passes `draft_edits` to `answer_session(..., edits=...)` (or
+    `intent_from_answers(..., edits=...)` for ground-truth sessions); `POST /sessions/{id}/clarify`
+    clears them.
+  - `SessionDetailOut` adds `draft_edits`, `draft_diagnosis` (diagnosis + edits, only while
+    awaiting answers), `region_overlay_url` and `regions: [{name, source, confidence}]`. The
+    overlay (`region_overlay.png`, artifact kind `region_overlay`) is built with
+    `region_overlay.diagnosis_region_overlay` after the diagnosis and rebuilt when an edit changes
+    the set of regions; a failure only logs a warning and leaves the URL `null`.
+  - `processing_sessions.draft_edits` is added to an existing SQLite file at startup
+    (`Database._add_missing_columns`); there is no Alembic.
 - `POST /api/v1/refine` (file, `actions` JSON, `feedback`) →
   `{image_base64, width, height, actions, adjustments, notes, source}`, where `source` is
   `rules`, `vlm` or `none`. Send the returned `actions` back with the next feedback.

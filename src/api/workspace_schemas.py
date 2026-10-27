@@ -7,9 +7,11 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-# Giới hạn giống Gradio (frontend/app.py) và variants.MAX_VARIANTS; không đặt ngưỡng mới
+# Giới hạn giống Gradio (frontend/app.py); không đặt ngưỡng mới
 MAX_ITERATIONS_RANGE = (1, 5)
 NUM_VARIANTS_RANGE = (1, 3)
+# Số chỉnh sửa chẩn đoán tối đa người dùng tích lũy trong một phiên (chat bổ sung phân tích)
+MAX_DRAFT_EDITS = 20
 DEFAULT_USER_SETTINGS = {"max_iterations": 3, "num_variants": 3}
 
 
@@ -25,6 +27,7 @@ class UserSettings(BaseModel):
     """Cài đặt mặc định của người dùng cho phiên xử lý mới."""
 
     max_iterations: int = DEFAULT_USER_SETTINGS["max_iterations"]
+    # Deprecated: không còn nhiều phiên bản; giữ để client cũ đọc/ghi cài đặt không lỗi
     num_variants: int = DEFAULT_USER_SETTINGS["num_variants"]
 
 
@@ -105,6 +108,11 @@ class SessionDetailOut(SessionSummaryOut):
     ratings: List[Dict[str, Any]] = Field(default_factory=list)
     error: Optional[SessionError] = None
     artifacts: List[ArtifactOut] = Field(default_factory=list)
+    # Chat bổ sung phân tích: edit đã lưu, chẩn đoán nháp (chỉ khi chờ trả lời) và overlay vùng
+    draft_edits: List[Dict[str, Any]] = Field(default_factory=list)
+    draft_diagnosis: Optional[Dict[str, Any]] = None
+    region_overlay_url: Optional[str] = None
+    regions: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class RenameRequest(BaseModel):
@@ -126,6 +134,12 @@ class AnswersIn(BaseModel):
 
     answers: Dict[str, str] = Field(default_factory=dict, max_length=10)
     notes: str = Field(default="", max_length=1000)
+
+
+class AnalysisNoteIn(BaseModel):
+    """Một tin nhắn bổ sung/sửa phân tích bằng tiếng Việt, gửi trước khi bắt đầu xử lý."""
+
+    message: str = Field(..., max_length=1000)
 
 
 class RefineIn(BaseModel):

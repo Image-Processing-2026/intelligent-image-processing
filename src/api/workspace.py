@@ -15,11 +15,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from src.agent.executor import execute_plan
 from src.agent.graph import run_pipeline
 from src.agent.intent import Question, intent_from_answers
 from src.agent.memory import get_case_memory, remember_run
-from src.agent.planner import sanitize_actions
 from src.agent.refine import refine
 from src.agent.session import (
     SessionNotFoundError,
@@ -27,7 +25,8 @@ from src.agent.session import (
     end_session,
     start_session,
 )
-from src.agent.state import RegionOperation, TreatmentPlan
+from src.agent.state import RegionOperation
+from src.agent.user_analysis import apply_edits, parse_edits
 from src.analyzer_evaluator.metadata import read_metadata
 
 from .auth import current_user, user_settings
@@ -36,12 +35,12 @@ from .db import get_db, get_settings
 from .errors import MESSAGES, ApiError, ApiRoute
 from .models import (
     Artifact,
+    Message,
     ProcessingSession,
     Rating,
     Run,
     Treatment,
     User,
-    Variant,
     new_id,
     utc_now,
 )
@@ -59,8 +58,9 @@ from .storage import (
     title_from_filename,
 )
 from .workspace_schemas import (
+    MAX_DRAFT_EDITS,
     MAX_ITERATIONS_RANGE,
-    NUM_VARIANTS_RANGE,
+    AnalysisNoteIn,
     AnswersIn,
     RatingIn,
     RatingOut,
@@ -78,15 +78,19 @@ from .workspace_service import (
     export_payload,
     gemini_mode,
     next_version,
+    original_diagnosis,
+    overlay_is_stale,
     plain,
     rating_dict,
     record_analyze,
     record_failure,
     record_process,
+    refresh_region_overlay,
     run_timed,
     save_run_image,
     session_detail,
     session_path,
+    stored_edits,
     summaries,
 )
 
@@ -169,7 +173,6 @@ def create_session(
     sample: Optional[str] = Form(None),
     ground_truth: Optional[UploadFile] = File(None),
     max_iterations: Optional[int] = Form(None),
-    num_variants: Optional[int] = Form(None),
     title: Optional[str] = Form(None),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
@@ -186,9 +189,6 @@ def create_session(
     defaults = user_settings(user)
     iterations = _check_range(
         max_iterations or defaults.max_iterations, MAX_ITERATIONS_RANGE, "max_iterations"
-    )
-    variants = _check_range(
-        num_variants or defaults.num_variants, NUM_VARIANTS_RANGE, "num_variants"
     )
 
     if has_file:
@@ -218,7 +218,7 @@ def create_session(
         status="running",
         options={
             "max_iterations": iterations,
-            "num_variants": variants,
+            "num_variants": 1,  # Deprecated: luôn một kết quả mỗi lần chạy; giữ cho client cũ
             "has_ground_truth": truth is not None,
             "sample": sample if not has_file else None,
         },
@@ -243,11 +243,12 @@ def create_session(
             start_session,
             image,
             max_iterations=iterations,
-            num_variants=variants,
             user_id=str(user.id),
             image_metadata=metadata,
         )
         record_analyze(db, item, result, duration, original)
+        if result.diagnosis is not None:
+            refresh_region_overlay(db, settings, item, image, result.diagnosis)
     except Exception as exc:
         logger.exception("Diagnosis failed for processing session %s", item.id)
         db.rollback()
@@ -384,6 +385,117 @@ def _load_session_image(
     return load_rgb(path)
 
 
+def _unparsed_notes(db: Session, item: ProcessingSession) -> List[str]:
+    """Tin nhắn bổ sung phân tích không ra edit nào, của lần chẩn đoán hiện tại."""
+    messages = db.scalars(
+        select(Message).where(Message.session_id == item.id).order_by(Message.id)
+    ).all()
+    last_diagnosis = max((m.id for m in messages if m.kind == "diagnosis"), default=0)
+    return [
+        str(m.content.get("text", "")).strip()
+        for m in messages
+        if m.id > last_diagnosis
+        and m.kind == "analysis_update"
+        and m.content.get("unparsed")
+        and str(m.content.get("text", "")).strip()
+    ]
+
+
+def _sync_overlay(db: Session, settings: AppSettings, item: ProcessingSession, draft: Any) -> None:
+    """Dựng lại overlay khi tập vùng của bản nháp đổi (edit thêm/bỏ vùng); lỗi chỉ ghi log."""
+    if draft is None or not overlay_is_stale(item, draft):
+        return
+    try:
+        original = _session_artifact(db, item, "original")
+        refresh_region_overlay(
+            db, settings, item, _load_session_image(settings, item, original), draft
+        )
+    except Exception:
+        logger.warning("Could not refresh region overlay of session %s", item.id, exc_info=True)
+
+
+@router.post("/sessions/{session_id}/analysis-notes", response_model=SessionDetailOut)
+def add_analysis_note(
+    session_id: str,
+    body: AnalysisNoteIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+    settings: AppSettings = Depends(get_settings),
+) -> SessionDetailOut:
+    """
+    Chat bổ sung phân tích: parse một tin nhắn thành DiagnosisEdit (luật trước, Gemini sau) và
+    cộng dồn vào bản nháp của phiên; chưa chạy pipeline. Chỉ hợp lệ khi phiên chờ trả lời.
+    Tin nhắn không ra edit nào được lưu với unparsed=True và nối vào notes khi bắt đầu xử lý.
+    """
+    item = owned_session(db, user, session_id)
+    if item.status != "awaiting_answers":
+        raise ApiError(409, "invalid_state")
+    text = body.message.strip()
+    if not text:
+        raise ApiError(422, "validation", fields={"message": "Hãy nhập nội dung bổ sung."})
+    base = original_diagnosis(db, item)
+    if base is None:
+        raise ApiError(409, "invalid_state")
+    saved = stored_edits(item)
+    if len(saved) >= MAX_DRAFT_EDITS:
+        raise ApiError(
+            422,
+            "validation",
+            fields={"message": f"Tối đa {MAX_DRAFT_EDITS} chỉnh sửa. Hãy xóa bớt trước."},
+        )
+    edits, source = parse_edits(text, apply_edits(base, saved))
+    if len(saved) + len(edits) > MAX_DRAFT_EDITS:
+        raise ApiError(
+            422,
+            "validation",
+            fields={"message": f"Tối đa {MAX_DRAFT_EDITS} chỉnh sửa. Hãy xóa bớt trước."},
+        )
+    dumped = [edit.model_dump(mode="json") for edit in edits]
+    item.draft_edits = [*(item.draft_edits or []), *dumped]
+    draft = apply_edits(base, [*saved, *edits])
+    add_message(db, item, "user", "analysis_note", {"text": text})
+    add_message(
+        db,
+        item,
+        "assistant",
+        "analysis_update",
+        {
+            "text": text,
+            "edits": dumped,
+            "source": source,
+            "draft_diagnosis": draft.model_dump(mode="json"),
+            "unparsed": not edits,
+        },
+    )
+    _sync_overlay(db, settings, item, draft)
+    db.commit()
+    return session_detail(db, item)
+
+
+@router.delete("/sessions/{session_id}/analysis-edits/{index}", response_model=SessionDetailOut)
+def delete_analysis_edit(
+    session_id: str,
+    index: int,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+    settings: AppSettings = Depends(get_settings),
+) -> SessionDetailOut:
+    """Bỏ một chỉnh sửa khỏi bản nháp (theo vị trí, từ 0) và trả phiên với bản nháp mới."""
+    item = owned_session(db, user, session_id)
+    if item.status != "awaiting_answers":
+        raise ApiError(409, "invalid_state")
+    edits = list(item.draft_edits or [])
+    if not 0 <= index < len(edits):
+        raise ApiError(404, "not_found")
+    del edits[index]
+    item.draft_edits = edits
+    base = original_diagnosis(db, item)
+    if base is not None:
+        _sync_overlay(db, settings, item, apply_edits(base, stored_edits(item)))
+    db.commit()
+    return session_detail(db, item)
+
+
 @router.post("/sessions/{session_id}/answers", response_model=SessionDetailOut)
 def answer_questions(
     session_id: str,
@@ -402,14 +514,19 @@ def answer_questions(
         raise ApiError(409, "invalid_state")
     _claim(db, item, ("awaiting_answers",))
     answers = {key[:64]: value[:64] for key, value in body.answers.items()}
-    notes = body.notes.strip()
+    # Tin nhắn chat không parse được vẫn đến Plan prompt qua notes (T5)
+    notes = "; ".join(part for part in (body.notes.strip(), *_unparsed_notes(db, item)) if part)
+    edits = [dict(edit) for edit in (item.draft_edits or [])]
     thread_id = item.thread_id
     questions = list(item.questions)
     started = time.perf_counter()
     try:
         if item.options.get("has_ground_truth"):
             intent = intent_from_answers(
-                [Question.model_validate(q) for q in questions], answers, notes
+                [Question.model_validate(q) for q in questions],
+                answers,
+                notes,
+                edits=stored_edits(item),
             )
             original = _load_session_image(settings, item, _session_artifact(db, item, "original"))
             truth = _load_session_image(settings, item, _session_artifact(db, item, "ground_truth"))
@@ -420,16 +537,17 @@ def answer_questions(
                 ground_truth=truth,
                 is_synthetic=True,
                 max_iterations=int(item.options.get("max_iterations", 3)),
-                num_variants=int(item.options.get("num_variants", 3)),
                 intent=intent,
                 user_id=str(user.id),
             )
         else:
-            result, duration = run_timed(settings, answer_session, thread_id, answers, notes)
+            result, duration = run_timed(
+                settings, answer_session, thread_id, answers, notes, edits=edits
+            )
             if result.status != "done" or result.state is None:
                 raise RuntimeError(f"Thread {thread_id} returned status {result.status}")
             state = result.state
-        add_message(db, item, "user", "answers", answers_content(questions, answers, notes))
+        add_message(db, item, "user", "answers", answers_content(questions, answers, notes, edits))
         case_id = remember_run(state, str(user.id))
         record_process(db, settings, item, state, duration, case_id)
         db.commit()
@@ -481,10 +599,15 @@ def clarify_again(
             start_session,
             _load_session_image(settings, item, original),
             max_iterations=int(item.options.get("max_iterations", 3)),
-            num_variants=int(item.options.get("num_variants", 3)),
             user_id=str(user.id),
         )
         record_analyze(db, item, result, duration, original)
+        # Chẩn đoán mới → bỏ các edit của lần phân tích trước
+        item.draft_edits = []
+        if result.diagnosis is not None:
+            refresh_region_overlay(
+                db, settings, item, _load_session_image(settings, item, original), result.diagnosis
+            )
         db.commit()
     except Exception as exc:
         logger.exception("Clarify failed for processing session %s", item.id)
@@ -497,12 +620,7 @@ def clarify_again(
     return session_detail(db, item)
 
 
-# ---------------- render phiên bản ----------------
-def _render_actions(raw: List[Dict[str, Any]]) -> List[RegionOperation]:
-    """Phác đồ đã lưu → RegionOperation đã lọc/kẹp, GIỮ NGUYÊN thứ tự (không sắp xếp lại)."""
-    return sanitize_actions([RegionOperation.model_validate(action) for action in raw])
-
-
+# ---------------- lỗi render/refine ----------------
 def _record_failed_run(db: Session, item: ProcessingSession, kind: str, exc: Exception) -> None:
     """Render/refine lỗi: chỉ thêm run 'failed', phiên vẫn 'done' (spec §3.3)."""
     db.rollback()
@@ -516,87 +634,6 @@ def _record_failed_run(db: Session, item: ProcessingSession, kind: str, exc: Exc
         )
     )
     db.commit()
-
-
-@router.post("/sessions/{session_id}/variants/{variant_id}/render", response_model=SessionDetailOut)
-def render_variant(
-    session_id: str,
-    variant_id: str,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-    settings: AppSettings = Depends(get_settings),
-) -> SessionDetailOut:
-    """
-    Render phiên bản đã chọn ở độ phân giải gốc: áp đúng phác đồ của phiên bản (lọc/kẹp như
-    planner nhưng giữ thứ tự) lên ảnh gốc đã lưu, rồi ghi lựa chọn vào bộ nhớ ca bệnh.
-    """
-    item = owned_session(db, user, session_id)
-    variant = db.get(Variant, variant_id) if len(variant_id) == 32 else None
-    if variant is None or variant.session_id != item.id:
-        raise ApiError(404, "not_found")
-    if item.status != "done":
-        raise ApiError(409, "session_busy" if item.status == "running" else "invalid_state")
-    try:
-        actions = _render_actions(variant.actions)
-        original = _load_session_image(settings, item, _session_artifact(db, item, "original"))
-        plan = TreatmentPlan(reasoning="render", actions=actions)
-        rendered, duration = run_timed(settings, execute_plan, original, plan)
-        run = Run(
-            session_id=item.id,
-            kind="render",
-            status="done",
-            result={"variant_id": variant.id, "style_id": variant.style_id},
-            duration_ms=duration,
-        )
-        db.add(run)
-        db.flush()
-        artifact = save_run_image(
-            db, settings, item, run, "render", rendered, f"render_{variant.style_id}.png"
-        )
-        treatment = Treatment(
-            session_id=item.id,
-            parent_id=item.active_treatment_id,
-            version=next_version(db, item),
-            source="variant",
-            variant_id=variant.id,
-            actions=plain(actions),
-            artifact_id=artifact.id,
-            run_id=run.id,
-        )
-        db.add(treatment)
-        db.flush()
-        db.execute(update(Variant).where(Variant.session_id == item.id).values(chosen=False))
-        variant.chosen = True
-        item.active_treatment_id = treatment.id
-        add_message(
-            db,
-            item,
-            "assistant",
-            "render_result",
-            {
-                "run_id": run.id,
-                "variant_id": variant.id,
-                "label": variant.label,
-                "artifact_id": artifact.id,
-                "treatment_id": treatment.id,
-                "width": artifact.width,
-                "height": artifact.height,
-            },
-        )
-        db.commit()
-    except ApiError:
-        raise
-    except Exception as exc:
-        logger.exception("Render failed for processing session %s", item.id)
-        _record_failed_run(db, item, "render", exc)
-        raise ApiError(500, "pipeline_failed")
-    memory = get_case_memory()
-    if memory is not None and item.case_id:
-        try:
-            memory.record_choice(item.case_id, variant.style_id)
-        except Exception:
-            logger.warning("Could not record the variant choice for case %s", item.case_id)
-    return session_detail(db, item)
 
 
 # ---------------- tinh chỉnh theo góp ý ----------------

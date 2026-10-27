@@ -15,6 +15,8 @@ MESSAGE_KINDS: tuple[str, ...] = (
     "diagnosis",
     "questions",
     "answers",
+    "analysis_note",
+    "analysis_update",
     "result",
     "feedback",
     "refine_result",
@@ -29,6 +31,7 @@ ARTIFACT_KINDS: tuple[str, ...] = (
     "final",
     "variant_preview",
     "intermediate",
+    "region_overlay",
     "render",
     "refine",
 )
@@ -85,6 +88,8 @@ class ProcessingSession(Base):
     thread_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     case_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     questions: Mapped[Optional[list[Any]]] = mapped_column(JSON, nullable=True)
+    # Các DiagnosisEdit (dict) người dùng đã bổ sung khi chat "bổ sung phân tích"; NULL ở phiên cũ
+    draft_edits: Mapped[Optional[list[Any]]] = mapped_column(JSON, default=list, nullable=True)
     # Không đặt ForeignKey để tránh vòng phụ thuộc bảng với treatments
     active_treatment_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     error_code: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
