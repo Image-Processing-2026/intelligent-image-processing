@@ -90,6 +90,8 @@ class SessionSummaryOut(BaseModel):
     updated_at: str
     thumbnail_url: Optional[str] = None
     final_decision: Optional[str] = None
+    # Kết cục trung thực của lần xử lý gần nhất (ACCEPTED, UNVERIFIED, …); None với phiên cũ
+    outcome_status: Optional[str] = None
 
 
 class SessionDetailOut(SessionSummaryOut):
