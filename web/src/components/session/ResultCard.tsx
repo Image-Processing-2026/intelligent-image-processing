@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { treatmentLabel } from "@/lib/actions";
 import { formatNumber } from "@/lib/labels";
 
-import { DecisionBadge, SourceBadge } from "./StatusBadge";
+import { DecisionBadge, OutcomeBadge, SourceBadge } from "./StatusBadge";
 
 /** Nguồn thật theo vòng; ghi chú riêng khi có vòng dùng luật dự phòng vì gọi Gemini lỗi. */
 export function RoundSources({ process }: { process: ProcessResult }) {
@@ -105,12 +105,19 @@ export function ResultCard({
           <h2 className="text-base">Kết quả xử lý</h2>
         </CardTitle>
         <div className="flex flex-wrap items-center gap-2">
-          <DecisionBadge decision={process.final_decision} />
+          {process.outcome ? (
+            <OutcomeBadge outcome={process.outcome} />
+          ) : (
+            <DecisionBadge decision={process.final_decision} />
+          )}
           <span className="text-xs text-muted-foreground">
             {process.total_iterations} vòng đã chạy
             {process.rolled_back ? " · vòng cuối đã rollback" : ""}
           </span>
         </div>
+        {process.outcome?.reason ? (
+          <p className="basis-full text-xs text-muted-foreground">{process.outcome.reason}</p>
+        ) : null}
       </CardHeader>
       <CardContent className="grid gap-6">
         {detail.original && shown ? (
