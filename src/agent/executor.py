@@ -5,7 +5,7 @@ Kết nối kế hoạch điều trị từ Agent với Module 2 (Region Engine)
 
 import hashlib
 import logging
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, List, Mapping, Optional, Sequence
 
 import numpy as np
 
@@ -24,7 +24,7 @@ from src.region_engine.face_detector import detect_faces
 from src.region_engine.subject import resolve_subject_mask
 
 from .regions import FACE_TARGETS, FULL_TARGETS, SPATIAL_TARGETS, canonical_region
-from .state import RegionOperation, TreatmentPlan
+from .state import ExecutedAction, RegionOperation, TreatmentPlan
 
 logger = logging.getLogger(__name__)
 
@@ -315,6 +315,7 @@ def execute_plan(
     plan: TreatmentPlan,
     subject_boxes: Optional[SubjectBoxes] = None,
     cache_key: Optional[str] = None,
+    report: Optional[List[ExecutedAction]] = None,
 ) -> np.ndarray:
     """
     Thực thi tuần tự các hành động trong kế hoạch điều trị trên ảnh.
@@ -326,6 +327,8 @@ def execute_plan(
         subject_boxes: bbox Perceive theo tên subject (DiagnosisReport.subject_boxes); vùng
             ngữ nghĩa có bbox dùng resolver chung với Perceive.
         cache_key: image_cache_key của ảnh gốc của lượt chạy, để dùng lại mask đã phân giải.
+        report: danh sách để executor ghi ExecutedAction cho từng action (khung rỗng, lane S1
+            điền); None thì bỏ qua.
 
     Returns:
         np.ndarray: Ảnh sau khi đã áp dụng toàn bộ các thao tác (RGB, uint8).

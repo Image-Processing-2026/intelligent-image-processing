@@ -23,7 +23,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
 from src.analyzer_evaluator.analyzer import analyze_image
-from src.analyzer_evaluator.measurement.diff import DefectChange, SideEffect, compare, side_effects
+from src.analyzer_evaluator.measurement.diff import DefectChange, compare, side_effects
 from src.analyzer_evaluator.metadata import ImageMetadata
 from src.analyzer_evaluator.no_reference_eval import evaluate_no_reference
 from src.analyzer_evaluator.reference_eval import evaluate_reference
@@ -40,7 +40,15 @@ from .planner import (
     validate_and_sort_plan,
 )
 from .regions import canonical_region
-from .state import DiagnosisReport, DoctorState, HistoryItem, IntentProfile, TreatmentPlan
+from .state import (
+    DiagnosisReport,
+    DoctorState,
+    ExecutedAction,
+    HistoryItem,
+    IntentProfile,
+    SideEffectCheck,
+    TreatmentPlan,
+)
 from .user_analysis import validate_edits
 from .vlm_diagnostician import diagnose_and_plan
 
@@ -195,17 +203,27 @@ def process_node(state: DoctorState) -> Dict[str, Any]:
     """Node 4: Thực thi kế hoạch điều trị (Module 2 & Module 3)."""
     prev_img = state["current_image"].copy()
     if not state.get("treatment_plan") or not state["treatment_plan"].actions:
-        return {"current_image": state["current_image"], "previous_image": prev_img}
+        return {
+            "current_image": state["current_image"],
+            "previous_image": prev_img,
+            "executed_actions": [],
+        }
 
     # Vùng Perceive đã định vị bằng bbox dùng lại mask đã đo (cache theo ảnh gốc của lượt chạy)
     diagnosis = state.get("diagnosis")
+    report: List[ExecutedAction] = []
     processed_img = execute_plan(
         state["current_image"],
         state["treatment_plan"],
         subject_boxes=diagnosis.subject_boxes if diagnosis is not None else None,
         cache_key=image_cache_key(state["original_image"]),
+        report=report,
     )
-    return {"current_image": processed_img, "previous_image": prev_img}
+    return {
+        "current_image": processed_img,
+        "previous_image": prev_img,
+        "executed_actions": report,
+    }
 
 
 def evaluate_node(state: DoctorState) -> Dict[str, Any]:
@@ -330,13 +348,20 @@ def _needs_verification(
     )
 
 
-def _side_effects(previous: np.ndarray, current: np.ndarray) -> List[SideEffect]:
-    """Tác dụng phụ của vòng vừa xử lý (diff ảnh trước/sau vòng); lỗi đo không chặn pipeline."""
+def _side_effects_check(state: DoctorState) -> SideEffectCheck:
+    """
+    Tác dụng phụ của vòng vừa xử lý. Tạm thời chỉ so ảnh trước vòng → ảnh hiện tại (lane S2 mở
+    rộng thêm chiều ảnh gốc). Lỗi đo trả status 'unavailable', không trả danh sách rỗng giả.
+    """
+    previous = state.get("previous_image")
+    if previous is None:
+        return SideEffectCheck(status="not_run")
     try:
-        return side_effects(previous, current)
+        found = side_effects(previous, state["current_image"])
     except Exception as exc:
         logger.warning("Side-effect analysis failed: %s", exc)
-        return []
+        return SideEffectCheck(status="unavailable", error=str(exc))
+    return SideEffectCheck(status="ok", previous=[effect.model_dump() for effect in found])
 
 
 def _targeted_defects(
@@ -480,17 +505,24 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
     degraded = has_actions and not unchanged and regressed
     # P7: tác dụng phụ do xử lý của vòng này (halo, nhiễu vùng tối tăng, banding…), ảnh thực.
     # Severity ≥ SIDE_EFFECT_ROLLBACK_SEVERITY → coi như suy thoái → rollback
-    effects = (
-        _side_effects(previous_image, state["current_image"])
+    check = (
+        _side_effects_check(state)
         if has_actions and not unchanged and not is_syn and previous_image is not None
-        else []
+        else SideEffectCheck()
     )
-    history_entry.side_effects = [effect.model_dump() for effect in effects]
-    if any(effect.severity >= SIDE_EFFECT_ROLLBACK_SEVERITY for effect in effects):
+    history_entry.side_effect_check = check
+    history_entry.executed = list(state.get("executed_actions") or [])
+    history_entry.side_effects = list(check.previous)
+    risky = [
+        (effect["kind"], effect["severity"])
+        for effect in check.previous
+        if effect["severity"] >= SIDE_EFFECT_ROLLBACK_SEVERITY
+    ]
+    if risky:
         logger.warning(
             "Iteration %d introduced processing side effects %s; treating it as degraded.",
             iteration,
-            [(effect.kind, effect.severity) for effect in effects],
+            risky,
         )
         degraded = True
 
@@ -663,5 +695,8 @@ def initial_doctor_state(
         "intent": intent,
         "user_id": user_id,
         "image_metadata": image_metadata,
+        "executed_actions": [],
+        "outcome": None,
+        "review": None,
     }
     return initial_state

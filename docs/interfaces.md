@@ -656,3 +656,24 @@ form `actions` as a JSON list of `RegionOperation`) returns
    on a defect with severity ≥ `VERIFY_SEVERITY` (2), meaning an action on its region or on the
    full image, and iterations remain. The next Perceive then confirms the fix.
 5. Otherwise `RE_PROCESS`, or `STOP_BEST_EFFORT` when `max_iterations` is reached.
+
+---
+
+## 4. Audit-fix contracts (`src/agent/state.py`)
+
+Added by the audit-fix round (`fix/audit-backlit`). Step 0 only introduces the types and their
+defaults; behaviour is unchanged until the lane that owns each field fills it in.
+
+| Type / field | Filled by | Meaning |
+|---|---|---|
+| `RegionOperation.defect_ref: Optional[str]` | planner (S2) | Defect the action targets, `type@region` (e.g. `backlit_subject@person`). Lets a sub-region action (face) be tracked as the parent region's defect. `None` falls back to matching the region name. |
+| `ExecutedAction` | executor (S1) | Per-action report: `region_id, operation, parameters, requested_mode, actual_mode, backend, fallback_reason, feather_requested, feather_actual, strength_scale (1.0), mask_hash, mask_area, skipped, skip_reason`. |
+| `SideEffectCheck` | `graph._side_effects_check` (S2 body, S3 caller) | `status` is `ok`, `unavailable` (measurement failed, never an empty list) or `not_run`; `previous` and `original` are `SideEffect` dicts for previous→candidate and original→candidate. |
+| `ReviewFinding`, `ReviewResult` | `review.py` (S3) | `status` `completed|unavailable|not_run`; `verdict` `ACCEPT|REVISE|REJECT|UNCERTAIN`; plus `goal, preserve, findings, confidence, reason, candidate_sha256, model, prompt_version, latency_ms, error`. |
+| `Outcome` | end of graph (S3) | `status` `ACCEPTED|UNVERIFIED|NOT_MET|KEPT_ORIGINAL|NO_CHANGE`; `accepted_by` `review|reference`; `candidate_sha256`; `reason`. Only `ACCEPTED` corresponds to `final_decision == SHIP`. |
+| `HistoryItem.executed / side_effect_check / review` | `decide_node` | Copied from `executed_actions`, `_side_effects_check(state)` and the review node. `HistoryItem.side_effects` stays and mirrors `side_effect_check.previous`. |
+| `DoctorState.executed_actions / outcome / review` | `process_node`, S3 | Report of the latest iteration; final outcome; final review. |
+
+`executor.execute_plan(..., report: Optional[List[ExecutedAction]] = None)` appends one
+`ExecutedAction` per action when a list is passed. `EvaluationResult` is unchanged; agent and API
+code must stop reading `visual_plausibility_passed` and `vlm_feedback` in favour of `Outcome`.
