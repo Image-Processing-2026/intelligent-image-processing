@@ -12,11 +12,11 @@ import numpy as np
 
 from src.region_engine.subject import SubjectMask
 
-from .executor import image_cache_key, subject_cache_key
+from .executor import executed_mask, image_cache_key, subject_cache_key
 from .imaging import downscale
 from .perception import resolve_subject_masks
 from .regions import canonical_region
-from .state import DiagnosisReport
+from .state import DiagnosisReport, ExecutedAction
 
 logger = logging.getLogger(__name__)
 
@@ -112,3 +112,30 @@ def diagnosis_region_overlay(
         subject_cache_key(image_cache_key(original_image), original_image.shape),
     )
     return render_region_overlay(original_image, masks, max_side), masks
+
+
+def executed_region_overlay(
+    image: np.ndarray,
+    executed: List[ExecutedAction],
+    max_side: int = OVERLAY_MAX_SIDE,
+) -> Tuple[np.ndarray, Dict[str, str]]:
+    """
+    Overlay đúng các mask đã thực thi (tra theo ExecutedAction.mask_hash), không dựng lại bằng
+    đường khác. Action bị bỏ qua, vùng toàn ảnh hoặc mask đã bị đẩy khỏi cache không được vẽ.
+    Trả (ảnh overlay, {tên vùng: mask_hash đã vẽ}).
+    """
+    masks: Dict[str, SubjectMask] = {}
+    drawn: Dict[str, str] = {}
+    for item in executed:
+        if item.skipped or item.mask_hash is None:
+            continue
+        mask = executed_mask(item.mask_hash)
+        if mask is None:
+            logger.info(
+                "Executed mask %s for '%s' is no longer cached.", item.mask_hash, item.region_id
+            )
+            continue
+        name = f"{item.region_id}:{item.operation}"
+        masks[name] = SubjectMask(mask, item.actual_mode or item.backend or "executed", 1.0, None)  # type: ignore[arg-type]
+        drawn[name] = item.mask_hash
+    return render_region_overlay(image, masks, max_side), drawn

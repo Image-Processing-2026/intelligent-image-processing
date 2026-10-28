@@ -28,6 +28,7 @@ from src.agent.session import (
 from src.agent.state import RegionOperation
 from src.agent.user_analysis import apply_edits, parse_edits
 from src.analyzer_evaluator.metadata import read_metadata
+from src.region_engine import runtime_capabilities
 
 from .auth import current_user, user_settings
 from .config import AppSettings
@@ -850,6 +851,7 @@ def system_info(
         pipeline_concurrency=settings.pipeline_concurrency,
         registration_open=settings.allow_registration,
         max_upload_mb=settings.max_upload_mb,
+        region_runtime=runtime_capabilities(),
     )
 
 

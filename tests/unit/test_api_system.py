@@ -32,6 +32,9 @@ def test_system_requires_login_and_reports_rule_based_mode(app_db: Database) -> 
     assert body["memory_enabled"] is False  # conftest tắt bộ nhớ
     assert body["pipeline_concurrency"] == 1
     assert body["max_upload_mb"] == 20
+    runtime = body["region_runtime"]
+    assert runtime["interpreter"] and "mobile_sam_installed" in runtime
+    assert {"face", "semantic_models"} <= set(runtime)
 
 
 def test_system_never_leaks_the_api_key(app_db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
