@@ -36,6 +36,20 @@ from src.analyzer_evaluator.analyzer import analyze_image
 
 _SEVERITY_LABELS = {0: "không đáng kể", 1: "nhẹ", 2: "rõ", 3: "nặng"}
 
+# Kết cục trung thực → (biểu tượng, nhãn); luôn có cả chữ lẫn biểu tượng
+OUTCOME_LABELS = {
+    "ACCEPTED": ("✅", "Đã duyệt"),
+    "UNVERIFIED": ("❔", "Chưa xác minh"),
+    "NOT_MET": ("⚠️", "Chưa đạt"),
+    "KEPT_ORIGINAL": ("↩️", "Giữ ảnh gốc"),
+    "NO_CHANGE": ("➖", "Không cần chỉnh"),
+}
+
+
+def _plain(value: Any) -> Any:
+    """Model Pydantic (Outcome, ReviewResult) → dict JSON; giá trị khác giữ nguyên."""
+    return value.model_dump(mode="json") if hasattr(value, "model_dump") else value
+
 
 def format_diagnosis(diagnosis: Any) -> str:
     """Định dạng chẩn đoán giai đoạn Perceive thành Markdown cho UI."""
@@ -119,18 +133,30 @@ def _format_result(
     intermediates = result_state.get("intermediate_images", [])
     eval_result = result_state.get("evaluation_result", {})
 
-    # 1. Trạng thái & Quyết định cuối
+    # 1. Kết cục trung thực (chữ + biểu tượng); quyết định điều khiển vòng lặp chỉ là phụ
+    outcome = result_state.get("outcome")
+    outcome_status = getattr(outcome, "status", None) or (
+        outcome.get("status") if isinstance(outcome, dict) else None
+    )
+    outcome_reason = getattr(outcome, "reason", "") or (
+        outcome.get("reason", "") if isinstance(outcome, dict) else ""
+    )
     decision_map = {
-        "SHIP": ("", "SHIP — Đạt ngưỡng đánh giá của hệ thống"),
+        "SHIP": ("", "SHIP — Đã được xác nhận"),
         "STOP_BEST_EFFORT": ("", "STOP_BEST_EFFORT — Đã dừng — xem kết quả và lịch sử"),
         "RE_PROCESS": ("🔄", "RE_PROCESS — Tiếp tục lặp"),
     }
     emoji, label = decision_map.get(decision, ("❓", decision))
+    if outcome_status in OUTCOME_LABELS:
+        emoji, label = OUTCOME_LABELS[outcome_status]
 
     status_lines = [
-        f"### {emoji} Quyết định: **{label}**",
+        f"### {emoji} Kết cục: **{label}**",
+        f"- **Quyết định điều khiển vòng lặp:** `{decision}`",
         f"- **Số vòng lặp thực hiện:** {iters} / {int(max_iters)}",
     ]
+    if outcome_reason:
+        status_lines.append(f"- **Lý do:** {outcome_reason}")
 
     if is_synthetic and eval_result:
         psnr = eval_result.get("psnr", "N/A")
@@ -148,7 +174,7 @@ def _format_result(
     for i, thumb in enumerate(intermediates):
         gallery_images.append((thumb, f"Vòng {i + 1}"))
     if output_img is not None:
-        gallery_images.append((output_img, f"Kết quả cuối ({decision})"))
+        gallery_images.append((output_img, f"Kết quả cuối ({outcome_status or decision})"))
 
     # 3. Diễn giải chẩn đoán (Clinical Reasoning)
     reasoning_sections: List[str] = []
@@ -223,6 +249,8 @@ def _format_result(
     ]
     details: Dict[str, Any] = {
         "final_decision": decision,
+        "outcome": _plain(outcome),
+        "review": _plain(result_state.get("review")),
         "total_iterations": iters,
         "evaluation_result": eval_result,
         "final_technical_metrics": (
