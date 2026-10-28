@@ -53,12 +53,14 @@ from .planner import (
     validate_and_sort_plan,
 )
 from .regions import canonical_region, is_person_region
+from .review import derive_outcome, review_candidate, review_context_from_state, same_image
 from .state import (
     DiagnosisReport,
     DoctorState,
     ExecutedAction,
     HistoryItem,
     IntentProfile,
+    ReviewResult,
     SideEffectCheck,
     TreatmentPlan,
 )
@@ -239,35 +241,54 @@ def process_node(state: DoctorState) -> Dict[str, Any]:
     }
 
 
+def _evaluate_image(
+    state: DoctorState, image: np.ndarray, previous: np.ndarray, iteration: int
+) -> Dict[str, Any]:
+    """
+    Đánh giá một ảnh theo ADR-002: tham chiếu khi là synthetic có ground truth, ngược lại
+    no-reference. Chuẩn hóa về dict thuần trước khi đưa vào state: DoctorState khai báo
+    evaluation_result là Dict, HistoryItem.eval_score và ProcessResponse cũng yêu cầu dict
+    (model thô gây ValidationError và không JSON-serializable).
+    """
+    gt = state.get("ground_truth_image")
+    if state.get("is_synthetic", False) and gt is not None:
+        eval_metrics = evaluate_reference(
+            current_image=image,
+            ground_truth_image=gt,
+            iteration=iteration,
+            previous_image=previous,
+        )
+    else:
+        eval_metrics = evaluate_no_reference(
+            current_image=image,
+            previous_image=previous,
+            iteration=iteration,
+        )
+    return eval_metrics.model_dump()
+
+
 def evaluate_node(state: DoctorState) -> Dict[str, Any]:
     """Node 5: Đánh giá chất lượng sau khi xử lý (Module 1)."""
-    is_syn = state.get("is_synthetic", False)
-    gt = state.get("ground_truth_image")
     prev_img = (
         state["previous_image"]
         if state.get("previous_image") is not None
         else state["original_image"]
     )
     iteration = state.get("iteration", 1)
+    return {
+        "evaluation_result": _evaluate_image(state, state["current_image"], prev_img, iteration)
+    }
 
-    if is_syn and gt is not None:
-        eval_metrics = evaluate_reference(
-            current_image=state["current_image"],
-            ground_truth_image=gt,
-            iteration=iteration,
-            previous_image=prev_img,
-        )
-    else:
-        eval_metrics = evaluate_no_reference(
-            current_image=state["current_image"],
-            previous_image=prev_img,
-            iteration=iteration,
-        )
 
-    # Chuẩn hóa về dict thuần trước khi đưa vào state: DoctorState khai báo
-    # evaluation_result là Dict, HistoryItem.eval_score và ProcessResponse
-    # cũng yêu cầu dict (model thô gây ValidationError và không JSON-serializable).
-    return {"evaluation_result": eval_metrics.model_dump()}
+def _reference_met(eval_result: Dict[str, Any]) -> bool:
+    """True nếu chỉ số tham chiếu (synthetic) đạt cả ngưỡng PSNR lẫn SSIM."""
+    psnr, ssim = eval_result.get("psnr"), eval_result.get("ssim")
+    return (
+        psnr is not None
+        and ssim is not None
+        and float(psnr) >= PSNR_THRESHOLD
+        and float(ssim) >= SSIM_THRESHOLD
+    )
 
 
 def _is_degraded_synthetic(eval_result: Dict[str, Any], history: List[HistoryItem]) -> bool:
@@ -708,7 +729,7 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
     thumbnail = _create_thumbnail(state["current_image"])
     new_intermediates = list(state.get("intermediate_images") or []) + [thumbnail]
 
-    return {
+    update: Dict[str, Any] = {
         "current_image": final_image,
         "rolled_back": rolled_back,
         "iteration": iteration + 1,
@@ -716,11 +737,86 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
         "history": new_history,
         "intermediate_images": new_intermediates,
     }
+    if rolled_back:
+        # evaluation_result đang mô tả ảnh bị loại: tính lại cho ảnh thực sự được trả
+        update["evaluation_result"] = _evaluate_returned(state, final_image, iteration)
+    return update
+
+
+def _evaluate_returned(state: DoctorState, image: np.ndarray, iteration: int) -> Dict[str, Any]:
+    """
+    Đánh giá ảnh được trả sau rollback/từ chối, so với ảnh gốc (không còn "ảnh trước vòng").
+    Lỗi đo → {} chứ không giữ số của ảnh khác.
+    """
+    try:
+        return _evaluate_image(state, image, state["original_image"], iteration)
+    except Exception as exc:
+        logger.warning("Re-evaluating the returned image failed: %s", exc)
+        return {}
 
 
 def should_continue(state: DoctorState) -> str:
-    """Điều hướng sau decide: lặp lại vòng xử lý hoặc kết thúc."""
+    """Điều hướng sau decide: lặp lại vòng xử lý hoặc sang bước review rồi kết thúc."""
     return "re_process" if state["decision"] == "RE_PROCESS" else "ship"
+
+
+def review_node(state: DoctorState) -> Dict[str, Any]:
+    """
+    Node 7: review ảnh SẼ TRẢ (R-08). Chỉ chạy cho ảnh thật đã bị đổi so với ảnh gốc.
+    REJECT → trả ảnh trước vòng cuối (hoặc ảnh gốc), tính lại evaluation cho ảnh đó.
+    Các verdict khác không đổi ảnh; kết cục do finalize_node quyết định.
+    """
+    returned = state["current_image"]
+    original = state["original_image"]
+    history = list(state.get("history") or [])
+    reference_run = bool(state.get("is_synthetic", False)) and (
+        state.get("ground_truth_image") is not None
+    )
+    if reference_run or same_image(returned, original):
+        return {"review": ReviewResult(status="not_run", reason="nothing to review")}
+
+    # Sau rollback ảnh trả chính là ảnh trước vòng cuối: không còn ảnh "trước" để đối chiếu
+    previous = None if state.get("rolled_back") else state.get("previous_image")
+    review = review_candidate(
+        original,
+        previous,
+        returned,
+        review_context_from_state(history, state.get("intent")),
+    )
+    update: Dict[str, Any] = {"review": review}
+    if history:
+        history[-1] = history[-1].model_copy(update={"review": review})
+        update["history"] = history
+    if review.status == "completed" and review.verdict == "REJECT":
+        fallback = previous if previous is not None else original
+        logger.warning("Review rejected the result; returning the previous image.")
+        update["current_image"] = fallback
+        update["rolled_back"] = True
+        update["evaluation_result"] = _evaluate_returned(
+            state, fallback, int(state.get("iteration", 1))
+        )
+    return update
+
+
+def finalize_node(state: DoctorState) -> Dict[str, Any]:
+    """
+    Node 8: chốt kết cục (R-01). `decision` cuối chỉ là SHIP khi kết cục là ACCEPTED; các kết
+    cục khác là STOP_BEST_EFFORT (pipeline đã dừng nhưng chưa có ai xác nhận ảnh tốt).
+    """
+    outcome = derive_outcome(
+        original=state["original_image"],
+        returned=state["current_image"],
+        is_synthetic=bool(state.get("is_synthetic", False))
+        and state.get("ground_truth_image") is not None,
+        reference_met=_reference_met(state.get("evaluation_result") or {}),
+        history=list(state.get("history") or []),
+        intent=state.get("intent"),
+        review=state.get("review"),
+    )
+    return {
+        "outcome": outcome,
+        "decision": "SHIP" if outcome.status == "ACCEPTED" else "STOP_BEST_EFFORT",
+    }
 
 
 # ---------------------------------------------------------
@@ -737,6 +833,8 @@ def build_doctor_graph(checkpointer: Optional[BaseCheckpointSaver] = None):
     workflow.add_node("process", process_node)
     workflow.add_node("evaluate", evaluate_node)
     workflow.add_node("decide", decide_node)
+    workflow.add_node("review", review_node)
+    workflow.add_node("finalize", finalize_node)
 
     workflow.set_entry_point("analyze")
 
@@ -750,8 +848,10 @@ def build_doctor_graph(checkpointer: Optional[BaseCheckpointSaver] = None):
     workflow.add_conditional_edges(
         "decide",
         should_continue,
-        {"re_process": "analyze", "ship": END},
+        {"re_process": "analyze", "ship": "review"},
     )
+    workflow.add_edge("review", "finalize")
+    workflow.add_edge("finalize", END)
 
     return workflow.compile(checkpointer=checkpointer)
 

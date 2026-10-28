@@ -70,6 +70,18 @@ def _no_verify_call(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(fusion.USE_WEAK_REJECTED_ENV, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _no_review_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Cổng review (R-08) gọi thêm Gemini ở cuối pipeline. Các test cũ mock đúng số phản hồi
+    Perceive/Plan nên review tắt mặc định; test review tự bật (REVIEW_ENABLED = True).
+    """
+    from src.agent import review
+
+    monkeypatch.setattr(review, "REVIEW_ENABLED", False)
+    monkeypatch.delenv(review.REVIEW_MODEL_ENV, raising=False)
+
+
 @pytest.fixture
 def flat_gray_image() -> np.ndarray:
     """Ảnh RGB xám đồng nhất mức 128 — contrast=0, noise=0."""

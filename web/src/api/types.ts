@@ -103,6 +103,40 @@ export interface SessionSummary {
   updated_at: string;
   thumbnail_url: string | null;
   final_decision: string | null;
+  /** Phiên cũ (trước R-01) không có kết cục. */
+  outcome_status?: OutcomeStatus | null;
+}
+
+export type OutcomeStatus = "ACCEPTED" | "UNVERIFIED" | "NOT_MET" | "KEPT_ORIGINAL" | "NO_CHANGE";
+
+/** Kết cục trung thực của ảnh được trả; chỉ ACCEPTED ứng với final_decision SHIP. */
+export interface Outcome {
+  status: OutcomeStatus;
+  accepted_by: "review" | "reference" | null;
+  candidate_sha256: string | null;
+  reason: string;
+}
+
+export interface ReviewFinding {
+  crop_id: string;
+  issue: string;
+  severity: number;
+  text: string;
+}
+
+export interface ReviewResult {
+  status: "completed" | "unavailable" | "not_run";
+  verdict: "ACCEPT" | "REVISE" | "REJECT" | "UNCERTAIN" | null;
+  goal: string;
+  preserve: string[];
+  findings: ReviewFinding[];
+  confidence: number;
+  reason: string;
+  candidate_sha256: string | null;
+  model: string;
+  prompt_version: string;
+  latency_ms: number | null;
+  error: string | null;
 }
 
 export interface SessionOptions {
@@ -139,6 +173,9 @@ export interface ProcessResult {
   total_iterations: number;
   final_decision: string;
   final_evaluation: Record<string, unknown>;
+  /** Phiên cũ không có outcome/review: UI quay về hiển thị final_decision. */
+  outcome?: Outcome | null;
+  review?: ReviewResult | null;
   history: HistoryItem[];
   treatment: RegionAction[];
   intent: Record<string, unknown> | null;

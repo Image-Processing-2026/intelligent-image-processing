@@ -474,18 +474,22 @@ def call_gemini_json(
     contents: List[Any],
     schema: Dict[str, Any],
     temperature: Optional[float] = None,
+    model: Optional[str] = None,
+    timeout_ms: Optional[int] = None,
 ) -> Any:
     """
     Gọi Gemini với structured output (JSON theo schema) và trả về JSON đã parse.
-    Dùng chung cho giai đoạn Perceive và Plan; mọi lỗi được ném ra để bên gọi fallback.
+    Dùng chung cho giai đoạn Perceive, Plan và Review; mọi lỗi được ném ra để bên gọi fallback.
     temperature: None = mặc định của model; Perceive self-consistency dùng 0.7.
+    model / timeout_ms: None = GEMINI_MODEL (hoặc mặc định) / GEMINI_TIMEOUT_MS; Review ghi đè.
     Lỗi 500/503 và timeout được gọi lại tối đa GEMINI_MAX_ATTEMPTS lần, thời gian chờ tăng gấp đôi.
     """
     if genai is None or genai_types is None:
         raise RuntimeError("google-genai is not installed")
 
     client = genai.Client(
-        api_key=api_key, http_options=genai_types.HttpOptions(timeout=GEMINI_TIMEOUT_MS)
+        api_key=api_key,
+        http_options=genai_types.HttpOptions(timeout=timeout_ms or GEMINI_TIMEOUT_MS),
     )
     config = genai_types.GenerateContentConfig(
         system_instruction=system_prompt,
@@ -498,7 +502,7 @@ def call_gemini_json(
         temperature=temperature,
     )
     contents = _encode_contents(contents)
-    model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+    model = model or os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
     for attempt in range(1, GEMINI_MAX_ATTEMPTS + 1):
         try:
             response = client.models.generate_content(model=model, contents=contents, config=config)

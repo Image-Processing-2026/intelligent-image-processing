@@ -270,6 +270,9 @@ def record_process(
         "total_iterations": int(state.get("iteration", 1)) - 1,
         "final_decision": str(state.get("decision") or ""),
         "final_evaluation": plain(state.get("evaluation_result") or {}),
+        # Kết cục trung thực (R-01) và kết quả review (R-08) của đúng ảnh được trả
+        "outcome": plain(state.get("outcome")),
+        "review": plain(state.get("review")),
         "history": plain(history),
         "treatment": plain(treatment_recipe(history)),
         "intent": plain(state.get("intent")),
@@ -298,6 +301,7 @@ def record_process(
             "run_id": run.id,
             "final_artifact_id": final.id,
             "final_decision": run.result["final_decision"],
+            "outcome_status": (run.result["outcome"] or {}).get("status"),
             "total_iterations": run.result["total_iterations"],
         },
     )
@@ -435,6 +439,7 @@ def summaries(db: Session, items: List[ProcessingSession]) -> List[SessionSummar
     ids = [item.id for item in items]
     thumbs: Dict[str, Artifact] = {}
     decisions: Dict[str, str] = {}
+    outcomes: Dict[str, Optional[str]] = {}
     if ids:
         for artifact in db.scalars(
             select(Artifact).where(Artifact.session_id.in_(ids), Artifact.kind == "thumbnail")
@@ -446,6 +451,7 @@ def summaries(db: Session, items: List[ProcessingSession]) -> List[SessionSummar
             .order_by(Run.created_at)
         ):
             decisions[run.session_id] = str(run.result.get("final_decision") or "") or None
+            outcomes[run.session_id] = (run.result.get("outcome") or {}).get("status")
     return [
         SessionSummaryOut(
             id=item.id,
@@ -455,6 +461,7 @@ def summaries(db: Session, items: List[ProcessingSession]) -> List[SessionSummar
             updated_at=item.updated_at,
             thumbnail_url=artifact_out(thumbs[item.id]).url if item.id in thumbs else None,
             final_decision=decisions.get(item.id),
+            outcome_status=outcomes.get(item.id),
         )
         for item in items
     ]
