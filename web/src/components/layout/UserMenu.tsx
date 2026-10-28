@@ -32,9 +32,9 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="max-w-40 gap-1.5">
+        <Button variant="ghost" size="sm" className="max-w-40 gap-1.5" aria-label={me.data.username}>
           <UserRound className="size-4" aria-hidden />
-          <span className="truncate">{me.data.username}</span>
+          <span className="hidden truncate sm:inline">{me.data.username}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">

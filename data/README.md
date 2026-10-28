@@ -19,6 +19,12 @@ data/
 ---
 
 ## 2. Usage Guidelines
+
+Curated basic-restoration starter set (30 real photos, 2026-10-27): see
+[`BASIC_TEST_SET.md`](BASIC_TEST_SET.md). The manifest is `data/basic_test_manifest.json`;
+download/verify with `python data/download_basic_test_set.py`. Local gallery:
+`data/real/basic_v1/index.html`. Labels are agent-reviewed proposals for manual testing,
+not human-verified ground truth or an independent hold-out.
 1. **Synthetic Dataset (`data/synthetic/`):**
    - Paired test set where each image in `degraded/` has an exact 1:1 ground-truth match in `clean/`.
    - Used for unit testing algorithms and reporting objective reconstruction fidelity (PSNR/SSIM).

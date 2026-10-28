@@ -13,7 +13,7 @@ import { UserMenu } from "./UserMenu";
 export function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
-    <div className="flex h-svh flex-col">
+    <div className="flex h-svh flex-col overflow-hidden">
       <header className="z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-3 sm:px-4">
         <Button
           variant="ghost"
@@ -24,20 +24,20 @@ export function AppShell() {
         >
           <Menu className="size-5" aria-hidden />
         </Button>
-        <Link to="/" className="shrink-0 rounded-sm font-semibold tracking-tight">
+        <Link to="/" className="min-w-0 truncate rounded-sm font-semibold tracking-tight">
           AI Image Doctor
         </Link>
-        <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
           <BackendStatus />
           <ThemeToggle />
           <UserMenu />
         </div>
       </header>
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-72 shrink-0 border-r bg-sidebar text-sidebar-foreground md:block">
+        <aside className="hidden w-56 shrink-0 border-r bg-sidebar text-sidebar-foreground md:block">
           <SessionSidebar />
         </aside>
-        <main className="min-w-0 flex-1 overflow-y-auto">
+        <main className="relative min-w-0 flex-1 overflow-y-auto">
           <Outlet />
         </main>
       </div>

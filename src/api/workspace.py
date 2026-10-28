@@ -511,7 +511,8 @@ def answer_questions(
     gọi run_pipeline với ground truth.
     """
     item = owned_session(db, user, session_id)
-    if not item.thread_id or not item.questions:
+    # Danh sách câu hỏi có thể rỗng (không còn câu phong cách): chỉ None mới là chưa hỏi
+    if not item.thread_id or item.questions is None:
         raise ApiError(409, "invalid_state")
     _claim(db, item, ("awaiting_answers",))
     answers = {key[:64]: value[:64] for key, value in body.answers.items()}

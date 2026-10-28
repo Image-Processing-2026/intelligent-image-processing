@@ -2,13 +2,14 @@ import { Download } from "lucide-react";
 
 import type { ProcessResult, SessionDetail, Variant } from "@/api/types";
 import { CompareSlider } from "@/components/result/CompareSlider";
-import { IterationTimeline } from "@/components/result/IterationTimeline";
 import { TechnicalJson } from "@/components/result/TechnicalJson";
 import { VariantGrid } from "@/components/result/VariantGrid";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { treatmentLabel } from "@/lib/actions";
 import { formatNumber } from "@/lib/labels";
+import { RoundAssessment } from "@/components/studio/RoundAssessment";
+import { retainedEvaluation } from "@/components/studio/assessment";
 
 import { DecisionBadge, OutcomeBadge, SourceBadge } from "./StatusBadge";
 
@@ -39,7 +40,7 @@ export function EvaluationSummary({ process }: { process: ProcessResult }) {
   const evaluation = process.final_evaluation ?? {};
   if (process.is_synthetic) {
     return (
-      <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-sm">
+      <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-sm">
         <dt className="text-muted-foreground">PSNR (so với ảnh chuẩn)</dt>
         <dd>{formatNumber(evaluation.psnr as number, 2)} dB</dd>
         <dt className="text-muted-foreground">SSIM (so với ảnh chuẩn)</dt>
@@ -54,7 +55,7 @@ export function EvaluationSummary({ process }: { process: ProcessResult }) {
     );
   }
   return (
-    <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-sm">
+    <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-sm">
       <dt className="text-muted-foreground">Điểm đánh giá ước lượng</dt>
       <dd>{formatNumber(evaluation.estimated_quality_score as number, 1)}</dd>
       {evaluation.brisque_score !== undefined && evaluation.brisque_score !== null ? (
@@ -96,7 +97,8 @@ export function ResultCard({
   const active = detail.treatments.find((t) => t.id === detail.active_treatment_id) ?? null;
   const shown = (active?.artifact_id ? artifactById.get(active.artifact_id) : null) ?? final;
   const shownLabel = active ? treatmentLabel(active, detail.variants) : "Kết quả pipeline";
-  const intermediates = process.artifacts.intermediate.map((id) => artifactById.get(id));
+  const lastAssessment = [...process.history].reverse().find((r) => r.defect_status?.length || r.side_effects?.length);
+  const keptEvaluation = retainedEvaluation(process);
 
   return (
     <Card>
@@ -119,7 +121,7 @@ export function ResultCard({
           <p className="basis-full text-xs text-muted-foreground">{process.outcome.reason}</p>
         ) : null}
       </CardHeader>
-      <CardContent className="grid gap-6">
+      <CardContent className="grid gap-6 [&_a[data-slot=button]]:h-auto [&_a[data-slot=button]]:min-h-9 [&_a[data-slot=button]]:max-w-full [&_a[data-slot=button]]:whitespace-normal">
         {detail.original && shown ? (
           <div className="grid gap-2">
             <p className="text-sm">
@@ -140,12 +142,12 @@ export function ResultCard({
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="grid content-start gap-1">
             <p className="text-xs text-muted-foreground">Đánh giá của kết quả pipeline (v1)</p>
-            <EvaluationSummary process={process} />
+            {keptEvaluation ? <EvaluationSummary process={{ ...process, final_evaluation: keptEvaluation }} />
+              : <p className="text-xs text-muted-foreground">Chưa lưu đánh giá riêng cho ảnh được giữ lại sau rollback.</p>}
+            {process.rolled_back ? <p className="text-xs text-warning">Ảnh thử cuối đã bị loại; không dùng điểm của ảnh thử cho kết quả đang giữ.</p> : null}
           </div>
           <RoundSources process={process} />
         </div>
-
-        {children}
 
         <VariantGrid
           variants={detail.variants}
@@ -157,7 +159,8 @@ export function ResultCard({
           disabled={busy}
         />
 
-        <IterationTimeline history={process.history} intermediates={intermediates} />
+        {lastAssessment ? <RoundAssessment round={lastAssessment} /> : null}
+        {children}
 
         <TechnicalJson
           data={{ process, diagnosis: detail.diagnosis, active_treatment: active }}

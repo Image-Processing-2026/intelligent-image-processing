@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./studio.css";
 
 /* Dark mode bật bằng class .dark trên <html> (ThemeProvider) */
 @custom-variant dark (&:is(.dark *));

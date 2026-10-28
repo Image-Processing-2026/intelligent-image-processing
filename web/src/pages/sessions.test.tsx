@@ -54,7 +54,7 @@ describe("new session page", () => {
     const body = post?.[1]?.body as FormData;
     expect(body.get("file")).toBeInstanceOf(File);
     expect(body.get("max_iterations")).toBe("3");
-    expect(body.get("num_variants")).toBe("3");
+    expect(body.has("num_variants")).toBe(false);
   });
 
   it("shows the server error and lets the user retry", async () => {

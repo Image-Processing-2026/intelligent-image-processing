@@ -1,5 +1,7 @@
 // Dữ liệu mẫu CHỈ dùng trong test (không có trong bản chạy thật).
 import type {
+  DiagnosisEdit,
+  DiagnosisReport,
   ProcessResult,
   SessionDetail,
   SessionSummary,
@@ -20,8 +22,12 @@ export const SUMMARY: SessionSummary = {
 };
 
 export const DETAIL: SessionDetail = {
+  draft_edits: [],
+  draft_diagnosis: null,
+  region_overlay_url: null,
+  regions: [],
   ...SUMMARY,
-  options: { max_iterations: 3, num_variants: 3, has_ground_truth: false, sample: "underexposed" },
+  options: { max_iterations: 3, num_variants: 1, has_ground_truth: false, sample: "underexposed" },
   original: {
     id: "d".repeat(32),
     kind: "original",
@@ -58,19 +64,7 @@ export const DETAIL: SessionDetail = {
       role: "assistant",
       kind: "questions",
       created_at: "2026-10-22T10:00:01+00:00",
-      content: {
-        questions: [
-          {
-            id: "style",
-            text: "Bạn thích kết quả theo phong cách nào?",
-            default: "balanced",
-            choices: [
-              { value: "natural", label: "Tự nhiên (chỉnh nhẹ tay)" },
-              { value: "balanced", label: "Cân bằng" },
-            ],
-          },
-        ],
-      },
+      content: { questions: [] },
     },
   ],
   diagnosis: null,
@@ -82,6 +76,81 @@ export const DETAIL: SessionDetail = {
   ratings: [],
   error: null,
   artifacts: [],
+};
+
+/** Phiên có một câu hỏi mơ hồ (chẩn đoán có chỗ cần người dùng xác nhận). */
+export const ASKING: SessionDetail = {
+  ...DETAIL,
+  messages: DETAIL.messages.map((message) =>
+    message.kind === "questions"
+      ? {
+          ...message,
+          content: {
+            questions: [
+              {
+                id: "tone",
+                text: "Tông ấm trong ảnh là cố ý?",
+                default: "keep",
+                choices: [
+                  { value: "keep", label: "Giữ tông ấm" },
+                  { value: "fix", label: "Sửa về trung tính" },
+                ],
+              },
+            ],
+          },
+        }
+      : message,
+  ),
+};
+
+export const OVERLAY_URL = `/api/v1/workspace/sessions/${SESSION_ID}/artifacts/${"9".repeat(32)}`;
+
+const DRAFT_BASE = (DETAIL.messages[0].content as { diagnosis: DiagnosisReport }).diagnosis;
+export const FACE_EDIT: DiagnosisEdit = {
+  op: "add_defect",
+  type: "underexposed",
+  aspect: null,
+  region: "face",
+  severity: 2,
+  source_text: "mặt còn tối",
+};
+
+/** Phiên sau khi người dùng gửi "mặt còn tối": một edit, bản nháp có thêm lỗi ở vùng mặt. */
+export const WITH_EDIT: SessionDetail = {
+  ...DETAIL,
+  draft_edits: [FACE_EDIT],
+  draft_diagnosis: {
+    ...DRAFT_BASE,
+    defects: [
+      ...DRAFT_BASE.defects,
+      {
+        type: "underexposed",
+        region: "face",
+        severity: 2,
+        evidence: "Người dùng bổ sung: mặt còn tối",
+        origin: "user",
+      },
+    ],
+  },
+  region_overlay_url: OVERLAY_URL,
+  regions: [{ name: "face", source: "grabcut", confidence: 0.3 }],
+  messages: [
+    ...DETAIL.messages,
+    {
+      id: 20,
+      role: "user",
+      kind: "analysis_note",
+      created_at: "2026-10-22T10:00:30+00:00",
+      content: { text: "mặt còn tối" },
+    },
+    {
+      id: 21,
+      role: "assistant",
+      kind: "analysis_update",
+      created_at: "2026-10-22T10:00:31+00:00",
+      content: { text: "mặt còn tối", edits: [FACE_EDIT], source: "rule", unparsed: false },
+    },
+  ],
 };
 
 const FINAL_ID = "e".repeat(32);
@@ -205,6 +274,8 @@ export const PROCESS: ProcessResult = {
 
 export const DONE: SessionDetail = {
   ...DETAIL,
+  // Phiên cũ tạo trước khi bỏ phong cách: còn dữ liệu phiên bản (chỉ đọc)
+  options: { ...DETAIL.options, num_variants: 3 },
   status: "done",
   final_decision: "SHIP",
   questions: null,

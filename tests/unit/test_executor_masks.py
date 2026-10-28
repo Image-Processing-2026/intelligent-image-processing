@@ -71,7 +71,7 @@ def _face_plan(operation: str = "gamma_correct", **overrides) -> TreatmentPlan:
     return TreatmentPlan(iteration=1, reasoning="lift face", actions=[action])
 
 
-def _run(image: np.ndarray, plan: TreatmentPlan, oval=None, oval_error=None):
+def _run(image: np.ndarray, plan: TreatmentPlan, oval=None, oval_error=None, sam=False):
     report: list[ExecutedAction] = []
     oval_patch = patch(
         "src.region_engine.controller.detect_face_ovals",
@@ -81,9 +81,20 @@ def _run(image: np.ndarray, plan: TreatmentPlan, oval=None, oval_error=None):
     with (
         oval_patch,
         patch("src.agent.executor.detect_faces", return_value=[_box_mask()]),
+        # Offline: môi trường có model SAM thật không được làm đổi đường oval của test
+        patch(
+            "src.agent.executor.subject_capabilities",
+            return_value={"face": True, "semantic_models": sam},
+        ),
     ):
         result = execute_plan(image, plan, report=report)
     return result, report
+
+
+def _run_full_bbox(image: np.ndarray, plan: TreatmentPlan):
+    """Tham chiếu: hộp chữ nhật ở cường độ đủ (tắt quy tắc phơi sáng → oval)."""
+    with patch.object(executor, "EXPOSURE_OPERATIONS", frozenset()):
+        return _run(image, plan)
 
 
 # ---------------- R-03: feather ----------------
@@ -148,7 +159,7 @@ def test_report_for_skipped_action_has_reason(dark_image):
     assert np.array_equal(result, dark_image)
     assert len(report) == 1
     assert report[0].skipped and report[0].skip_reason == "no_face"
-    assert report[0].requested_mode == "bbox"
+    assert report[0].requested_mode == "oval"  # gamma + bbox → oval (xem executor)
 
 
 def test_mask_fingerprint_is_stable_and_sensitive():
@@ -174,14 +185,21 @@ def test_exposure_on_face_defaults_to_oval_mask_that_is_not_a_rectangle(dark_ima
     assert result[48, 48].mean() > 60 and result[25, 25].mean() == 60
 
 
-def test_explicit_bbox_mode_is_respected_for_exposure(dark_image):
+def test_explicit_bbox_mode_is_routed_to_oval_for_exposure(dark_image):
+    """VLM hay ghi face_mode='bbox' theo mặc định schema: phơi sáng vẫn phải dùng oval."""
     result, report = _run(dark_image, _face_plan(face_mode="bbox"), oval=_oval())
+    assert (report[0].requested_mode, report[0].actual_mode) == ("oval", "oval")
+    assert report[0].strength_scale == 1.0
+    assert result[25, 25].mean() == 60  # góc hộp không bị chỉnh
+
+
+def test_explicit_bbox_mode_is_respected_for_non_exposure(dark_image):
+    _, report = _run(dark_image, _face_plan("sharpen", face_mode="bbox"), oval=_oval())
     assert report[0].actual_mode == "bbox" and report[0].strength_scale == 1.0
-    assert result[30, 30].mean() > 60  # góc hộp cũng được chỉnh
 
 
 def test_oval_failure_falls_back_to_bbox_with_reduced_strength(dark_image, caplog):
-    full_strength, full_report = _run(dark_image, _face_plan(face_mode="bbox"))
+    full_strength, full_report = _run_full_bbox(dark_image, _face_plan(face_mode="bbox"))
     with caplog.at_level("WARNING", logger="src.agent.executor"):
         reduced, report = _run(
             dark_image, _face_plan(), oval_error=FaceLandmarkerUnavailableError("no model")
@@ -196,7 +214,7 @@ def test_oval_failure_falls_back_to_bbox_with_reduced_strength(dark_image, caplo
 
 def test_qa_failure_is_a_fail_and_does_not_apply_full_strength(dark_image):
     leaking = _oval(center=(20, 20), axes=(18, 22))  # lệch ra ngoài hộp mặt
-    full_strength, _ = _run(dark_image, _face_plan(face_mode="bbox"))
+    full_strength, _ = _run_full_bbox(dark_image, _face_plan(face_mode="bbox"))
     result, report = _run(dark_image, _face_plan(), oval=leaking)
     item = report[0]
     assert item.actual_mode == "bbox"
@@ -225,11 +243,8 @@ def test_face_mask_qa_rules():
 def test_sam_roi_is_tried_first_for_exposure_when_models_exist(dark_image):
     sam = np.zeros((_SIZE, _SIZE), dtype=np.float32)
     cv2.ellipse(sam, (48, 48), (17, 21), 0, 0, 360, 1.0, -1)
-    with (
-        patch.object(executor, "subject_capabilities", return_value={"semantic_models": True}),
-        patch.object(executor, "segment_box", return_value=sam) as fake_sam,
-    ):
-        _, report = _run(dark_image, _face_plan(), oval=_oval())
+    with patch.object(executor, "segment_box", return_value=sam) as fake_sam:
+        _, report = _run(dark_image, _face_plan(), oval=_oval(), sam=True)
     fake_sam.assert_called_once()
     assert report[0].actual_mode == "sam_refined" and report[0].backend == "face_sam_roi"
 
@@ -237,11 +252,8 @@ def test_sam_roi_is_tried_first_for_exposure_when_models_exist(dark_image):
 def test_sam_failure_falls_through_to_oval(dark_image):
     from src.region_engine.segmentation_backend import SegmentationUnavailableError
 
-    with (
-        patch.object(executor, "subject_capabilities", return_value={"semantic_models": True}),
-        patch.object(executor, "segment_box", side_effect=SegmentationUnavailableError("x")),
-    ):
-        _, report = _run(dark_image, _face_plan("clahe"), oval=_oval())
+    with patch.object(executor, "segment_box", side_effect=SegmentationUnavailableError("x")):
+        _, report = _run(dark_image, _face_plan("clahe"), oval=_oval(), sam=True)
     assert report[0].actual_mode == "oval"
     assert report[0].strength_scale == 1.0
 

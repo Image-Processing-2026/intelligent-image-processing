@@ -1,9 +1,10 @@
 import { Download, ImageIcon, Info, Loader2, RefreshCw } from "lucide-react";
 
-import type { Adjustment, Artifact } from "@/api/types";
+import type { Adjustment, Artifact, DiagnosisEdit } from "@/api/types";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ADJUSTMENT_LABELS, REFINE_SOURCE_LABELS } from "@/lib/actions";
+import { describeEdit } from "@/lib/edits";
 import { formatNumber, label } from "@/lib/labels";
 
 /** Thông báo hệ thống trong hội thoại (thread hết hạn, lỗi lần chạy), kèm hành động nếu có. */
@@ -71,6 +72,35 @@ export function AnswersBubble({ labels, notes }: { labels: AnswerLabel[]; notes:
       </ul>
       {notes ? <p className="mt-2">Ghi chú: {notes}</p> : null}
     </UserBubble>
+  );
+}
+
+/** Phản hồi của hệ thống cho một tin nhắn bổ sung phân tích: edit đã hiểu hoặc lời hỏi lại. */
+export function AnalysisUpdateNote({
+  edits,
+  unparsed,
+}: {
+  edits: DiagnosisEdit[];
+  unparsed: boolean;
+}) {
+  return (
+    <div className="grid gap-1 rounded-lg border px-4 py-3 text-sm">
+      {unparsed ? (
+        <p>
+          Chưa hiểu, bạn mô tả cụ thể vùng và vấn đề? Tin nhắn vẫn được gửi kèm làm ghi chú khi xử
+          lý.
+        </p>
+      ) : (
+        <>
+          <p className="text-xs text-muted-foreground">Đã cập nhật bản chẩn đoán nháp:</p>
+          <ul className="grid gap-0.5">
+            {edits.map((edit, index) => (
+              <li key={index}>{describeEdit(edit)}</li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
 

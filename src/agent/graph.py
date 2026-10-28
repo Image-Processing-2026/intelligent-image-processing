@@ -49,6 +49,7 @@ from .planner import (
     action_region,
     apply_contraindications,
     apply_preserve_guard,
+    dedupe_nested_regions,
     normalize_defect_ref,
     validate_and_sort_plan,
 )
@@ -169,7 +170,7 @@ def plan_treatment(
         intent_text=intent_prompt(intent),
         experience_text=experience_text,
     )
-    validated_plan = validate_and_sort_plan(plan)
+    validated_plan = dedupe_nested_regions(validate_and_sort_plan(plan))
     if diagnosis is not None:
         validated_plan = apply_preserve_guard(validated_plan, diagnosis.preserve)
         validated_plan = apply_contraindications(validated_plan, plan_contraindications(diagnosis))

@@ -1,5 +1,10 @@
 # AI Image Doctor — web app
 
+Giao diện phiên hiện chia ba phase **Phân tích → Xử lý → Kết quả** (xanh dương / tím / teal).
+Flow log bên cạnh cho xem đầu vào, lý do và đầu ra đã ghi nhận; chọn vòng trong phase Xử lý để
+đối chiếu đúng ảnh và phác đồ. Log dùng dữ liệu đã lưu sau khi request hoàn tất, chưa có tiến độ trực tiếp.
+Chi tiết bàn giao và kiểm tra: [Studio theo phase](../docs/frontend/studio-2026-10-27.md).
+
 Giao diện web (React + Vite + TypeScript + Tailwind + shadcn/ui) để thử và đánh giá pipeline. App gọi API
 mới `/api/v1/auth/*` và `/api/v1/workspace/*` của FastAPI (`src/api/`). Gradio (`frontend/app.py`) vẫn giữ
 nguyên. Thiết kế và các quyết định nằm trong `docs/frontend/` (context, decisions, spec, plan).

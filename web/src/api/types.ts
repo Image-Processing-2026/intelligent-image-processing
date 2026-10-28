@@ -30,6 +30,25 @@ export interface Defect {
   severity: number;
   evidence: string;
   origin: "vlm" | "rule" | "measured" | "user";
+  fixable?: boolean;
+  confidence?: number;
+  contraindications?: string[];
+}
+
+/** Một chỉnh sửa của người dùng lên chẩn đoán (chat bổ sung phân tích). */
+export interface DiagnosisEdit {
+  op: "add_defect" | "remove_defect" | "keep";
+  type: string | null;
+  aspect: string | null;
+  region: string;
+  severity: number;
+  source_text: string;
+}
+
+export interface RegionInfo {
+  name: string;
+  source: string;
+  confidence: number;
 }
 
 export interface PreserveItem {
@@ -58,6 +77,13 @@ export interface DiagnosisReport {
   defects: Defect[];
   preserve: PreserveItem[];
   summary: string;
+  rejected?: Defect[];
+  ask_user?: Defect[];
+  fusion_notes?: string[];
+  measurement?: ({ width: number; height: number; tile_size: number; notes?: string[] } &
+    Partial<Record<"exposure" | "noise" | "sharpness" | "color" | "compression" | "haze", Record<string, MeasurementEstimate>>>) | null;
+  region_stats?: Record<string, { region: string; area_fraction: number; values: Record<string, MeasurementEstimate>; mask_source: string; mask_confidence: number }>;
+  diff?: { defects?: DefectChange[]; side_effects?: ProcessingSideEffect[] } | null;
   region_metrics: Record<string, RegionMetrics>;
   source: PlanSource;
 }
@@ -85,6 +111,8 @@ export type MessageKind =
   | "feedback"
   | "refine_result"
   | "render_result"
+  | "analysis_note"
+  | "analysis_update"
   | "notice";
 
 export interface Message {
@@ -160,6 +188,10 @@ export interface SessionDetail extends SessionSummary {
   ratings: Rating[];
   error: { code: string; message: string } | null;
   artifacts: Artifact[];
+  draft_edits: DiagnosisEdit[];
+  draft_diagnosis: DiagnosisReport | null;
+  region_overlay_url: string | null;
+  regions: RegionInfo[];
 }
 
 export interface Sample {
@@ -238,6 +270,8 @@ export interface Treatment {
 }
 
 export interface HistoryItem {
+  defect_status?: DefectChange[];
+  side_effects?: ProcessingSideEffect[];
   iteration: number;
   plan: {
     iteration: number;
@@ -252,6 +286,27 @@ export interface HistoryItem {
   decision: string;
   diagnosis: DiagnosisReport | null;
   rolled_back: boolean;
+}
+
+export interface MeasurementEstimate { value: number; confidence: number; n_samples?: number }
+
+export interface DefectChange {
+  type: string;
+  region: string;
+  before: number;
+  after: number;
+  status: "resolved" | "improved" | "unchanged" | "worse";
+  confidence: number;
+}
+
+export interface ProcessingSideEffect {
+  kind: string;
+  region: string;
+  severity: number;
+  value: number;
+  before?: number | null;
+  after?: number | null;
+  evidence: string;
 }
 
 export interface Rating {

@@ -72,8 +72,10 @@ describe("result view", () => {
     mockApi([...BASE, { path: SESSION_PATH, body: DONE }]);
     const user = userEvent.setup();
     renderApp(`/s/${SESSION_ID}`);
-    await user.click(await screen.findByRole("button", { name: /Vòng 1/ }));
+    await user.click(await screen.findByRole("button", { name: /02 Xử lý/ }));
+    await user.click(screen.getByText("Chi tiết các vòng & chỉ số"));
     const timeline = screen.getByRole("region", { name: "Các vòng xử lý" });
+    await user.click(within(timeline).getByRole("button", { name: /Vòng 1/ }));
     expect(within(timeline).getByText("Chỉnh gamma @ Toàn ảnh (gamma=1.4)")).toBeInTheDocument();
     expect(within(timeline).getByText("Lý do: Ảnh tối, tăng gamma.")).toBeInTheDocument();
     expect(within(timeline).getByText("underexposed_global")).toBeInTheDocument();

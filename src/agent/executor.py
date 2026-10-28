@@ -306,8 +306,12 @@ def _resolve_face_region(image: np.ndarray, action: RegionOperation) -> _Resolut
     """
     operation = action.operation.lower().strip()
     requested = action.face_mode
-    # Thao tác phơi sáng mà kế hoạch không chỉ định face_mode → mặc định oval
-    if operation in EXPOSURE_OPERATIONS and "face_mode" not in action.model_fields_set:
+    # Thao tác phơi sáng: không chỉ định face_mode hoặc VLM ghi 'bbox' (giá trị mặc định trong
+    # schema/prompt, không phải lựa chọn có chủ ý) → oval/SAM; hộp chữ nhật lộ viền khi nâng sáng.
+    # bbox chỉ còn là đường lùi ở cường độ giảm FALLBACK_STRENGTH_SCALE.
+    if operation in EXPOSURE_OPERATIONS and (
+        "face_mode" not in action.model_fields_set or requested == "bbox"
+    ):
         requested = "oval"
 
     detection_image = _as_rgb_for_detection(image)

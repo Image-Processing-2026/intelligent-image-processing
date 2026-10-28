@@ -1,12 +1,14 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, FileJson } from "lucide-react";
-import { useState } from "react";
+import { AlertCircle, FileJson, ScanSearch } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { ApiError, errorMessage } from "@/api/client";
 import type {
   Adjustment,
+  Defect,
+  DiagnosisEdit,
   DiagnosisReport,
   Message,
   Question,
@@ -16,9 +18,11 @@ import type {
 } from "@/api/types";
 import {
   SESSIONS_KEY,
+  addAnalysisNote,
   answerQuestions,
   clarifyAgain,
   activateTreatment,
+  deleteAnalysisEdit,
   exportUrl,
   refineTreatment,
   renderVariant,
@@ -27,6 +31,7 @@ import {
 } from "@/api/workspace";
 import { WaitingNotice } from "@/components/WaitingNotice";
 import {
+  AnalysisUpdateNote,
   AnswersBubble,
   NoticeCard,
   RefineResultNote,
@@ -37,6 +42,7 @@ import { RatingBox } from "@/components/result/RatingBox";
 import { RefineBox } from "@/components/result/RefineBox";
 import { TreatmentHistory } from "@/components/result/TreatmentHistory";
 import { treatmentLabel } from "@/lib/actions";
+import { AnalysisChat } from "@/components/session/AnalysisChat";
 import { DeleteSessionButton } from "@/components/session/DeleteSessionButton";
 import { DiagnosisCard } from "@/components/session/DiagnosisCard";
 import { EditableTitle } from "@/components/session/EditableTitle";
@@ -47,6 +53,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTime } from "@/lib/labels";
+import { latestDiagnosis } from "@/components/studio/flow-data";
+import { PhaseNav, type StudioPhase } from "@/components/studio/PhaseNav";
+import { FlowLog } from "@/components/studio/FlowLog";
+import { ProcessingPanel } from "@/components/studio/ProcessingPanel";
 
 // Loại message đã có giao diện ở lát hiện tại (feedback/refine/render thêm ở S4–S5)
 const RENDERED_KINDS = new Set<Message["kind"]>([
@@ -56,11 +66,13 @@ const RENDERED_KINDS = new Set<Message["kind"]>([
   "answers",
   "result",
   "render_result",
+  "analysis_note",
+  "analysis_update",
   "feedback",
   "refine_result",
 ]);
 
-const EMPTY_DRAFT: AnswerDraft = { answers: {}, notes: "" };
+const EMPTY_DRAFT: AnswerDraft = { answers: {} };
 
 function lastIndexOf(messages: Message[], kind: Message["kind"]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -69,10 +81,25 @@ function lastIndexOf(messages: Message[], kind: Message["kind"]): number {
   return -1;
 }
 
+/** Lỗi trong chẩn đoán gốc mà bản nháp không còn (người dùng đã bỏ). */
+function removedDefects(original: DiagnosisReport | null, draft: DiagnosisReport | null): Defect[] {
+  if (!original || !draft) return [];
+  const kept = new Set(draft.defects.map((defect) => `${defect.type}@${defect.region}`));
+  return original.defects.filter((defect) => !kept.has(`${defect.type}@${defect.region}`));
+}
+
 function SessionView({ detail }: { detail: SessionDetail }) {
   const queryClient = useQueryClient();
   // Bản nháp câu trả lời giữ ở cấp trang: hỏi ý lại vẫn giữ lựa chọn nếu id câu hỏi trùng
   const [draft, setDraft] = useState<AnswerDraft>(EMPTY_DRAFT);
+  const [phase, setPhase] = useState<StudioPhase>(detail.process ? "result" : detail.status === "running" ? "processing" : "analysis");
+  const [roundIndex, setRoundIndex] = useState(0);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+
+  // Chuyển phase về đầu vùng làm việc; giữ header ở ngoài vùng cuộn.
+  useEffect(() => {
+    workspaceRef.current?.closest("main")?.scrollTo?.({ top: 0 });
+  }, [phase]);
 
   const applyDetail = (next: SessionDetail) => {
     queryClient.setQueryData(sessionKey(next.id), next);
@@ -91,14 +118,29 @@ function SessionView({ detail }: { detail: SessionDetail }) {
   const answer = useMutation({
     mutationFn: (questions: Question[]) => {
       const answers = Object.fromEntries(questions.map((q) => [q.id, selectedValue(q, draft)]));
-      return answerQuestions(detail.id, answers, draft.notes.trim());
+      // Ghi chú nay đi qua khung chat bổ sung phân tích (backend nối tin nhắn chưa hiểu vào notes)
+      return answerQuestions(detail.id, answers, "");
     },
+    onSuccess: (next) => { applyDetail(next); setPhase(next.process ? "result" : "analysis"); },
+    onError: (error) => { onFlowError(error); setPhase("analysis"); },
+  });
+  // Lỗi hiển thị ngay trong khung chat; ở đây chỉ tải lại phiên khi trạng thái đã đổi (409)
+  const refreshOnConflict = (error: Error) => {
+    if (error instanceof ApiError && error.status !== 401) refresh();
+  };
+  const addNote = useMutation({
+    mutationFn: (message: string) => addAnalysisNote(detail.id, message),
+    onSuccess: applyDetail,
+    onError: refreshOnConflict,
+  });
+  const removeEdit = useMutation({
+    mutationFn: (index: number) => deleteAnalysisEdit(detail.id, index),
     onSuccess: applyDetail,
     onError: onFlowError,
   });
   const clarify = useMutation({
     mutationFn: () => clarifyAgain(detail.id),
-    onSuccess: applyDetail,
+    onSuccess: (next) => { applyDetail(next); setPhase("analysis"); },
     onError: onFlowError,
   });
 
@@ -128,6 +170,8 @@ function SessionView({ detail }: { detail: SessionDetail }) {
 
   const busy =
     answer.isPending ||
+    addNote.isPending ||
+    removeEdit.isPending ||
     clarify.isPending ||
     render.isPending ||
     refineMutation.isPending ||
@@ -135,6 +179,15 @@ function SessionView({ detail }: { detail: SessionDetail }) {
   const runningElsewhere = detail.status === "running" && !busy;
   const messages = detail.messages.filter((message) => RENDERED_KINDS.has(message.kind));
   const currentQuestions = lastIndexOf(messages, "questions");
+  const editing = detail.status === "awaiting_answers" && currentQuestions >= 0;
+  const currentQuestionList =
+    currentQuestions >= 0 ? ((messages[currentQuestions].content.questions as Question[]) ?? []) : [];
+  const submitAnswers = () => {
+    setPhase("processing");
+    answer.mutate(currentQuestionList);
+  };
+  const currentDiagnosis = lastIndexOf(messages, "diagnosis");
+  const currentAnswers = lastIndexOf(messages, "answers");
   const lastNotice = lastIndexOf(messages, "notice");
   const canClarify =
     !detail.process && (detail.status === "awaiting_answers" || detail.status === "failed");
@@ -147,14 +200,38 @@ function SessionView({ detail }: { detail: SessionDetail }) {
   const renderMessage = (message: Message, index: number) => {
     const content = message.content;
     switch (message.kind) {
-      case "diagnosis":
+      case "diagnosis": {
+        const stored = (content.diagnosis as DiagnosisReport | null) ?? null;
+        // Chỉ chẩn đoán hiện hành đang chờ trả lời mới có bản nháp, overlay vùng và nút xem vùng
+        const live = editing && index === currentDiagnosis;
         return (
           <DiagnosisCard
-            diagnosis={(content.diagnosis as DiagnosisReport | null) ?? null}
+            diagnosis={latestDiagnosis(detail) ?? stored}
             original={detail.original}
+            overlayUrl={live ? detail.region_overlay_url : null}
+            overlayRevision={detail.updated_at}
+            regions={live ? detail.regions : []}
+            removed={live ? removedDefects(stored, detail.draft_diagnosis) : []}
+            inspectable={live}
+          />
+        );
+      }
+      case "analysis_note":
+        return (
+          <UserBubble title="Bổ sung của bạn">
+            <p>{String(content.text ?? "")}</p>
+          </UserBubble>
+        );
+      case "analysis_update":
+        return (
+          <AnalysisUpdateNote
+            edits={(content.edits as DiagnosisEdit[]) ?? []}
+            unparsed={Boolean(content.unparsed)}
           />
         );
       case "questions": {
+        // Bộ câu hỏi đang chờ trả lời đặt cuối màn phân tích, sau khung chat bổ sung
+        if (index === currentQuestions && detail.status === "awaiting_answers") return null;
         const questions = (content.questions as Question[]) ?? [];
         const next = messages[index + 1];
         const answeredWith =
@@ -165,7 +242,7 @@ function SessionView({ detail }: { detail: SessionDetail }) {
             active={index === currentQuestions && detail.status === "awaiting_answers"}
             draft={draft}
             onDraftChange={setDraft}
-            onSubmit={() => answer.mutate(questions)}
+            onSubmit={submitAnswers}
             pending={busy}
             answeredWith={answeredWith}
           />
@@ -264,16 +341,17 @@ function SessionView({ detail }: { detail: SessionDetail }) {
   };
 
   return (
-    <div className="mx-auto grid max-w-4xl gap-4 p-4 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div ref={workspaceRef} className="studio-session" data-phase={phase}>
+      <header>
         <div className="grid min-w-0 flex-1 gap-1">
+          <p className="studio-eyebrow">WORKSPACE / PHIÊN XỬ LÝ</p>
           <EditableTitle key={detail.title} sessionId={detail.id} title={detail.title} />
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <div className="studio-session-meta">
             <StatusBadge status={busy ? "running" : detail.status} />
             <span>Tạo lúc {formatDateTime(detail.created_at)}</span>
             <span>
-              · {detail.options.max_iterations} vòng tối đa · {detail.options.num_variants} phiên
-              bản
+              · {detail.options.max_iterations} vòng tối đa
+              {detail.options.num_variants > 1 ? ` · ${detail.options.num_variants} phiên bản` : ""}
               {detail.options.has_ground_truth ? " · có ảnh chuẩn" : ""}
             </span>
           </div>
@@ -290,23 +368,60 @@ function SessionView({ detail }: { detail: SessionDetail }) {
             disabled={busy || detail.status === "running"}
           />
         </div>
-      </div>
+      </header>
+
+      <PhaseNav value={phase} onChange={setPhase} canProcess={Boolean(detail.process) || busy || detail.status === "running"} hasResult={Boolean(detail.process)} />
 
       {detail.error && !busy ? (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="mb-4">
           <AlertCircle aria-hidden />
           <AlertDescription>{detail.error.message}</AlertDescription>
         </Alert>
       ) : null}
 
-      <ol className="grid gap-4" aria-label="Hội thoại">
+      <div className="studio-workspace">
+      <div className={`studio-content studio-${phase}`}>
+      {phase === "analysis" ? <div className="studio-analysis-summary"><ScanSearch aria-hidden /><span>Kiểm tra chẩn đoán và xác nhận ý định trước khi chạy xử lý.</span></div> : null}
+      {phase === "processing" ? <>
+        {busy ? <WaitingNotice /> : null}
+        <ProcessingPanel detail={detail} roundIndex={roundIndex} />
+        {!detail.process && !busy && !runningElsewhere ? <div className="studio-empty">Chưa có kết quả xử lý. Trở lại Phân tích để xác nhận ý định.</div> : null}
+      </> : null}
+      {phase !== "processing" ? <ol className="grid min-w-0 grid-cols-1 gap-4" aria-label={phase === "analysis" ? "Phân tích và ý định" : "Kết quả và tinh chỉnh"}>
         {messages.map((message, index) => {
+          const visible = phase === "analysis"
+            ? (message.kind === "diagnosis" && index === currentDiagnosis) || (message.kind === "questions" && index === currentQuestions) || (message.kind === "answers" && index === currentAnswers) || (message.kind === "notice" && index === lastNotice) || ((message.kind === "analysis_note" || message.kind === "analysis_update") && index > currentDiagnosis)
+            : ["result", "feedback", "refine_result", "render_result"].includes(message.kind) || (message.kind === "notice" && index === lastNotice);
+          if (!visible) return null;
           const view = renderMessage(message, index);
-          return view ? <li key={message.id}>{view}</li> : null;
+          return view ? (
+            <li key={message.id} data-message-id={message.id} className="min-w-0">
+              {view}
+            </li>
+          ) : null;
         })}
-      </ol>
+      </ol> : null}
 
-      {busy ? <WaitingNotice /> : null}
+      {phase === "analysis" && editing ? (
+        <>
+          <AnalysisChat
+            edits={detail.draft_edits ?? []}
+            onSend={(message) => addNote.mutateAsync(message)}
+            onDeleteEdit={(index) => removeEdit.mutate(index)}
+            disabled={busy}
+          />
+          <QuestionsCard
+            questions={currentQuestionList}
+            active
+            draft={draft}
+            onDraftChange={setDraft}
+            onSubmit={submitAnswers}
+            pending={busy}
+          />
+        </>
+      ) : null}
+
+      {busy && phase !== "processing" ? <WaitingNotice /> : null}
       {runningElsewhere ? (
         // Không poll (D3): người dùng tự tải lại khi muốn xem kết quả
         <NoticeCard
@@ -315,6 +430,9 @@ function SessionView({ detail }: { detail: SessionDetail }) {
           onAction={refresh}
         />
       ) : null}
+      </div>
+      <FlowLog key={phase} detail={detail} phase={phase} roundIndex={roundIndex} onRoundChange={setRoundIndex} busy={busy || runningElsewhere} />
+      </div>
     </div>
   );
 }

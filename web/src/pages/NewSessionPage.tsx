@@ -19,9 +19,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
+import { PhaseNav } from "@/components/studio/PhaseNav";
 
 const ITERATION_CHOICES = [1, 2, 3, 4, 5];
-const VARIANT_CHOICES = [1, 2, 3];
 
 function NumberChoice({
   id,
@@ -71,7 +71,6 @@ export default function NewSessionPage() {
   const [sample, setSample] = useState<string | null>(null);
   const [groundTruth, setGroundTruth] = useState<File | null>(null);
   const [iterations, setIterations] = useState(me.data?.settings.max_iterations ?? 3);
-  const [variants, setVariants] = useState(me.data?.settings.num_variants ?? 3);
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -80,7 +79,6 @@ export default function NewSessionPage() {
         sample: file ? null : sample,
         groundTruth,
         maxIterations: iterations,
-        numVariants: variants,
       }),
     onSuccess: (detail: SessionDetail) => {
       queryClient.setQueryData(sessionKey(detail.id), detail);
@@ -94,7 +92,9 @@ export default function NewSessionPage() {
   const sampleLabel = samples.data?.find((item) => item.id === sample)?.label;
 
   return (
-    <div className="mx-auto grid max-w-3xl gap-6 p-4 sm:p-6">
+    <div className="studio-session" data-phase="analysis">
+      <PhaseNav value="analysis" onChange={() => undefined} canProcess={false} hasResult={false} />
+      <div className="mx-auto grid max-w-3xl gap-6">
       <div>
         <h1 className="text-xl font-semibold">Phiên mới</h1>
         <p className="text-sm text-muted-foreground">
@@ -170,14 +170,6 @@ export default function NewSessionPage() {
                   choices={ITERATION_CHOICES}
                   onChange={setIterations}
                 />
-                <NumberChoice
-                  id="variants-label"
-                  label="Số phiên bản"
-                  hint="Số phong cách kết quả để bạn chọn (cân bằng / tự nhiên / đậm nét)."
-                  value={variants}
-                  choices={VARIANT_CHOICES}
-                  onChange={setVariants}
-                />
                 <div className="grid gap-2">
                   <span className="text-sm font-medium">
                     Chế độ nâng cao: ảnh chuẩn (ground truth) để đo PSNR/SSIM
@@ -214,6 +206,7 @@ export default function NewSessionPage() {
           </Button>
         </div>
       </form>
+      </div>
     </div>
   );
 }

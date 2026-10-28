@@ -259,7 +259,10 @@ def sanitize_actions(actions: List[RegionOperation]) -> List[RegionOperation]:
             for name in (*REGION_FIELD_BOUNDS, "instance_index", *IN_PROCESS_REGION_FIELDS)
         }
         for name, value in clamp_region_fields(region_fields).items():
-            setattr(action, name, value)
+            # Chỉ ghi khi giá trị đổi: setattr thêm trường vào model_fields_set, làm executor
+            # tưởng face_mode do kế hoạch chỉ định và bỏ mặc định oval cho thao tác phơi sáng
+            if getattr(action, name) != value:
+                setattr(action, name, value)
         if action.defect_ref is not None:
             action.defect_ref = normalize_defect_ref(action.defect_ref)
         valid_actions.append(action)
@@ -426,4 +429,32 @@ def apply_contraindications(plan: TreatmentPlan, contraindications: Sequence[str
     if notes:
         names = ", ".join(sorted(set(contraindications)))
         plan.reasoning = f"{plan.reasoning}\n[Chống chỉ định: {names}] " + "; ".join(notes) + "."
+    return plan
+
+
+def dedupe_nested_regions(plan: TreatmentPlan) -> TreatmentPlan:
+    """
+    Khử chồng vùng lồng nhau: mask chủ thể người đã bao khuôn mặt, nên action 'face' cùng
+    thao tác với action trên người bị bỏ (mặt không bị chỉnh hai lần, không sáng hơn thân).
+    Action 'face' đứng riêng (không có action người cùng thao tác) được giữ nguyên.
+    """
+    person_operations = {
+        action.operation for action in plan.actions if is_person_region(action_region(action))
+    }
+    if not person_operations:
+        return plan
+    kept: List[RegionOperation] = []
+    notes: List[str] = []
+    for action in plan.actions:
+        if action_region(action) == "face" and action.operation in person_operations:
+            logger.warning(
+                "Dropped '%s' on 'face': already covered by the same operation on the person.",
+                action.operation,
+            )
+            notes.append(f"bỏ {action.operation} trên 'face' (vùng người đã bao khuôn mặt)")
+            continue
+        kept.append(action)
+    plan.actions = kept
+    if notes:
+        plan.reasoning = f"{plan.reasoning}\n[Chồng vùng] " + "; ".join(notes) + "."
     return plan

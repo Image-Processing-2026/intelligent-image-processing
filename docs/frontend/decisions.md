@@ -1,5 +1,15 @@
 # Frontend decision log — Web app "AI Image Doctor"
 
+## Studio theo phase — accepted 2026-10-27
+
+Chủ dự án đã chọn bản minh họa **Studio theo phase** và yêu cầu triển khai ("ok proceed design").
+Thay bố cục hội thoại dài bằng ba phase Phân tích (xanh dương), Xử lý (tím), Kết quả (teal).
+Sidebar thu gọn; vùng ảnh/thao tác và Flow log nằm cạnh nhau khi đủ rộng, xếp dọc trên mobile.
+Log mở từng bước theo Input → Căn cứ & quyết định → Output, nhóm theo vòng khi xử lý.
+Chỉ dùng các bản ghi thật trong API; giải thích, ảnh hoặc số đo chưa được lưu phải ghi rõ thiếu dữ liệu.
+Không thêm tiến độ trực tiếp, polling hay SSE trong lượt thiết kế này; D3 vẫn áp dụng.
+Hướng thiết kế: visually accepted; bản triển khai cần kiểm tra tích hợp trước khi bàn giao.
+
 Nhãn: `confirmed` (chủ dự án / tài liệu), `evidence-backed`, `assumed`, `proposed`, `unresolved`.
 
 ## Đã chốt bởi chủ dự án (prompt nhiệm vụ 2026-10-22) — confirmed

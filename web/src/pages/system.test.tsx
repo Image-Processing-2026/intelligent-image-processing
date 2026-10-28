@@ -90,13 +90,13 @@ describe("memory page", () => {
 });
 
 describe("settings page", () => {
-  it("saves default iterations and variants on the server", async () => {
+  it("saves the default iterations on the server", async () => {
     const fetchMock = mockApi([
       ...BASE,
       {
         method: "PATCH",
         path: "/auth/me/settings",
-        body: { ...ALICE, settings: { max_iterations: 2, num_variants: 1 } },
+        body: { ...ALICE, settings: { max_iterations: 2, num_variants: 3 } },
       },
     ]);
     const user = userEvent.setup();
@@ -105,12 +105,10 @@ describe("settings page", () => {
     expect(save).toBeDisabled();
     const iterations = screen.getByRole("radiogroup", { name: "Số vòng tối đa" });
     await user.click(within(iterations).getByRole("radio", { name: "2" }));
-    const variants = screen.getByRole("radiogroup", { name: "Số phiên bản" });
-    await user.click(within(variants).getByRole("radio", { name: "1" }));
     await user.click(save);
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH");
-      expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ max_iterations: 2, num_variants: 1 });
+      expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ max_iterations: 2 });
     });
   });
 

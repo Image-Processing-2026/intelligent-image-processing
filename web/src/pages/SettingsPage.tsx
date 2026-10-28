@@ -13,7 +13,6 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { type ThemeChoice, useTheme } from "@/lib/theme";
 
 const ITERATIONS = [1, 2, 3, 4, 5];
-const VARIANTS = [1, 2, 3];
 const THEMES: { value: ThemeChoice; label: string }[] = [
   { value: "light", label: "Sáng" },
   { value: "dark", label: "Tối" },
@@ -63,11 +62,10 @@ export default function SettingsPage() {
   const { choice, setChoice } = useTheme();
   const saved = me.data?.settings ?? { max_iterations: 3, num_variants: 3 };
   const [iterations, setIterations] = useState(saved.max_iterations);
-  const [variants, setVariants] = useState(saved.num_variants);
-  const dirty = iterations !== saved.max_iterations || variants !== saved.num_variants;
+  const dirty = iterations !== saved.max_iterations;
 
   const mutation = useMutation({
-    mutationFn: () => updateSettings({ max_iterations: iterations, num_variants: variants }),
+    mutationFn: () => updateSettings({ max_iterations: iterations }),
     onSuccess: (user) => {
       queryClient.setQueryData(ME_QUERY_KEY, user);
       toast.success("Đã lưu cài đặt mặc định.");
@@ -99,13 +97,6 @@ export default function SettingsPage() {
               value={String(iterations)}
               options={ITERATIONS.map((n) => ({ value: String(n), label: String(n) }))}
               onChange={(value) => setIterations(Number(value))}
-            />
-            <Choice
-              id="default-variants"
-              label="Số phiên bản"
-              value={String(variants)}
-              options={VARIANTS.map((n) => ({ value: String(n), label: String(n) }))}
-              onChange={(value) => setVariants(Number(value))}
             />
             <div>
               <Button type="submit" size="sm" disabled={!dirty || mutation.isPending}>

@@ -43,7 +43,6 @@ export interface NewSessionInput {
   sample?: string | null;
   groundTruth?: File | null;
   maxIterations: number;
-  numVariants: number;
 }
 
 export function createSession(input: NewSessionInput): Promise<SessionDetail> {
@@ -52,7 +51,6 @@ export function createSession(input: NewSessionInput): Promise<SessionDetail> {
   if (input.sample) form.append("sample", input.sample);
   if (input.groundTruth) form.append("ground_truth", input.groundTruth);
   form.append("max_iterations", String(input.maxIterations));
-  form.append("num_variants", String(input.numVariants));
   return apiFetch<SessionDetail>("/workspace/sessions", { method: "POST", body: form });
 }
 
@@ -72,6 +70,19 @@ export function answerQuestions(
   return apiFetch<SessionDetail>(`${sessionPath(id)}/answers`, {
     method: "POST",
     json: { answers, notes },
+  });
+}
+
+export function addAnalysisNote(id: string, message: string): Promise<SessionDetail> {
+  return apiFetch<SessionDetail>(`${sessionPath(id)}/analysis-notes`, {
+    method: "POST",
+    json: { message },
+  });
+}
+
+export function deleteAnalysisEdit(id: string, index: number): Promise<SessionDetail> {
+  return apiFetch<SessionDetail>(`${sessionPath(id)}/analysis-edits/${index}`, {
+    method: "DELETE",
   });
 }
 

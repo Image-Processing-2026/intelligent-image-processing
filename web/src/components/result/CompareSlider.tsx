@@ -21,10 +21,12 @@ type Side = "before" | "after";
 function ZoomDialog({
   before,
   after,
+  beforeLabel,
   afterLabel,
 }: {
   before: Artifact;
   after: Artifact;
+  beforeLabel: string;
   afterLabel: string;
 }) {
   const [zoom, setZoom] = useState<ZoomLevel>("fit");
@@ -52,9 +54,12 @@ function ZoomDialog({
             value={side}
             onValueChange={(value) => value && setSide(value as Side)}
             aria-label="Ảnh hiển thị"
+            className="grid w-full grid-cols-2 sm:flex sm:w-fit"
           >
-            <ToggleGroupItem value="before">Ảnh gốc</ToggleGroupItem>
-            <ToggleGroupItem value="after">{afterLabel}</ToggleGroupItem>
+            <ToggleGroupItem value="before" className="h-auto min-h-8 whitespace-normal">{beforeLabel}</ToggleGroupItem>
+            <ToggleGroupItem value="after" className="h-auto min-h-8 whitespace-normal [overflow-wrap:anywhere]">
+              {afterLabel}
+            </ToggleGroupItem>
           </ToggleGroup>
           <ToggleGroup
             type="single"
@@ -63,6 +68,7 @@ function ZoomDialog({
             value={zoom}
             onValueChange={(value) => value && setZoom(value as ZoomLevel)}
             aria-label="Mức phóng"
+            className="max-w-full flex-wrap"
           >
             <ToggleGroupItem value="fit">Vừa khung</ToggleGroupItem>
             <ToggleGroupItem value="100">100%</ToggleGroupItem>
@@ -77,13 +83,13 @@ function ZoomDialog({
           {zoom === "fit" ? (
             <img
               src={image.url}
-              alt={side === "before" ? "Ảnh gốc" : afterLabel}
+              alt={side === "before" ? beforeLabel : afterLabel}
               className="mx-auto max-h-[70svh] w-full object-contain"
             />
           ) : (
             <img
               src={image.url}
-              alt={side === "before" ? "Ảnh gốc" : afterLabel}
+              alt={side === "before" ? beforeLabel : afterLabel}
               width={image.width * scale}
               height={image.height * scale}
               style={{ width: image.width * scale, height: image.height * scale, maxWidth: "none" }}
@@ -103,10 +109,12 @@ function ZoomDialog({
 export function CompareSlider({
   before,
   after,
+  beforeLabel = "Ảnh gốc",
   afterLabel,
 }: {
   before: Artifact;
   after: Artifact;
+  beforeLabel?: string;
   afterLabel: string;
 }) {
   const [position, setPosition] = useState(50);
@@ -120,7 +128,7 @@ export function CompareSlider({
       >
         <img
           src={before.url}
-          alt="Ảnh gốc"
+          alt={beforeLabel}
           className="absolute inset-0 h-full w-full object-contain"
         />
         <img
@@ -134,10 +142,10 @@ export function CompareSlider({
           className="pointer-events-none absolute inset-y-0 w-0.5 bg-primary shadow"
           style={{ left: `${position}%` }}
         />
-        <span className="pointer-events-none absolute top-2 left-2 rounded bg-background/85 px-1.5 py-0.5 text-xs">
-          Gốc
+        <span className="pointer-events-none absolute top-2 left-2 max-w-[45%] rounded bg-background/85 px-1.5 py-0.5 text-xs break-words">
+          {beforeLabel === "Ảnh gốc" ? "Gốc" : beforeLabel}
         </span>
-        <span className="pointer-events-none absolute top-2 right-2 rounded bg-background/85 px-1.5 py-0.5 text-xs">
+        <span className="pointer-events-none absolute top-2 right-2 max-w-[45%] rounded bg-background/85 px-1.5 py-0.5 text-xs break-words">
           {afterLabel}
         </span>
       </div>
@@ -153,10 +161,10 @@ export function CompareSlider({
           step={1}
           value={position}
           onChange={(event) => setPosition(Number(event.target.value))}
-          aria-valuetext={`${position}% bên trái là ảnh gốc`}
+          aria-valuetext={`${position}% bên trái là ${beforeLabel.toLowerCase()}`}
           className={cn("h-2 min-w-32 flex-1 cursor-pointer accent-[var(--primary)]")}
         />
-        <ZoomDialog before={before} after={after} afterLabel={afterLabel} />
+        <ZoomDialog before={before} after={after} beforeLabel={beforeLabel} afterLabel={afterLabel} />
       </div>
       {!sameSize ? (
         <p className="text-xs text-muted-foreground">

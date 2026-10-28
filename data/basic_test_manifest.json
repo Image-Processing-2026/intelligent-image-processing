@@ -1,0 +1,1507 @@
+{
+  "schema_version": 1,
+  "dataset_id": "basic_real_v1",
+  "created_on": "2026-10-27",
+  "description": "30 downloaded real photographs, visually selected for manual basic-restoration tests; no generated degradations.",
+  "dataset_root": "data/real/basic_v1",
+  "usage": "development_manual_test_not_holdout",
+  "annotation_status": "Agent labels only, awaiting human review. Prospective symptoms and intents, not verified restoration outcomes.",
+  "excluded_existing_manifests": [
+    "data/real_benchmark_manifest.json",
+    "data/holdout_manifest.json"
+  ],
+  "images": [
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Underexposed_cat.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/5/54/Underexposed_cat.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        1280,
+        854
+      ],
+      "original_bytes": 115283,
+      "author": "Michael Holloway",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "id": "basic_underexposed_01",
+      "category": "underexposed",
+      "tier": "basic",
+      "commons_title": "File:Underexposed cat.jpg",
+      "file": "underexposed/basic_underexposed_01.png",
+      "preview_file": "previews/basic_underexposed_01.jpg",
+      "candidate_id": "underexposure_04",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Nâng sáng vừa phải, giữ vân lông mèo và màu gỗ.",
+      "note": "Mèo tối nhưng vẫn còn chi tiết; tránh làm lông bệt.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "animal",
+        "defects": [
+          {
+            "type": "underexposed",
+            "region": "full",
+            "severity": 2,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "fur_texture"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_underexposed_01.jpg",
+      "download_url": "https://upload.wikimedia.org/wikipedia/commons/5/54/Underexposed_cat.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "source_variant": "original",
+      "download_size": [
+        1280,
+        854
+      ],
+      "download_bytes": 115283,
+      "source_sha256": "013b509547befce3fa137ff39d6f4a0ece57f69c82be6300a7e79c8ae9437845"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Chile_2015-11-15_(24099737255).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/c/c0/Chile_2015-11-15_%2824099737255%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3152,
+        2512
+      ],
+      "original_bytes": 1671203,
+      "author": "Guillaume Baviere from Uppsala, Sweden",
+      "license": "CC BY-SA 2.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/2.0",
+      "id": "basic_underexposed_02",
+      "category": "underexposed",
+      "tier": "basic",
+      "commons_title": "File:Chile 2015-11-15 (24099737255).jpg",
+      "file": "underexposed/basic_underexposed_02.png",
+      "preview_file": "previews/basic_underexposed_02.jpg",
+      "candidate_id": "underexposed_06",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Nâng sáng nhẹ con vật và cảnh, giữ màu tự nhiên.",
+      "note": "Guanaco ngoài trời; mức tối nhẹ, không ép sáng như ảnh studio.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "animal",
+        "defects": [
+          {
+            "type": "underexposed",
+            "region": "full",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "fur_texture",
+          "natural_colors"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_underexposed_02.jpg",
+      "download_url": "https://upload.wikimedia.org/wikipedia/commons/c/c0/Chile_2015-11-15_%2824099737255%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "source_variant": "original",
+      "download_size": [
+        3152,
+        2512
+      ],
+      "download_bytes": 1671203,
+      "source_sha256": "fdb81b9c5a087786589c40beb651ec7cbf298305c001091681ddf32dbf4cffdc"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Chile_2015-11-15_(23930333339).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/b/b4/Chile_2015-11-15_%2823930333339%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4136,
+        2884
+      ],
+      "original_bytes": 1132363,
+      "author": "Guillaume Baviere from Uppsala, Sweden",
+      "license": "CC BY-SA 2.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/2.0",
+      "id": "basic_underexposed_03",
+      "category": "underexposed",
+      "tier": "basic",
+      "commons_title": "File:Chile 2015-11-15 (23930333339).jpg",
+      "file": "underexposed/basic_underexposed_03.png",
+      "preview_file": "previews/basic_underexposed_03.jpg",
+      "candidate_id": "underexposed_07",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Nâng sáng nhẹ, giữ sắc xanh và texture băng.",
+      "note": "Tảng băng sáng hơn mặt nước; không làm mất khối sáng tối.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "landscape",
+        "defects": [
+          {
+            "type": "underexposed",
+            "region": "full",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "ice_texture"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_underexposed_03.jpg",
+      "download_url": "https://upload.wikimedia.org/wikipedia/commons/b/b4/Chile_2015-11-15_%2823930333339%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "source_variant": "original",
+      "download_size": [
+        4136,
+        2884
+      ],
+      "download_bytes": 1132363,
+      "source_sha256": "ac75044ab2951e9fda4e6118dbea3d3e253befd0ae9c8d2e972b25a4b7a16612"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Turkey.duck.goose-EGGS.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/7/7e/Turkey.duck.goose-EGGS.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2048,
+        1536
+      ],
+      "original_bytes": 1173629,
+      "author": "Julo",
+      "license": "Public domain",
+      "license_url": "",
+      "id": "basic_underexposed_04",
+      "category": "underexposed",
+      "tier": "basic",
+      "commons_title": "File:Turkey.duck.goose-EGGS.jpg",
+      "file": "underexposed/basic_underexposed_04.png",
+      "preview_file": "previews/basic_underexposed_04.jpg",
+      "candidate_id": "under_more_01",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Làm ảnh sáng hơn một chút, giữ chi tiết vỏ trứng và thước.",
+      "note": "Đồ vật đơn giản; có nền giấy và vật thể sáng để quan sát clipping.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "still_life",
+        "defects": [
+          {
+            "type": "underexposed",
+            "region": "full",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "shell_texture",
+          "text"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_underexposed_04.jpg",
+      "download_url": "https://upload.wikimedia.org/wikipedia/commons/7/7e/Turkey.duck.goose-EGGS.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "source_variant": "original",
+      "download_size": [
+        2048,
+        1536
+      ],
+      "download_bytes": 1173629,
+      "source_sha256": "bd25e61ec5276b8fa2d90ddc4ec8e802ec52551946910fdde3b15d7133f6d166"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:%E6%B7%A1%E6%B0%B4%E7%A6%8F%E4%BD%91%E5%AE%AE-DSCN6388.JPG",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/c/c4/%E6%B7%A1%E6%B0%B4%E7%A6%8F%E4%BD%91%E5%AE%AE-DSCN6388.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        640,
+        480
+      ],
+      "original_bytes": 165687,
+      "author": "Wikia1974",
+      "license": "CC BY-SA 3.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
+      "id": "basic_overexposed_01",
+      "category": "overexposed",
+      "tier": "basic",
+      "commons_title": "File:淡水福佑宮-DSCN6388.JPG",
+      "file": "overexposed/basic_overexposed_01.png",
+      "preview_file": "previews/basic_overexposed_01.jpg",
+      "candidate_id": "over_more_04",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giảm chói nhẹ, giữ chi tiết mái đền; không cố khôi phục trời trắng.",
+      "note": "Chủ thể còn chi tiết; vùng trời có thể clipping, không chấm phục hồi trời.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "architecture",
+        "defects": [
+          {
+            "type": "overexposed",
+            "region": "full",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "roof_detail"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_overexposed_01.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c4/%E6%B7%A1%E6%B0%B4%E7%A6%8F%E4%BD%91%E5%AE%AE-DSCN6388.JPG/500px-%E6%B7%A1%E6%B0%B4%E7%A6%8F%E4%BD%91%E5%AE%AE-DSCN6388.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        500,
+        375
+      ],
+      "download_bytes": null,
+      "source_sha256": "e2e705d4e6442c613829e316850678bbfc0ec01c9ed1ac7ca0b009506842ea51"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:1956_Bedford_A_Type_Water_Tender_Fire_Engine_(51353102728).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/c/c3/1956_Bedford_A_Type_Water_Tender_Fire_Engine_%2851353102728%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4264,
+        3679
+      ],
+      "original_bytes": 3846576,
+      "author": "David Merrett from Daventry, England",
+      "license": "CC BY 2.0",
+      "license_url": "https://creativecommons.org/licenses/by/2.0",
+      "id": "basic_overexposed_02",
+      "category": "overexposed",
+      "tier": "basic",
+      "commons_title": "File:1956 Bedford A Type Water Tender Fire Engine (51353102728).jpg",
+      "file": "overexposed/basic_overexposed_02.png",
+      "preview_file": "previews/basic_overexposed_02.jpg",
+      "candidate_id": "overexposed_11",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giảm sáng nhẹ, giữ màu xe và chi tiết thân xe.",
+      "note": "Kiểm tra hạ sáng vừa đủ, không biến mảng trắng thành xám bẩn.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "vehicle",
+        "defects": [
+          {
+            "type": "overexposed",
+            "region": "full",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "vehicle_detail"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_overexposed_02.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c3/1956_Bedford_A_Type_Water_Tender_Fire_Engine_%2851353102728%29.jpg/1280px-1956_Bedford_A_Type_Water_Tender_Fire_Engine_%2851353102728%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        1104
+      ],
+      "download_bytes": null,
+      "source_sha256": "c4511984471fd453fa500320dc4d61c970a43397c9216b97afe29228f1f144ad"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Tory_Lane,_Lexxi_Tyler,_Courtney_Simpson,_Victoria_Sinn_at_McKenzie_Lee_and_Lexxi_Tyler_birthday_party_6.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/5/50/Tory_Lane%2C_Lexxi_Tyler%2C_Courtney_Simpson%2C_Victoria_Sinn_at_McKenzie_Lee_and_Lexxi_Tyler_birthday_party_6.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        608,
+        438
+      ],
+      "original_bytes": 31707,
+      "author": "Photo from www.lukeisback.com",
+      "license": "CC BY-SA 2.5",
+      "license_url": "https://creativecommons.org/licenses/by-sa/2.5",
+      "id": "basic_low_contrast_01",
+      "category": "low_contrast",
+      "tier": "basic",
+      "commons_title": "File:Tory Lane, Lexxi Tyler, Courtney Simpson, Victoria Sinn at McKenzie Lee and Lexxi Tyler birthday party 6.jpg",
+      "file": "low_contrast/basic_low_contrast_01.png",
+      "preview_file": "previews/basic_low_contrast_01.jpg",
+      "candidate_id": "over_more_01",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giảm cảm giác bạc màu, tăng tương phản nhẹ và giữ màu da.",
+      "note": "Ảnh flash bạc màu, độ phân giải thấp; không chấm khôi phục chi tiết hay nhận diện mặt nhỏ.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "group_portrait",
+        "defects": [
+          {
+            "type": "low_contrast",
+            "region": "full",
+            "severity": 2,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "skin_tone",
+          "facial_features"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_low_contrast_01.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/50/Tory_Lane%2C_Lexxi_Tyler%2C_Courtney_Simpson%2C_Victoria_Sinn_at_McKenzie_Lee_and_Lexxi_Tyler_birthday_party_6.jpg/500px-Tory_Lane%2C_Lexxi_Tyler%2C_Courtney_Simpson%2C_Victoria_Sinn_at_McKenzie_Lee_and_Lexxi_Tyler_birthday_party_6.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        500,
+        360
+      ],
+      "download_bytes": null,
+      "source_sha256": "923c759e220e18bf30dc0625b742ae12a80bde6f064f8c62e2a47cd041764de5"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Backplate_%E2%80%93_Small_Rural_Road_02_DSC_0190_(Sergej_Majboroda_via_Poly_Haven).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/a/ad/Backplate_%E2%80%93_Small_Rural_Road_02_DSC_0190_%28Sergej_Majboroda_via_Poly_Haven%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4928,
+        3264
+      ],
+      "original_bytes": 10360887,
+      "author": "Sergej Majboroda",
+      "license": "CC0",
+      "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "id": "basic_low_contrast_02",
+      "category": "low_contrast",
+      "tier": "basic",
+      "commons_title": "File:Backplate – Small Rural Road 02 DSC 0190 (Sergej Majboroda via Poly Haven).jpg",
+      "file": "low_contrast/basic_low_contrast_02.png",
+      "preview_file": "previews/basic_low_contrast_02.jpg",
+      "candidate_id": "low_contrast_08",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Tăng tương phản nhẹ để đường và cây rõ hơn, giữ ánh sáng tự nhiên.",
+      "note": "Cảnh ánh sáng mềm; chỉ chấm theo yêu cầu chỉnh nhẹ, không coi mọi cảnh mềm là lỗi.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "landscape",
+        "defects": [
+          {
+            "type": "low_contrast",
+            "region": "full",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "natural_colors"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_low_contrast_02.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ad/Backplate_%E2%80%93_Small_Rural_Road_02_DSC_0190_%28Sergej_Majboroda_via_Poly_Haven%29.jpg/1280px-Backplate_%E2%80%93_Small_Rural_Road_02_DSC_0190_%28Sergej_Majboroda_via_Poly_Haven%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        848
+      ],
+      "download_bytes": null,
+      "source_sha256": "d09b783f3507731be1ba3b6c74cc43ff4dbf25d16c392fe6d380a8f37f09b7fb"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:EdificioBudapest_en_Maracaibo,_Junio_del_2012.JPG",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/a/a1/EdificioBudapest_en_Maracaibo%2C_Junio_del_2012.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4288,
+        2793
+      ],
+      "original_bytes": 8374947,
+      "author": "George Miquilena",
+      "license": "CC0",
+      "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "id": "basic_oversaturated_01",
+      "category": "oversaturated",
+      "tier": "basic",
+      "commons_title": "File:EdificioBudapest en Maracaibo, Junio del 2012.JPG",
+      "file": "oversaturated/basic_oversaturated_01.png",
+      "preview_file": "previews/basic_oversaturated_01.jpg",
+      "candidate_id": "saturation_02",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giảm độ rực nhẹ để màu trời và tòa nhà tự nhiên hơn.",
+      "note": "Màu trời và màu công trình mạnh; nhãn thẩm mỹ cần người dùng duyệt.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "architecture",
+        "defects": [
+          {
+            "type": "oversaturated",
+            "region": "full",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "building_detail"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_oversaturated_01.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a1/EdificioBudapest_en_Maracaibo%2C_Junio_del_2012.JPG/1280px-EdificioBudapest_en_Maracaibo%2C_Junio_del_2012.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        834
+      ],
+      "download_bytes": null,
+      "source_sha256": "e68970cc4051f83e543032669697a0a34f3965bb9950be1b6f6fd3ac8c4b2578"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Nidaros_domkirke_-_Nidarosdomen(Trondheim)_(kubos16)922.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/f/f7/Nidaros_domkirke_-_Nidarosdomen%28Trondheim%29_%28kubos16%29922.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3465,
+        2599
+      ],
+      "original_bytes": 4714320,
+      "author": "Kubos16",
+      "license": "CC BY-SA 3.0 no",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0/no/deed.en",
+      "id": "basic_oversaturated_02",
+      "category": "oversaturated",
+      "tier": "basic",
+      "commons_title": "File:Nidaros domkirke - Nidarosdomen(Trondheim) (kubos16)922.jpg",
+      "file": "oversaturated/basic_oversaturated_02.png",
+      "preview_file": "previews/basic_oversaturated_02.jpg",
+      "candidate_id": "saturation_more_03",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giảm rực nhẹ, giữ màu mái đồng và cây xanh.",
+      "note": "Màu xanh đậm, chủ thể còn cấu trúc; tránh khử màu quá mức.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "landscape",
+        "defects": [
+          {
+            "type": "oversaturated",
+            "region": "full",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "foliage_texture"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_oversaturated_02.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f7/Nidaros_domkirke_-_Nidarosdomen%28Trondheim%29_%28kubos16%29922.jpg/1280px-Nidaros_domkirke_-_Nidarosdomen%28Trondheim%29_%28kubos16%29922.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        960
+      ],
+      "download_bytes": null,
+      "source_sha256": "a5a5ef700a2aef85f3a8ff1a4badbc295a64c9088fd496f75e20d9e82249593f"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Kapucinsky-klaster.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/7/72/Kapucinsky-klaster.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        1000,
+        667
+      ],
+      "original_bytes": 181353,
+      "author": "Anton Fedorenko",
+      "license": "CC BY-SA 3.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
+      "id": "basic_oversaturated_03",
+      "category": "oversaturated",
+      "tier": "basic",
+      "commons_title": "File:Kapucinsky-klaster.jpg",
+      "file": "oversaturated/basic_oversaturated_03.png",
+      "preview_file": "previews/basic_oversaturated_03.jpg",
+      "candidate_id": "saturation_more_02",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Đưa màu về tự nhiên hơn, giữ chi tiết mây và mái nhà.",
+      "note": "Ảnh đã hậu kỳ; việc giảm màu được yêu cầu rõ trong intent.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "architecture",
+        "defects": [
+          {
+            "type": "oversaturated",
+            "region": "full",
+            "severity": 2,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "cloud_detail"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_oversaturated_03.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/72/Kapucinsky-klaster.jpg/960px-Kapucinsky-klaster.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        960,
+        640
+      ],
+      "download_bytes": null,
+      "source_sha256": "4e504d6b3d08128954063508ef783d5863b373ac8a4f86f69dd773075f67ee9d"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:NIND_droid_ISO3200.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/d/d4/NIND_droid_ISO3200.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4936,
+        3296
+      ],
+      "original_bytes": 8295251,
+      "author": "Trougnouf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0",
+      "id": "basic_noise_01",
+      "category": "noise",
+      "tier": "basic",
+      "commons_title": "File:NIND droid ISO3200.jpg",
+      "file": "noise/basic_noise_01.png",
+      "preview_file": "previews/basic_noise_01.jpg",
+      "candidate_id": "noise_01",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giảm nhiễu vừa phải, giữ đường nét đồ chơi và texture nền.",
+      "note": "NIND ISO3200; input là crop ở tỷ lệ 1:1, không resize.",
+      "input_policy": "native_crop_1600x1200",
+      "expected": {
+        "scene_type": "still_life",
+        "defects": [
+          {
+            "type": "noise",
+            "region": "full",
+            "severity": 2,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "fine_detail"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_noise_01.jpg",
+      "download_url": "https://upload.wikimedia.org/wikipedia/commons/d/d4/NIND_droid_ISO3200.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "source_variant": "original",
+      "download_size": [
+        4936,
+        3296
+      ],
+      "download_bytes": 8295251,
+      "download_method": "browser_original_download",
+      "crop_anchor": "bottom",
+      "source_sha256": "59dcb61bb4210b4e580f0b2d5ea1e332f9aec499f03460972bfc3c3a6eba8c9a"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:NIND_bloop_ISO3200.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/1/19/NIND_bloop_ISO3200.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4936,
+        3296
+      ],
+      "original_bytes": 13419208,
+      "author": "Trougnouf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0",
+      "id": "basic_noise_02",
+      "category": "noise",
+      "tier": "basic",
+      "commons_title": "File:NIND bloop ISO3200.jpg",
+      "file": "noise/basic_noise_02.png",
+      "preview_file": "previews/basic_noise_02.jpg",
+      "candidate_id": "noise_03",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giảm nhiễu, giữ mép chậu và texture cây.",
+      "note": "NIND ISO3200; không xem bản thumbnail để chấm mức nhiễu.",
+      "input_policy": "native_crop_1600x1200",
+      "expected": {
+        "scene_type": "still_life",
+        "defects": [
+          {
+            "type": "noise",
+            "region": "full",
+            "severity": 2,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "fine_detail"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_noise_02.jpg",
+      "download_url": "https://upload.wikimedia.org/wikipedia/commons/1/19/NIND_bloop_ISO3200.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "source_variant": "original",
+      "download_size": [
+        4936,
+        3296
+      ],
+      "download_bytes": 13419208,
+      "download_method": "browser_original_download",
+      "crop_anchor": "center",
+      "source_sha256": "e1236b9aa705248bdd25db130484651eff2d81c6cab5e27939d941eb4327a95a"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:NIND_Pen-pile_ISO3200.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/9/9b/NIND_Pen-pile_ISO3200.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3996,
+        2998
+      ],
+      "original_bytes": 11912026,
+      "author": "MB-one",
+      "license": "CC0",
+      "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "id": "basic_noise_03",
+      "category": "noise",
+      "tier": "basic",
+      "commons_title": "File:NIND Pen-pile ISO3200.jpg",
+      "file": "noise/basic_noise_03.png",
+      "preview_file": "previews/basic_noise_03.jpg",
+      "candidate_id": "noise_05",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giảm nhiễu, giữ chữ và cạnh bút.",
+      "note": "NIND ISO3200; bản ISO200 cùng cảnh chỉ để so trực quan, chưa xác thực căn chỉnh pixel.",
+      "input_policy": "native_crop_1600x1200",
+      "expected": {
+        "scene_type": "still_life",
+        "defects": [
+          {
+            "type": "noise",
+            "region": "full",
+            "severity": 2,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "text",
+          "fine_detail"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_noise_03.jpg",
+      "download_url": "https://upload.wikimedia.org/wikipedia/commons/9/9b/NIND_Pen-pile_ISO3200.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "source_variant": "original",
+      "download_size": [
+        3996,
+        2998
+      ],
+      "download_bytes": 11912026,
+      "download_method": "browser_original_download",
+      "crop_anchor": "center",
+      "source_sha256": "0b34595981d1d5a2646b5c5d47836ce4bad623f8064eac3f739c00648a65e321"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Starr_050427-0740_Paspalum_mandiocanum_var._mandiocanum.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/5/50/Starr_050427-0740_Paspalum_mandiocanum_var._mandiocanum.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2592,
+        1944
+      ],
+      "original_bytes": 1468694,
+      "author": "Forest & Kim Starr",
+      "license": "CC BY 3.0",
+      "license_url": "https://creativecommons.org/licenses/by/3.0",
+      "id": "basic_warm_cast_01",
+      "category": "warm_cast",
+      "tier": "secondary",
+      "commons_title": "File:Starr 050427-0740 Paspalum mandiocanum var. mandiocanum.jpg",
+      "file": "warm_cast/basic_warm_cast_01.png",
+      "preview_file": "previews/basic_warm_cast_01.jpg",
+      "candidate_id": "cast_more_07",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giảm ám ấm nhẹ để giấy trung tính hơn, giữ màu mẫu cây.",
+      "note": "Có giấy in làm mốc; không cam kết giấy vốn trắng tuyệt đối.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "specimen",
+        "defects": [
+          {
+            "type": "color_cast_warm",
+            "region": "full",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "specimen_color",
+          "text"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_warm_cast_01.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/50/Starr_050427-0740_Paspalum_mandiocanum_var._mandiocanum.jpg/1280px-Starr_050427-0740_Paspalum_mandiocanum_var._mandiocanum.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        960
+      ],
+      "download_bytes": null,
+      "source_sha256": "5f0b4b74cfff432410f8e49389c76eb512ab54bdbd8af820e46047c482152e1d"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Starr_060406-7547_Cyanthillium_cinereum.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/9/94/Starr_060406-7547_Cyanthillium_cinereum.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2592,
+        1944
+      ],
+      "original_bytes": 1082812,
+      "author": "Forest & Kim Starr",
+      "license": "CC BY 3.0",
+      "license_url": "https://creativecommons.org/licenses/by/3.0",
+      "id": "basic_warm_cast_02",
+      "category": "warm_cast",
+      "tier": "secondary",
+      "commons_title": "File:Starr 060406-7547 Cyanthillium cinereum.jpg",
+      "file": "warm_cast/basic_warm_cast_02.png",
+      "preview_file": "previews/basic_warm_cast_02.jpg",
+      "candidate_id": "cast_more_10",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giảm ám vàng vừa phải, giữ màu mẫu cây khô.",
+      "note": "Chỉ dùng để thử trục ấm–lạnh, không chấm sửa tint xanh lá/tím.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "specimen",
+        "defects": [
+          {
+            "type": "color_cast_warm",
+            "region": "full",
+            "severity": 2,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "specimen_color"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_warm_cast_02.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/94/Starr_060406-7547_Cyanthillium_cinereum.jpg/1280px-Starr_060406-7547_Cyanthillium_cinereum.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        960
+      ],
+      "download_bytes": null,
+      "source_sha256": "a81dbc1e4b8c895d2f997bb110ef3c8e15e33552a16883b67551f15b6ae475b4"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:McMacSkyrunner.png",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/McMacSkyrunner.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        853,
+        853
+      ],
+      "original_bytes": 1666366,
+      "author": "iammacskyrunner",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "id": "basic_local_dark_01",
+      "category": "local_dark",
+      "tier": "secondary",
+      "commons_title": "File:McMacSkyrunner.png",
+      "file": "local_dark/basic_local_dark_01.png",
+      "preview_file": "previews/basic_local_dark_01.jpg",
+      "candidate_id": "under_more_09",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Làm rõ mặt người cầm micro, giữ tóc tối và hậu cảnh.",
+      "note": "Ca theo vùng mức tiếp theo; target mặt, không nâng sáng cả người.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [
+          {
+            "type": "backlit_subject",
+            "region": "face",
+            "severity": 2,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "skin_tone",
+          "dark_hair"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_local_dark_01.png",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/aa/McMacSkyrunner.png/500px-McMacSkyrunner.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        500,
+        500
+      ],
+      "download_bytes": null,
+      "source_sha256": "f01b5905de787b46354c7e6a6577e2b02e58a7db92553df87221554d8b59e07a"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Etlingera_elatior_16zz.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/5/58/Etlingera_elatior_16zz.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3504,
+        2336
+      ],
+      "original_bytes": 2463829,
+      "author": "Photo by David J. Stang",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "id": "basic_local_dark_02",
+      "category": "local_dark",
+      "tier": "secondary",
+      "commons_title": "File:Etlingera elatior 16zz.jpg",
+      "file": "local_dark/basic_local_dark_02.png",
+      "preview_file": "previews/basic_local_dark_02.jpg",
+      "candidate_id": "under_more_08",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Làm rõ bông hoa tối ở giữa, giữ nền lá tự nhiên.",
+      "note": "Kiểm tra xử lý vùng nhỏ và viền mask; không yêu cầu toàn cảnh cùng độ sáng.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "plant",
+        "defects": [
+          {
+            "type": "underexposed",
+            "region": "flower",
+            "severity": 1,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "background",
+          "flower_color"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_local_dark_02.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/58/Etlingera_elatior_16zz.jpg/1280px-Etlingera_elatior_16zz.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        853
+      ],
+      "download_bytes": null,
+      "source_sha256": "901451673412403e1a66626a3206fc075e1f42eb02effeb5be763fcd303c83c6"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:NIND_threebicycles_ISO200.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/7/7a/NIND_threebicycles_ISO200.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4413,
+        2629
+      ],
+      "original_bytes": 6950884,
+      "author": "Trougnouf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0",
+      "id": "basic_already_good_01",
+      "category": "already_good",
+      "tier": "control",
+      "commons_title": "File:NIND threebicycles ISO200.jpg",
+      "file": "already_good/basic_already_good_01.png",
+      "preview_file": "previews/basic_already_good_01.jpg",
+      "candidate_id": "clean_04",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giữ nguyên nếu ảnh không có lỗi rõ.",
+      "note": "NIND ISO200; không coi nhiều cạnh/texture là nhiễu.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "street",
+        "defects": [],
+        "preserve": [
+          "texture",
+          "natural_colors"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_already_good_01.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7a/NIND_threebicycles_ISO200.jpg/1280px-NIND_threebicycles_ISO200.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        763
+      ],
+      "download_bytes": null,
+      "source_sha256": "8ad8a9b0f7249eb7627cb4fb232766ef55380248b4c10382a38f71b05f3178a3"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:NIND_Pen-pile_ISO200.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/0/02/NIND_Pen-pile_ISO200.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3996,
+        2998
+      ],
+      "original_bytes": 7736328,
+      "author": "MB-one",
+      "license": "CC0",
+      "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      "id": "basic_already_good_02",
+      "category": "already_good",
+      "tier": "control",
+      "commons_title": "File:NIND Pen-pile ISO200.jpg",
+      "file": "already_good/basic_already_good_02.png",
+      "preview_file": "previews/basic_already_good_02.jpg",
+      "candidate_id": "clean_08",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giữ nguyên nếu ảnh không có lỗi rõ.",
+      "note": "ISO200 cùng cảnh bút; không tự kéo màu hay mài nét mạnh.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "still_life",
+        "defects": [],
+        "preserve": [
+          "text",
+          "fine_detail"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_already_good_02.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/02/NIND_Pen-pile_ISO200.jpg/1280px-NIND_Pen-pile_ISO200.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        960
+      ],
+      "download_bytes": null,
+      "source_sha256": "782f27b7dc2fab8e4da22c3579b7ea428a017e15786f4c2cfb5e7998ed7c9cbc"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Young_muslim_woman_in_the_Thar_desert_near_Jaisalmer,_India.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/9/9a/Young_muslim_woman_in_the_Thar_desert_near_Jaisalmer%2C_India.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2892,
+        1908
+      ],
+      "original_bytes": 2937493,
+      "author": "Paulrudd",
+      "license": "CC BY-SA 3.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
+      "id": "basic_already_good_03",
+      "category": "already_good",
+      "tier": "control",
+      "commons_title": "File:Young muslim woman in the Thar desert near Jaisalmer, India.jpg",
+      "file": "already_good/basic_already_good_03.png",
+      "preview_file": "previews/basic_already_good_03.jpg",
+      "candidate_id": "clean_more_01",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giữ ảnh tự nhiên, không cần làm sáng da hay đổi màu khăn.",
+      "note": "Da sẫm và khăn màu rực không tự động là thiếu sáng hoặc quá bão hòa.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [],
+        "preserve": [
+          "skin_tone",
+          "vivid_colors"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_already_good_03.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9a/Young_muslim_woman_in_the_Thar_desert_near_Jaisalmer%2C_India.jpg/1280px-Young_muslim_woman_in_the_Thar_desert_near_Jaisalmer%2C_India.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        844
+      ],
+      "download_bytes": null,
+      "source_sha256": "49d414463c457d05ea6ff136a816193522e1accb0d89425f41bb6a91e18f0212"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Tachileik_Myanmar_Kayan-People-Woman-03.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/f/fd/Tachileik_Myanmar_Kayan-People-Woman-03.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        3914,
+        2810
+      ],
+      "original_bytes": 7660635,
+      "author": "CEphoto, Uwe Aranas",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "id": "basic_already_good_04",
+      "category": "already_good",
+      "tier": "control",
+      "commons_title": "File:Tachileik Myanmar Kayan-People-Woman-03.jpg",
+      "file": "already_good/basic_already_good_04.png",
+      "preview_file": "previews/basic_already_good_04.jpg",
+      "candidate_id": "clean_more_02",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giữ nguyên nếu không có lỗi rõ.",
+      "note": "Ảnh chân dung trong không gian dệt vải, nhiều chi tiết nhỏ.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [],
+        "preserve": [
+          "skin_tone",
+          "fabric_texture"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_already_good_04.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/fd/Tachileik_Myanmar_Kayan-People-Woman-03.jpg/1280px-Tachileik_Myanmar_Kayan-People-Woman-03.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        919
+      ],
+      "download_bytes": null,
+      "source_sha256": "3dcfe29a920c916da91ac00954896517fe96fa4fb00a67ca04456c27981cb2bd"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Woman_of_Bolivarian_Armed_Forces_in_a_presidential_meeting.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/4/42/Woman_of_Bolivarian_Armed_Forces_in_a_presidential_meeting.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        8576,
+        5696
+      ],
+      "original_bytes": 43431774,
+      "author": "Wilfredor",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "id": "basic_already_good_05",
+      "category": "already_good",
+      "tier": "control",
+      "commons_title": "File:Woman of Bolivarian Armed Forces in a presidential meeting.jpg",
+      "file": "already_good/basic_already_good_05.png",
+      "preview_file": "previews/basic_already_good_05.jpg",
+      "candidate_id": "clean_more_03",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giữ nguyên màu da và sắc đỏ của ghế.",
+      "note": "Nền mờ và ghế đỏ có chủ ý; không làm nét nền hay giảm màu toàn ảnh.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [],
+        "preserve": [
+          "skin_tone",
+          "vivid_colors",
+          "background_blur"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_already_good_05.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/42/Woman_of_Bolivarian_Armed_Forces_in_a_presidential_meeting.jpg/1280px-Woman_of_Bolivarian_Armed_Forces_in_a_presidential_meeting.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        850
+      ],
+      "download_bytes": null,
+      "source_sha256": "e5ad27adad662cee48f1222df9ba4179e0c49ae0f2e66d5bfb34a6a8ec49b865"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Russia_-_portrait_of_a_woman_with_dark_hair.jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/c/c3/Russia_-_portrait_of_a_woman_with_dark_hair.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2000,
+        3008
+      ],
+      "original_bytes": 5600108,
+      "author": "Dmitry Makeev",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "id": "basic_already_good_06",
+      "category": "already_good",
+      "tier": "control",
+      "commons_title": "File:Russia - portrait of a woman with dark hair.jpg",
+      "file": "already_good/basic_already_good_06.png",
+      "preview_file": "previews/basic_already_good_06.jpg",
+      "candidate_id": "clean_more_05",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giữ nguyên nếu không có lỗi rõ; giữ tóc đen và màu da.",
+      "note": "Ca bảo toàn tóc đen; không nâng tóc thành xám.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "portrait",
+        "defects": [],
+        "preserve": [
+          "dark_hair",
+          "skin_tone",
+          "background_blur"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_already_good_06.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c3/Russia_-_portrait_of_a_woman_with_dark_hair.jpg/1280px-Russia_-_portrait_of_a_woman_with_dark_hair.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        1925
+      ],
+      "download_bytes": null,
+      "source_sha256": "9c00f7a71bdcd3b8e9f9326a672327cfbf3489588ea3277468f3f42c4bb56288"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Underexposed_%E2%80%93_Pulau_Ubin_(4440132168).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/d/df/Underexposed_%E2%80%93_Pulau_Ubin_%284440132168%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        1575,
+        1054
+      ],
+      "original_bytes": 906526,
+      "author": "William Cho",
+      "license": "CC BY-SA 2.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/2.0",
+      "id": "basic_intentional_style_01",
+      "category": "intentional_style",
+      "tier": "control",
+      "commons_title": "File:Underexposed – Pulau Ubin (4440132168).jpg",
+      "file": "intentional_style/basic_intentional_style_01.png",
+      "preview_file": "previews/basic_intentional_style_01.jpg",
+      "candidate_id": "underexposure_02",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giữ không khí bình minh và tông ấm; không kéo sáng như ban ngày.",
+      "note": "Tác giả mô tả ảnh bình minh không cần xử lý; category underexposure không đủ để coi là lỗi.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "landscape",
+        "defects": [],
+        "preserve": [
+          "warm_tone",
+          "silhouette"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_intentional_style_01.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/df/Underexposed_%E2%80%93_Pulau_Ubin_%284440132168%29.jpg/1280px-Underexposed_%E2%80%93_Pulau_Ubin_%284440132168%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        857
+      ],
+      "download_bytes": null,
+      "source_sha256": "62adf73660e3ef0133445618193dcd647dca678fe2af7221689965382647d672"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:D%C3%A9coration_No%C3%ABl.JPG",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/3/3a/D%C3%A9coration_No%C3%ABl.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2048,
+        1360
+      ],
+      "original_bytes": 568138,
+      "author": "Vi..Cult...",
+      "license": "CC BY-SA 3.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/3.0/",
+      "id": "basic_intentional_style_02",
+      "category": "intentional_style",
+      "tier": "control",
+      "commons_title": "File:Décoration Noël.JPG",
+      "file": "intentional_style/basic_intentional_style_02.png",
+      "preview_file": "previews/basic_intentional_style_02.jpg",
+      "candidate_id": "underexposed_01",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giữ cảnh đêm và ánh đèn trang trí.",
+      "note": "Không làm sáng toàn khung để biến cảnh đêm thành ban ngày.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "night",
+        "defects": [],
+        "preserve": [
+          "low_key",
+          "night_mood"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_intentional_style_02.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/3a/D%C3%A9coration_No%C3%ABl.JPG/1280px-D%C3%A9coration_No%C3%ABl.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        850
+      ],
+      "download_bytes": null,
+      "source_sha256": "983b2640a28a0fd5d3e440b8b4322d0bcad2d13b2987d69503e8de4630092459"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:I_Lay_Me_Down_to_Rest_(5190416197).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/0/0d/I_Lay_Me_Down_to_Rest_%285190416197%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4752,
+        3168
+      ],
+      "original_bytes": 3115422,
+      "author": "cogdogblog",
+      "license": "CC BY 2.0",
+      "license_url": "https://creativecommons.org/licenses/by/2.0",
+      "id": "basic_intentional_style_03",
+      "category": "intentional_style",
+      "tier": "control",
+      "commons_title": "File:I Lay Me Down to Rest (5190416197).jpg",
+      "file": "intentional_style/basic_intentional_style_03.png",
+      "preview_file": "previews/basic_intentional_style_03.jpg",
+      "candidate_id": "low_contrast_02",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giữ sắc độ mềm và tương phản thấp có chủ ý.",
+      "note": "Tác giả ghi rõ bài tập tạo cảm giác êm bằng tương phản thấp.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "interior",
+        "defects": [],
+        "preserve": [
+          "soft_focus",
+          "muted_colors"
+        ],
+        "empty_plan": true,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_intentional_style_03.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0d/I_Lay_Me_Down_to_Rest_%285190416197%29.jpg/1280px-I_Lay_Me_Down_to_Rest_%285190416197%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        853
+      ],
+      "download_bytes": null,
+      "source_sha256": "e0f0e11f5315787c5d7b1c99366345a8dce4761e810bdd4c335cccd4fe096cb1"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Moscone_Convention_Center_(8161813744).jpg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/7/72/Moscone_Convention_Center_%288161813744%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        5616,
+        3744
+      ],
+      "original_bytes": 10543731,
+      "author": "The U.S. Food and Drug Administration",
+      "license": "Public domain",
+      "license_url": "",
+      "id": "basic_highlight_clipping_01",
+      "category": "highlight_clipping",
+      "tier": "boundary",
+      "commons_title": "File:Moscone Convention Center (8161813744).jpg",
+      "file": "highlight_clipping/basic_highlight_clipping_01.png",
+      "preview_file": "previews/basic_highlight_clipping_01.jpg",
+      "candidate_id": "over_more_06",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giảm khó chịu nếu có thể, báo rõ phần cháy không thể lấy lại chi tiết.",
+      "note": "Vùng trắng lớn đã clipping; đạt khi không bịa khả năng phục hồi.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "street",
+        "defects": [
+          {
+            "type": "highlight_clipping",
+            "region": "full",
+            "severity": 3,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "remaining_detail"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_highlight_clipping_01.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/72/Moscone_Convention_Center_%288161813744%29.jpg/1280px-Moscone_Convention_Center_%288161813744%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        853
+      ],
+      "download_bytes": null,
+      "source_sha256": "20a177bbb7e1673efaa6fae50a52bd5dc88cda9f033dc1bb2fc918500d4c13f1"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Spring_Flowers_(249639711).jpeg",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/e/ec/Spring_Flowers_%28249639711%29.jpeg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        2048,
+        1536
+      ],
+      "original_bytes": 1216658,
+      "author": "\nGianfranco Vitolo",
+      "license": "CC BY 3.0",
+      "license_url": "https://creativecommons.org/licenses/by/3.0",
+      "id": "basic_severe_color_01",
+      "category": "severe_color",
+      "tier": "boundary",
+      "commons_title": "File:Spring Flowers (249639711).jpeg",
+      "file": "severe_color/basic_severe_color_01.png",
+      "preview_file": "previews/basic_severe_color_01.jpg",
+      "candidate_id": "saturation_more_09",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Giảm màu gắt nếu có thể; báo giới hạn khi kênh màu mất chi tiết.",
+      "note": "Màu đã đẩy mạnh; không đòi phục hồi màu gốc chính xác.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "flowers",
+        "defects": [
+          {
+            "type": "oversaturated",
+            "region": "full",
+            "severity": 3,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "flower_shape"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_severe_color_01.jpeg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ec/Spring_Flowers_%28249639711%29.jpeg/1280px-Spring_Flowers_%28249639711%29.jpeg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        960
+      ],
+      "download_bytes": null,
+      "source_sha256": "4e7ab7fafa8d6eaac0ad1ce4100e75acdef98e67cfc9df804250c0ee16be5d47"
+    },
+    {
+      "source_page": "https://commons.wikimedia.org/wiki/File:Manojk_IMG_2795_(94).JPG",
+      "original_url": "https://upload.wikimedia.org/wikipedia/commons/0/0f/Manojk_IMG_2795_%2894%29.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "original_size": [
+        4000,
+        3000
+      ],
+      "original_bytes": 1896373,
+      "author": "Manojk",
+      "license": "CC BY-SA 3.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
+      "id": "basic_dark_noisy_01",
+      "category": "dark_noisy",
+      "tier": "boundary",
+      "commons_title": "File:Manojk IMG 2795 (94).JPG",
+      "file": "dark_noisy/basic_dark_noisy_01.png",
+      "preview_file": "previews/basic_dark_noisy_01.jpg",
+      "candidate_id": "underexposed_04",
+      "label_status": "agent_reviewed",
+      "reviewed_by": "Codex",
+      "human_reviewed": false,
+      "intent": "Chỉ nâng sáng có kiểm soát; dừng nếu nhiễu hoặc bệt tăng mạnh.",
+      "note": "Ảnh tối nhiễu nặng, chỉ kiểm tra biết giới hạn, không tính vào tỷ lệ thành công basic.",
+      "input_policy": "exif_transpose_rgb_max_side_1600",
+      "expected": {
+        "scene_type": "interior",
+        "defects": [
+          {
+            "type": "underexposed",
+            "region": "full",
+            "severity": 3,
+            "min_severity": 1
+          }
+        ],
+        "preserve": [
+          "remaining_detail",
+          "night_mood"
+        ],
+        "empty_plan": false,
+        "ambiguous": false
+      },
+      "reference_eval_eligible": false,
+      "source_file": "sources/basic_dark_noisy_01.jpg",
+      "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0f/Manojk_IMG_2795_%2894%29.JPG/1280px-Manojk_IMG_2795_%2894%29.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "source_variant": "commons_standard_thumbnail",
+      "download_size": [
+        1280,
+        960
+      ],
+      "download_bytes": null,
+      "source_sha256": "8645a917342d386154dd1865272c810a0e355670e8974885c54aca2a605bf3ef"
+    }
+  ]
+}

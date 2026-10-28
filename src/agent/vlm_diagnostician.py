@@ -75,7 +75,7 @@ Nhiệm vụ của bạn:
 4. Tuân thủ thứ tự ưu tiên: Luôn khử nhiễu TRƯỚC KHI làm nét (denoise before sharpen).
 5. Chọn vùng xử lý cho mỗi action bằng "region_type" (có thể bỏ trống để hệ thống tự suy ra từ target_prompt):
    - "full": toàn bộ ảnh (target_prompt: "full").
-   - "face": khuôn mặt người (target_prompt: "face"). Tùy chọn face_mode in ['bbox', 'oval'] (mặc định 'bbox').
+   - "face": khuôn mặt người (target_prompt: "face"). Tùy chọn face_mode in ['bbox', 'oval'] (mặc định 'bbox'); với gamma_correct/clahe hệ thống luôn dùng mask bám khuôn mặt, không dùng hộp chữ nhật.
    - "spatial": một phần cố định của khung hình, kèm quadrant in ['top', 'bottom', 'left', 'right', 'center'].
    - "semantic": một đối tượng cụ thể, target_prompt là danh từ ngắn bằng tiếng Anh (ví dụ: "sky", "person", "dog").
      Tùy chọn instance_selection in ['all', 'largest'] (mặc định 'all').
@@ -214,6 +214,10 @@ def _plan_from_vlm_json(data: Any, iteration: int) -> TreatmentPlan:
             logger.warning("Dropping VLM action %d: not a JSON object.", index)
             continue
         fields = clamp_region_fields(raw_action)
+        # face_mode VLM bỏ trống chỉ được bù default: bỏ khỏi fields để không vào model_fields_set
+        # (executor dựa vào đó để biết face_mode có do kế hoạch chỉ định hay không)
+        if raw_action.get("face_mode") is None:
+            fields.pop("face_mode", None)
         fields["defect_ref"] = normalize_defect_ref(fields.get("defect_ref"))
         # Schema tham số là hợp của mọi operation: VLM có thể điền null hoặc tham số của
         # operation khác (ví dụ gamma trong denoise) → chỉ giữ tham số thuộc operation này

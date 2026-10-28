@@ -5,13 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Textarea } from "@/components/ui/textarea";
-
-export const NOTES_MAX = 1000;
 
 export interface AnswerDraft {
   answers: Record<string, string>;
-  notes: string;
 }
 
 /** Lựa chọn đang có hiệu lực của một câu hỏi: bản nháp nếu hợp lệ, ngược lại mặc định. */
@@ -42,13 +38,17 @@ export function QuestionsCard({
   answeredWith,
 }: QuestionsCardProps) {
   const disabled = !active || pending;
+  // Không có câu hỏi nào (chẩn đoán không mơ hồ): chỉ còn nút bắt đầu xử lý
+  if (questions.length === 0 && !active) return null;
   // Bộ câu hỏi đã trả lời hiển thị đúng lựa chọn đã gửi, không phải bản nháp hiện tại
-  const shown: AnswerDraft = answeredWith ? { answers: answeredWith, notes: "" } : draft;
+  const shown: AnswerDraft = answeredWith ? { answers: answeredWith } : draft;
   return (
     <Card>
       <CardHeader>
         <CardTitle>
-          <h2 className="text-base">Câu hỏi về ý định của bạn</h2>
+          <h2 className="text-base">
+            {questions.length > 0 ? "Câu hỏi về ý định của bạn" : "Sẵn sàng xử lý"}
+          </h2>
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -94,24 +94,6 @@ export function QuestionsCard({
             );
           })}
 
-          {answeredWith ? null : (
-          <div className="grid gap-2">
-            <Label htmlFor="intent-notes">Ghi chú thêm (tùy chọn)</Label>
-            <Textarea
-              id="intent-notes"
-              value={draft.notes}
-              onChange={(event) => onDraftChange({ ...draft, notes: event.target.value })}
-              maxLength={NOTES_MAX}
-              placeholder="Ví dụ: giữ không khí ấm, đừng làm da quá trắng"
-              disabled={disabled}
-              rows={3}
-            />
-            <p className="text-xs text-muted-foreground">
-              {draft.notes.length}/{NOTES_MAX} ký tự
-            </p>
-          </div>
-          )}
-
           {active ? (
             <div>
               <Button type="submit" disabled={disabled}>
@@ -120,7 +102,7 @@ export function QuestionsCard({
                 ) : (
                   <Play aria-hidden />
                 )}
-                Chạy xử lý
+                Bắt đầu xử lý
               </Button>
             </div>
           ) : (

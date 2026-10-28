@@ -923,3 +923,95 @@ def test_decide_node_stops_immediately_on_degradation_guard():
     res = decide_node(state)
     assert res["decision"] == "STOP_BEST_EFFORT"
     assert res["history"][-1].decision == "STOP_BEST_EFFORT"
+
+
+def test_sanitize_does_not_mark_face_mode_as_explicit() -> None:
+    """Sanitize không được đánh dấu face_mode là do kế hoạch chỉ định (mặc định oval cho exposure)."""
+    from src.agent.planner import sanitize_actions
+    from src.agent.state import RegionOperation
+
+    unset = RegionOperation(
+        region_id="face",
+        target_prompt="face",
+        region_type="face",
+        detected_issue="backlit_subject",
+        operation="gamma_correct",
+        parameters={"gamma": 1.4},
+    )
+    explicit = unset.model_copy(update={"face_mode": "bbox"})
+    explicit.__pydantic_fields_set__.add("face_mode")
+
+    result = sanitize_actions([unset, explicit])
+
+    assert "face_mode" not in result[0].model_fields_set
+    assert "face_mode" in result[1].model_fields_set
+
+
+def test_vlm_json_without_face_mode_keeps_it_unset() -> None:
+    """Action VLM không nêu face_mode → trường không nằm trong model_fields_set."""
+    from src.agent.vlm_diagnostician import _plan_from_vlm_json
+
+    data = {
+        "reasoning": "r",
+        "actions": [
+            {
+                "region_id": "face",
+                "target_prompt": "face",
+                "detected_issue": "backlit_subject",
+                "operation": "gamma_correct",
+                "parameters": {"gamma": 1.4},
+            },
+            {
+                "region_id": "face2",
+                "target_prompt": "face",
+                "face_mode": "bbox",
+                "detected_issue": "backlit_subject",
+                "operation": "gamma_correct",
+                "parameters": {"gamma": 1.3},
+            },
+        ],
+    }
+    plan = _plan_from_vlm_json(data, 1)
+    assert "face_mode" not in plan.actions[0].model_fields_set
+    assert "face_mode" in plan.actions[1].model_fields_set
+
+
+def _exposure_action(region: str, gamma: float, operation: str = "gamma_correct"):
+    from src.agent.state import RegionOperation
+
+    return RegionOperation(
+        region_id=region,
+        target_prompt=region,
+        detected_issue="backlit_subject",
+        operation=operation,
+        parameters={"gamma": gamma} if operation == "gamma_correct" else {"clip_limit": 2.0},
+    )
+
+
+def test_dedupe_drops_face_when_person_has_same_operation() -> None:
+    from src.agent.planner import dedupe_nested_regions
+    from src.agent.state import TreatmentPlan
+
+    plan = TreatmentPlan(
+        iteration=1,
+        reasoning="r",
+        actions=[_exposure_action("person", 1.4), _exposure_action("face", 1.5)],
+    )
+    result = dedupe_nested_regions(plan)
+    assert [a.target_prompt for a in result.actions] == ["person"]
+    assert "Chồng vùng" in result.reasoning
+
+
+def test_dedupe_keeps_face_alone_and_other_operations() -> None:
+    from src.agent.planner import dedupe_nested_regions
+    from src.agent.state import TreatmentPlan
+
+    alone = TreatmentPlan(iteration=1, reasoning="r", actions=[_exposure_action("face", 1.4)])
+    assert len(dedupe_nested_regions(alone).actions) == 1
+
+    mixed = TreatmentPlan(
+        iteration=1,
+        reasoning="r",
+        actions=[_exposure_action("person", 1.4), _exposure_action("face", 0, "clahe")],
+    )
+    assert len(dedupe_nested_regions(mixed).actions) == 2

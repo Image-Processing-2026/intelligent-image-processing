@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Image Doctor · Model Lab</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+<main>
+  <header class="page-head">
+    <div><div class="eyebrow">IMAGE DOCTOR / MODEL LAB</div><h1>Cùng một ảnh. Ba cách nhìn.</h1>
+      <p>So sánh khả năng hiểu ảnh của ba model bằng cùng ảnh và cùng instruction.</p></div>
+    <span class="local-tag"><span></span> Chạy local · API thật</span>
+  </header>
+
+  <form id="experiment">
+    <section class="input-panel" aria-label="Ảnh và system prompt">
+      <div class="image-input">
+        <label for="image" class="field-label">01 <span>Ảnh cần kiểm tra</span></label>
+        <label class="dropzone" id="dropzone" for="image">
+          <div id="image-empty"><span class="upload-icon" aria-hidden="true">↥</span><strong>Chọn hoặc thả một ảnh vào đây</strong><small>PNG, JPG, WebP · tối đa 20 MB / 32 MP</small></div>
+          <img id="preview" alt="Ảnh đang thử" hidden>
+        </label>
+        <input id="image" name="image" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff" aria-label="Chọn ảnh cần kiểm tra">
+        <div class="image-caption"><span id="image-info">Chưa có ảnh được chọn</span><button type="button" id="zoom" class="text-button" hidden>Xem lớn ↗</button></div>
+      </div>
+      <div class="context-input">
+        <label for="system-prompt" class="field-label">02 <span>System prompt dùng chung</span></label>
+        <textarea id="system-prompt" maxlength="12000" required rows="9" spellcheck="false"></textarea>
+        <p class="hint">Mỗi model nhận ảnh + đúng instruction ở đây. Tự do phân tích và đề xuất, không kèm danh sách tools hoặc prompt từ hệ thống thật.</p>
+        <button type="button" id="reset-prompts" class="text-button">Khôi phục instruction mặc định</button>
+        <div class="settings-row">
+          <label for="max-edge">Cạnh dài ảnh gửi đi<select id="max-edge"><option value="768">768 px</option><option value="1024">1.024 px</option><option value="1280" selected>1.280 px</option><option value="1600">1.600 px</option></select></label>
+          <label for="max-output">Output mỗi model<select id="max-output"><option value="512">512 tokens</option><option value="768">768 tokens</option><option value="1000" selected>1.000 tokens</option></select></label>
+        </div>
+        <div class="actions"><button type="submit" id="run" class="primary" disabled>Phân tích ảnh <span aria-hidden="true">→</span></button><button type="button" id="cancel" hidden>Dừng model chưa gửi</button></div>
+        <p class="hint">Một lượt = 3 request ảnh, mỗi model trả một câu trả lời. Kết quả tự lưu trên máy.</p>
+      </div>
+    </section>
+
+    <details class="prompt-settings">
+      <summary>Cách so sánh <span>Ảnh + một system prompt, không có lượt lập kế hoạch riêng</span></summary>
+      <div class="protocol"><p>Ba model nhận cùng PNG chuẩn hóa và nguyên văn system prompt. Không thêm mục tiêu, nhận xét định sẵn, lịch sử hội thoại, tool schema hoặc kết quả model khác. Mỗi model tự chọn cách phân tích và đề xuất trong cùng một câu trả lời.</p><p>Temperature 0.4 · Thinking tắt/tối thiểu · Output vẫn chịu giới hạn token và chính sách API của nhà cung cấp. Groq chờ 65 giây, Gemini chờ 13 giây giữa các lượt để giảm lỗi quota. Chờ này không tính vào thời gian API.</p></div>
+    </details>
+  </form>
+
+  <div id="notice" class="notice" role="alert" hidden></div>
+  <section class="results" aria-labelledby="results-title">
+    <div class="results-head"><div><div class="eyebrow">KẾT QUẢ SO SÁNH</div><h2 id="results-title">Hiểu ảnh & đề xuất tự do</h2></div><a id="download" class="button-link" hidden>Tải kết quả JSON ↓</a></div>
+    <p id="protocol-note" class="hint">Luồng tự do · 1 request ảnh/model · Không ràng buộc toolbox</p>
+    <p id="overall-status" class="overall" role="status" aria-live="polite">Chọn ảnh để bắt đầu. Mỗi cột sẽ hiển thị nguyên văn câu trả lời của model.</p>
+    <div id="image-sent" class="sent-info" hidden></div>
+    <div class="model-grid">
+      <article class="model-column google" id="google">
+        <header class="model-header"><div><span class="provider">GOOGLE AI STUDIO</span><h3>Gemma 4 31B</h3><code>gemma-4-31b-it</code></div><div class="model-actions"><span class="key-status" id="google-key">Kiểm tra key…</span><button type="button" class="copy-result" data-copy="google" aria-label="Copy kết quả Gemma 4 31B" title="Copy cả phân tích và đề xuất của Gemma" disabled>Copy kết quả</button></div></header>
+        <section class="stage" id="google-analysis"><div class="stage-head"><h4><span>1</span> Phân tích ảnh</h4><span class="stage-status">Chưa chạy</span></div><div class="stage-body empty">Nhận định tổng thể, lỗi quan sát được, vùng cần giữ và những điều chưa chắc chắn.</div><div class="stage-meta"></div></section>
+        <section class="stage" id="google-plan"><div class="stage-head"><h4><span>2</span> Đề xuất xử lý</h4><span class="stage-status">Chưa chạy</span></div><div class="stage-body empty">Thao tác, vùng áp dụng, khoảng tham số, điểm bắt đầu và dấu hiệu nên dừng.</div><div class="stage-meta"></div></section>
+      </article>
+      <article class="model-column groq" id="groq">
+        <header class="model-header"><div><span class="provider">GROQ</span><h3>Qwen 3.8 27B</h3><code>qwen/qwen3.8-27b</code></div><div class="model-actions"><span class="key-status" id="groq-key">Kiểm tra key…</span><button type="button" class="copy-result" data-copy="groq" aria-label="Copy kết quả Qwen 3.8 27B" title="Copy cả phân tích và đề xuất của Qwen" disabled>Copy kết quả</button></div></header>
+        <section class="stage" id="groq-analysis"><div class="stage-head"><h4><span>1</span> Phân tích ảnh</h4><span class="stage-status">Chưa chạy</span></div><div class="stage-body empty">Nhận định tổng thể, lỗi quan sát được, vùng cần giữ và những điều chưa chắc chắn.</div><div class="stage-meta"></div></section>
+        <section class="stage" id="groq-plan"><div class="stage-head"><h4><span>2</span> Đề xuất xử lý</h4><span class="stage-status">Chưa chạy</span></div><div class="stage-body empty">Thao tác, vùng áp dụng, khoảng tham số, điểm bắt đầu và dấu hiệu nên dừng.</div><div class="stage-meta"></div></section>
+      </article>
+      <article class="model-column gemini" id="gemini">
+        <header class="model-header"><div><span class="provider">GOOGLE AI STUDIO</span><h3>Gemini 3.5 Flash-Lite</h3><code>gemini-3.5-flash-lite</code></div><div class="model-actions"><span class="key-status" id="gemini-key">Kiểm tra key…</span><button type="button" class="copy-result" data-copy="gemini" aria-label="Copy kết quả Gemini 3.5 Flash-Lite" title="Copy cả phân tích và đề xuất của Gemini" disabled>Copy kết quả</button></div></header>
+        <section class="stage" id="gemini-analysis"><div class="stage-head"><h4><span>1</span> Phân tích ảnh</h4><span class="stage-status">Chưa chạy</span></div><div class="stage-body empty">Nhận định tổng thể, lỗi quan sát được, vùng cần giữ và những điều chưa chắc chắn.</div><div class="stage-meta"></div></section>
+        <section class="stage" id="gemini-plan"><div class="stage-head"><h4><span>2</span> Đề xuất xử lý</h4><span class="stage-status">Chưa chạy</span></div><div class="stage-body empty">Thao tác, vùng áp dụng, khoảng tham số, điểm bắt đầu và dấu hiệu nên dừng.</div><div class="stage-meta"></div></section>
+      </article>
+    </div>
+  </section>
+  <span id="copy-feedback" class="sr-only" role="status" aria-live="polite"></span>
+  <footer>Gợi ý đối chiếu: đúng nội dung & chi tiết · bằng chứng trong ảnh · phân biệt quan sát với suy đoán · nhận biết giới hạn.<br>Câu trả lời giữ nguyên từ từng model, không qua bộ lập kế hoạch hoặc kiểm duyệt toolbox của project.</footer>
+</main>
+<dialog id="image-dialog"><div class="dialog-head"><strong>Ảnh để đối chiếu</strong><button type="button" id="close-dialog" aria-label="Đóng ảnh">Đóng ×</button></div><img id="large-image" alt="Ảnh kiểm tra phóng lớn"></dialog>
+</body>
+</html>
