@@ -38,4 +38,10 @@ All values below are placeholders, not fitted on data.
   executor fills them.
 - The web UI does not show the executed-mask overlay yet (only the API returns it).
 - Vitest and the web build were not run on the merged branch.
-- R-09 (comparing recipe configurations on real images) is pending; defaults above are untuned.
+- R-09 compared `BACKLIT_LIGHT_PERSON` off / on at scale 0.25 / on at scale 0.4 with
+  `docs/reports/r09_compare_recipes.py` on `data/real/nguoc_sang.webp`, offline (no Gemini key).
+  All three gave the same result: only the `face` gamma action ran (bbox mask), L* 53.0 to 53.7,
+  no side effects, outcome `UNVERIFIED`. Without Gemini there is no `person` subject, so the
+  person step never fires and the comparison cannot separate the configs. Decision: keep
+  `BACKLIT_LIGHT_PERSON_ENABLED = False` and `_SCALE = 0.4` as uncalibrated defaults. Rerun the
+  script with a Gemini key (owner's approval) on portrait/backlit images before changing them.
