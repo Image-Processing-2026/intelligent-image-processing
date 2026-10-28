@@ -180,3 +180,5 @@ class SystemOut(BaseModel):
     pipeline_concurrency: int
     registration_open: bool
     max_upload_mb: int
+    # Môi trường phân vùng thật của máy chủ (interpreter, face/semantic, mobile_sam)
+    region_runtime: Dict[str, Any] = Field(default_factory=dict)

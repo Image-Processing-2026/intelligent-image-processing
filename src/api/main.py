@@ -3,6 +3,7 @@ FastAPI Server Entrypoint.
 Khởi chạy dịch vụ backend cho dự án Intelligent Image Processing.
 """
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -13,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.agent.memory import DEFAULT_MEMORY_PATH, MEMORY_ENV, configure_case_memory
 from src.agent.perception import preload_region_models
+from src.region_engine import runtime_capabilities
 
 from .auth import router as auth_router
 from .config import settings_from_env
@@ -30,6 +32,7 @@ load_dotenv(encoding="utf-8-sig")
 configure_case_memory(os.getenv(MEMORY_ENV, str(DEFAULT_MEMORY_PATH)))
 
 settings = settings_from_env()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -39,6 +42,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     model phân vùng ở luồng nền khi đã cài (không chặn khởi động).
     """
     get_database()
+    logger.info("Region runtime at startup: %s", runtime_capabilities())
     preload_region_models()
     yield
 

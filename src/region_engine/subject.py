@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import math
+import sys
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -100,7 +101,8 @@ class SubjectMask:
     box: Optional[BoxXYXY]
 
 
-_SUBJECT_CACHE: OrderedDict[tuple[str, str, Optional[Box2D]], SubjectMask] = OrderedDict()
+_SubjectCacheKey = tuple[str, str, Optional[Box2D], Optional[int]]
+_SUBJECT_CACHE: OrderedDict[_SubjectCacheKey, SubjectMask] = OrderedDict()
 _SUBJECT_CACHE_LOCK = threading.Lock()
 _UNAVAILABLE_LOGGED = False
 
@@ -117,6 +119,18 @@ def capabilities() -> dict[str, bool]:
         and all(_dependency_available(name) for name in ("torch", "transformers", "mobile_sam"))
     )
     return {"face": face_ready, "semantic_models": semantic_ready}
+
+
+def runtime_capabilities() -> dict[str, object]:
+    """Môi trường phân vùng đang chạy: interpreter, khả năng chủ thể, có ``mobile_sam`` hay không.
+
+    Không nạp model nặng; dùng để ghi lúc khởi động, trả ở ``/system`` và trong export phiên.
+    """
+    return {
+        "interpreter": sys.executable,
+        "mobile_sam_installed": _dependency_available("mobile_sam"),
+        **capabilities(),
+    }
 
 
 def box2d_to_xyxy(box_2d: Box2D, image_shape: Tuple[int, int]) -> BoxXYXY:
@@ -218,21 +232,26 @@ def resolve_subject_mask(
     *,
     use_semantic: Optional[bool] = None,
     cache_key: Optional[str] = None,
+    feather_radius: Optional[int] = None,
 ) -> SubjectMask:
     """Phân giải mặt nạ cho một tên vùng theo chuỗi ưu tiên ở đầu module.
 
-    ``use_semantic=None`` lấy theo ``capabilities()``. Khi ``cache_key`` khác ``None``,
-    kết quả được cache theo ``(cache_key, name, box_2d)`` và trả lại cùng object: người gọi
-    không được sửa mặt nạ tại chỗ. ``cache_key`` do người gọi chịu trách nhiệm
-    (thường là hash của ảnh gốc).
+    ``use_semantic=None`` lấy theo ``capabilities()``. ``feather_radius=None`` dùng
+    ``DEFAULT_FEATHER_RADIUS``. Khi ``cache_key`` khác ``None``, kết quả được cache theo
+    ``(cache_key, name, box_2d, feather)`` và trả lại cùng object: người gọi không được sửa
+    mặt nạ tại chỗ; hai feather khác nhau không dùng chung mục cache. ``cache_key`` do người
+    gọi chịu trách nhiệm (thường là hash của ảnh gốc).
     """
     rgb = _as_rgb(image)
-    cache_id = None if cache_key is None else (cache_key, name, _box_key(box_2d))
+    feather = DEFAULT_FEATHER_RADIUS if feather_radius is None else max(0, int(feather_radius))
+    # Feather mặc định dùng chung mục cache với người gọi không khai báo feather (Perceive)
+    feather_key = None if feather == DEFAULT_FEATHER_RADIUS else feather
+    cache_id = None if cache_key is None else (cache_key, name, _box_key(box_2d), feather_key)
     if cache_id is not None:
         cached = _cache_get(cache_id)
         if cached is not None:
             return cached
-    result = _resolve(rgb, name, box_2d, use_semantic)
+    result = _resolve(rgb, name, box_2d, use_semantic, feather)
     if cache_id is not None:
         _cache_put(cache_id, result)
     return result
@@ -249,13 +268,14 @@ def _resolve(
     name: str,
     box_2d: Optional[Box2D],
     use_semantic: Optional[bool],
+    feather: int = DEFAULT_FEATHER_RADIUS,
 ) -> SubjectMask:
     shape = rgb.shape[:2]
     normalized = normalize_prompt(name)
     if normalized in _FULL_COMMANDS:
-        return _full_subject(shape)
+        return _full_subject(shape, feather)
     if normalized in _QUADRANT_COMMANDS:
-        return _quadrant_subject(shape, _QUADRANT_COMMANDS[normalized])
+        return _quadrant_subject(shape, _QUADRANT_COMMANDS[normalized], feather)
 
     if normalized in _FACE_NAMES:
         face = _face_subject(rgb)
@@ -266,7 +286,7 @@ def _resolve(
     semantic_ready = capabilities()["semantic_models"] if use_semantic is None else use_semantic
     if semantic_ready:
         try:
-            semantic = _semantic_subject(rgb, normalized, gemini_box)
+            semantic = _semantic_subject(rgb, normalized, gemini_box, feather)
         except SegmentationUnavailableError as exc:
             _log_semantic_unavailable_once(exc)
         except SegmentationInferenceError as exc:
@@ -276,18 +296,21 @@ def _resolve(
                 return semantic
 
     if gemini_box is not None:
-        grabcut = _grabcut_subject(rgb, gemini_box)
+        grabcut = _grabcut_subject(rgb, gemini_box, feather)
         if grabcut is not None:
             return grabcut
 
     region = _QUADRANT_KEYWORDS.get(normalized)
     if region is not None:
-        return _quadrant_subject(shape, region)
-    return _full_subject(shape)
+        return _quadrant_subject(shape, region, feather)
+    return _full_subject(shape, feather)
 
 
 def _semantic_subject(
-    rgb: np.ndarray, prompt: str, gemini_box: Optional[BoxXYXY]
+    rgb: np.ndarray,
+    prompt: str,
+    gemini_box: Optional[BoxXYXY],
+    feather: int = DEFAULT_FEATHER_RADIUS,
 ) -> Optional[SubjectMask]:
     """DINO theo tên vùng rồi MobileSAM. Trả ``None`` khi không có mặt nạ không rỗng."""
     shape = rgb.shape[:2]
@@ -305,7 +328,7 @@ def _semantic_subject(
             if not detections:
                 return None
             best = max(detections, key=lambda detection: detection.score)
-            mask = _predict_soft_locked(backend, rgb, best.box, DEFAULT_FEATHER_RADIUS)
+            mask = _predict_soft_locked(backend, rgb, best.box, feather)
             if not mask.any():
                 return None
             confidence = min(best.score, UNANCHORED_DINO_CONFIDENCE)
@@ -318,10 +341,10 @@ def _semantic_subject(
         ]
         if matched:
             best = max(matched, key=lambda detection: detection.score)
-            mask = _predict_soft_locked(backend, rgb, best.box, DEFAULT_FEATHER_RADIUS)
+            mask = _predict_soft_locked(backend, rgb, best.box, feather)
             if mask.any():
                 return SubjectMask(mask, "dino_sam", best.score, best.box)
-        mask = _predict_soft_locked(backend, rgb, gemini_box, DEFAULT_FEATHER_RADIUS)
+        mask = _predict_soft_locked(backend, rgb, gemini_box, feather)
         if not mask.any():
             return None
         return SubjectMask(mask, "gemini_sam", _CONFIDENCE_GEMINI_SAM, gemini_box)
@@ -340,9 +363,11 @@ def _face_subject(rgb: np.ndarray) -> Optional[SubjectMask]:
     return SubjectMask(union, "face_mediapipe", _CONFIDENCE_FACE, None)
 
 
-def _grabcut_subject(rgb: np.ndarray, gemini_box: BoxXYXY) -> Optional[SubjectMask]:
+def _grabcut_subject(
+    rgb: np.ndarray, gemini_box: BoxXYXY, feather: int = DEFAULT_FEATHER_RADIUS
+) -> Optional[SubjectMask]:
     try:
-        mask = refine_bbox_mask(rgb, gemini_box)
+        mask = refine_bbox_mask(rgb, gemini_box, feather_radius=feather)
     except cv2.error as exc:
         _LOGGER.warning("GrabCut subject refinement failed: %s", exc)
         return None
@@ -351,14 +376,16 @@ def _grabcut_subject(rgb: np.ndarray, gemini_box: BoxXYXY) -> Optional[SubjectMa
     return SubjectMask(mask, "gemini_grabcut", _CONFIDENCE_GEMINI_GRABCUT, gemini_box)
 
 
-def _quadrant_subject(shape: Tuple[int, int], region: str) -> SubjectMask:
+def _quadrant_subject(
+    shape: Tuple[int, int], region: str, feather: int = DEFAULT_FEATHER_RADIUS
+) -> SubjectMask:
     hard = create_quadrant_mask(shape, region, 0) > 0
-    mask = create_soft_mask(hard, feather_radius=DEFAULT_FEATHER_RADIUS)
+    mask = create_soft_mask(hard, feather_radius=feather)
     return SubjectMask(mask, "quadrant", _CONFIDENCE_QUADRANT, None)
 
 
-def _full_subject(shape: Tuple[int, int]) -> SubjectMask:
-    mask = create_soft_mask(np.ones(shape, dtype=bool), feather_radius=DEFAULT_FEATHER_RADIUS)
+def _full_subject(shape: Tuple[int, int], feather: int = DEFAULT_FEATHER_RADIUS) -> SubjectMask:
+    mask = create_soft_mask(np.ones(shape, dtype=bool), feather_radius=feather)
     return SubjectMask(mask, "full", _CONFIDENCE_FULL, None)
 
 
@@ -438,7 +465,7 @@ def _box_fraction(box: BoxXYXY, shape: Tuple[int, int]) -> float:
     return area / float(height * width)
 
 
-def _cache_get(key: tuple[str, str, Optional[Box2D]]) -> Optional[SubjectMask]:
+def _cache_get(key: _SubjectCacheKey) -> Optional[SubjectMask]:
     with _SUBJECT_CACHE_LOCK:
         cached = _SUBJECT_CACHE.get(key)
         if cached is not None:
@@ -446,7 +473,7 @@ def _cache_get(key: tuple[str, str, Optional[Box2D]]) -> Optional[SubjectMask]:
         return cached
 
 
-def _cache_put(key: tuple[str, str, Optional[Box2D]], value: SubjectMask) -> None:
+def _cache_put(key: _SubjectCacheKey, value: SubjectMask) -> None:
     with _SUBJECT_CACHE_LOCK:
         _SUBJECT_CACHE[key] = value
         _SUBJECT_CACHE.move_to_end(key)
