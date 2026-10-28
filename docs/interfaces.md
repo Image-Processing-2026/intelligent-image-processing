@@ -729,3 +729,25 @@ No `state.py` change; the new values travel as dicts in `HistoryItem.defect_stat
   `SideEffectCheck.previous` and `.original` both carry these; round 1 reuses one result for both.
 - All new thresholds (`FACE_MIN_GAIN_L`, `FACE_GAIN_RATIO`, `BLACK_LIFT_*`,
   `BACKLIT_LIGHT_PERSON_*`) are temporary and uncalibrated (BL-10).
+
+### 4.3 Outcome and review (R-01, R-08)
+
+- `DoctorState.outcome` (`Outcome`) is separate from `decision`, which only steers the loop.
+  `review.derive_outcome` decides it for the image actually returned:
+  `ACCEPTED` (`accepted_by` = `review` for real images, `reference` for synthetic images that
+  reach the PSNR/SSIM targets), `UNVERIFIED`, `NOT_MET`, `KEPT_ORIGINAL` (returned image equals
+  the original although a fix was wanted), `NO_CHANGE` (nothing needed fixing). Running out of
+  iterations or a high heuristic score alone never gives `ACCEPTED`.
+- `DoctorState.review` / `HistoryItem.review` (`ReviewResult`): `review.review_candidate` sends the
+  original, the previous image and the candidate, plus paired crops around the largest changes and
+  around dark areas lifted by `SIDE_EFFECT_SUSPECT_KINDS` (`black_lift`), to Gemini. Verdicts:
+  `ACCEPT`, `REVISE`, `REJECT`, `UNCERTAIN`. `status` is `unavailable` (not a pass) when Gemini
+  fails or no key is set. `review.REVIEW_ENABLED` switches it off (`tests/conftest.py` does for
+  every test). `side_effect_check.status == "unavailable"` is read as unknown, not as clean.
+- API: the `process` run result carries `outcome` and `review`; the result message carries
+  `outcome_status`. The run also stores the overlay of the executed masks
+  (`artifacts.executed_overlay`, kind `executed_overlay`, looked up by `mask_hash`; `null` when a
+  mask has left the 32-entry in-process cache). Session export adds top-level `region_runtime`
+  and per-action `executed` inside `history`.
+- Temporary, uncalibrated (BL-10): `REVIEW_TIMEOUT_MS`, `REVIEW_MAX_CALLS`, `CROP_SIZE`,
+  `MAX_CHANGE_CROPS`, `MIN_CHANGE_LEVEL`, `SUSPECT_DARK_L`, `SUSPECT_MIN_LIFT`.
