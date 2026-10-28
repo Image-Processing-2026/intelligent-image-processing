@@ -81,10 +81,14 @@
   recipe:
     - operation: gamma_correct
       region: $defect
-      params: {gamma: {2: 1.4, 3: 1.6}}
+      # Khóa mức 1 chỉ dùng khi giảm một bậc (không định vị được mặt trong chủ thể người)
+      params: {gamma: {1: 1.2, 2: 1.4, 3: 1.6}}
       feather_radius: 30
+      # Lỗi ở chủ thể người + có mặt → chỉnh riêng mặt (oval); không có mặt → giữ vùng người, giảm một bậc
+      face_when_person: true
   avoid:
     - "gamma toàn ảnh để cứu chủ thể ngược sáng: nền vốn đúng sáng sẽ bị cháy."
+    - "Nâng sáng cả vùng người khi chỉ mặt bị tối: tóc đen và áo tối bị nhấc thành xám (black-lift)."
     - "feather_radius nhỏ (< 15) trên khuôn mặt: lộ viền/quầng quanh vùng đã chỉnh."
     - "Nâng quá tay một lần: vùng mặt sáng hơn nền trông giả; nâng dần, để vòng sau đo lại."
   rationale: >-

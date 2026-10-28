@@ -257,8 +257,8 @@ class TestRetrieve:
         assert "[dark-region]" in text
         assert "backlit_subject@face (mức 2)" in text
         assert (
-            "gamma_correct trên vùng 'face' (mức 2): gamma=1.4 [mức 2→1.4, mức 3→1.6], "
-            "feather_radius=30"
+            "gamma_correct trên vùng 'face' (mức 2): gamma=1.4 [mức 1→1.2, mức 2→1.4, mức 3→1.6], "
+            'feather_radius=30, defect_ref="backlit_subject@face"'
         ) in text
         assert "Tránh:" in text
 

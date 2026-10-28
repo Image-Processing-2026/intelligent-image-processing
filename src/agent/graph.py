@@ -4,7 +4,7 @@ Quản lý chu trình khép kín: Analyze -> Diagnose -> Plan -> Process -> Eval
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import cv2
 import numpy as np
@@ -23,23 +23,36 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
 from src.analyzer_evaluator.analyzer import analyze_image
-from src.analyzer_evaluator.measurement.diff import DefectChange, compare, side_effects
+from src.analyzer_evaluator.measurement.diff import (
+    DefectChange,
+    black_lift,
+    compare,
+    region_stats,
+    side_effects,
+)
 from src.analyzer_evaluator.metadata import ImageMetadata
 from src.analyzer_evaluator.no_reference_eval import evaluate_no_reference
 from src.analyzer_evaluator.reference_eval import evaluate_reference
 
 from .executor import execute_plan, image_cache_key, subject_cache_key
-from .fusion import measure_hypothesis, plan_contraindications
+from .fusion import (
+    backlit_progress,
+    backlit_resolution_cause,
+    measure_hypothesis,
+    plan_contraindications,
+)
 from .intent import apply_intent, build_questions, intent_from_answers, intent_prompt
+from .knowledge.retriever import face_located
 from .memory import DEFAULT_USER, experience_prompt, get_case_memory
 from .perception import _measure, perceive, resolve_subject_masks
 from .planner import (
     action_region,
     apply_contraindications,
     apply_preserve_guard,
+    normalize_defect_ref,
     validate_and_sort_plan,
 )
-from .regions import canonical_region
+from .regions import canonical_region, is_person_region
 from .state import (
     DiagnosisReport,
     DoctorState,
@@ -330,38 +343,97 @@ def _decide_real(eval_result: Dict[str, Any], history: List[HistoryItem]) -> str
     return "RE_PROCESS"
 
 
+def _plan_targets(plan: TreatmentPlan) -> Tuple[Set[str], Set[Tuple[str, str]]]:
+    """
+    (vùng đã tác động, các lỗi 'type@region' mà action tự khai qua defect_ref). Action trên vùng
+    con (face) khai lỗi của vùng cha (person) bằng defect_ref nên vẫn được theo dõi.
+    """
+    touched = {action_region(action) for action in plan.actions}
+    refs: Set[Tuple[str, str]] = set()
+    for action in plan.actions:
+        ref = normalize_defect_ref(action.defect_ref)
+        if ref is not None:
+            defect_type, _, region = ref.partition("@")
+            refs.add((defect_type, region))
+    return touched, refs
+
+
+def _is_targeted(
+    defect_type: str, region: str, touched: Set[str], refs: Set[Tuple[str, str]]
+) -> bool:
+    """Lỗi được kế hoạch nhắm tới: action toàn ảnh, trên đúng vùng, hoặc khai qua defect_ref."""
+    return "full" in touched or region in touched or (defect_type, region) in refs
+
+
 def _needs_verification(
     diagnosis: Optional[DiagnosisReport], plan: Optional[TreatmentPlan]
 ) -> bool:
     """
     True nếu kế hoạch vòng này đã tác động lên một lỗi severity >= VERIFY_SEVERITY
-    (action trên đúng vùng của lỗi, hoặc trên toàn ảnh) → cần Perceive lại để xác nhận.
+    (action trên đúng vùng của lỗi, trên toàn ảnh, hoặc khai lỗi qua defect_ref)
+    → cần Perceive lại để xác nhận.
     Lỗi không có action nào nhắm tới (ví dụ ám xanh lá mà toolbox không sửa được) không
     chặn SHIP, vì chẩn đoán lại cũng không đổi được gì.
     """
     if diagnosis is None or plan is None:
         return False
-    touched = {action_region(action) for action in plan.actions}
+    touched, refs = _plan_targets(plan)
     return any(
-        defect.severity >= VERIFY_SEVERITY and ("full" in touched or defect.region in touched)
+        defect.severity >= VERIFY_SEVERITY
+        and _is_targeted(defect.type, canonical_region(defect.region), touched, refs)
         for defect in diagnosis.defects
     )
 
 
+def _face_mask(state: DoctorState) -> Optional[np.ndarray]:
+    """Mask mặt trên ảnh gốc (cùng cache với Perceive/executor); không định vị được → None."""
+    diagnosis = state.get("diagnosis")
+    original = state.get("original_image")
+    if diagnosis is None or original is None or not face_located(diagnosis):
+        return None
+    boxes = {canonical_region(name): box for name, box in diagnosis.subject_boxes.items()}
+    masks = resolve_subject_masks(
+        original, ["face"], boxes, subject_cache_key(image_cache_key(original), original.shape)
+    )
+    return masks["face"].mask if "face" in masks else None
+
+
+def _effects_between(
+    reference: np.ndarray, current: np.ndarray, face: Optional[np.ndarray]
+) -> List[Dict[str, Any]]:
+    """Tác dụng phụ (kể cả black_lift ngoài mặt) khi đi từ ảnh tham chiếu tới ảnh hiện tại."""
+    found = side_effects(reference, current)
+    lift = black_lift(reference, current, face)
+    if lift is not None:
+        found.append(lift)
+    return [effect.model_dump() for effect in found]
+
+
 def _side_effects_check(state: DoctorState) -> SideEffectCheck:
     """
-    Tác dụng phụ của vòng vừa xử lý. Tạm thời chỉ so ảnh trước vòng → ảnh hiện tại (lane S2 mở
-    rộng thêm chiều ảnh gốc). Lỗi đo trả status 'unavailable', không trả danh sách rỗng giả.
+    Tác dụng phụ của vòng vừa xử lý, đo hai chiều: ảnh trước vòng → hiện tại (previous, dùng để
+    rollback) và ảnh gốc → hiện tại (original, chỉ ghi nhận). black_lift chỉ ghi nhận (severity
+    bị chặn dưới ngưỡng rollback). Phép đo lỗi trả status 'unavailable', không bao giờ trả danh
+    sách rỗng giả; không có ảnh nào để so thì 'not_run'.
     """
     previous = state.get("previous_image")
-    if previous is None:
+    original = state.get("original_image")
+    current = state["current_image"]
+    if previous is None and original is None:
         return SideEffectCheck(status="not_run")
     try:
-        found = side_effects(previous, state["current_image"])
+        face = _face_mask(state)
+        from_previous = _effects_between(previous, current, face) if previous is not None else []
+        if original is None:
+            from_original: List[Dict[str, Any]] = []
+        elif previous is not None and (previous is original or np.array_equal(previous, original)):
+            from_original = list(from_previous)  # vòng 1: hai chiều trùng nhau
+        else:
+            from_original = _effects_between(original, current, face)
     except Exception as exc:
         logger.warning("Side-effect analysis failed: %s", exc)
         return SideEffectCheck(status="unavailable", error=str(exc))
-    return SideEffectCheck(status="ok", previous=[effect.model_dump() for effect in found])
+    return SideEffectCheck(status="ok", previous=from_previous, original=from_original)
 
 
 def _targeted_defects(
@@ -369,23 +441,61 @@ def _targeted_defects(
 ) -> List[Tuple[str, str]]:
     """
     Các lỗi (loại, vùng chuẩn hóa) toolbox sửa được mà kế hoạch vòng này nhắm tới: action trên
-    đúng vùng của lỗi, hoặc trên toàn ảnh (cùng quy ước với _needs_verification).
+    đúng vùng của lỗi, trên toàn ảnh, hoặc khai lỗi qua defect_ref (cùng quy ước với
+    _needs_verification).
     """
     if diagnosis is None or plan is None:
         return []
-    touched = {action_region(action) for action in plan.actions}
+    touched, refs = _plan_targets(plan)
     targeted: List[Tuple[str, str]] = []
     for defect in diagnosis.actionable_defects:
         region = canonical_region(defect.region)
-        if ("full" in touched or region in touched) and (defect.type, region) not in targeted:
+        if (defect.type, region) in targeted:
+            continue
+        if _is_targeted(defect.type, region, touched, refs):
             targeted.append((defect.type, region))
     return targeted
 
 
+def _verify_backlit(
+    changes: List[DefectChange],
+    masks: Dict[str, Any],
+    before: Any,
+    after: Any,
+    people: Set[str],
+) -> None:
+    """
+    Kiểm chứng chéo ngược sáng ở chủ thể người bằng vùng mặt (R-06), sửa trực tiếp `changes`:
+    ghi nguyên nhân hết lỗi (độ tối giảm hay khoảng cách nền-chủ thể < BACKLIT_MIN_GAP_L) và
+    đổi 'resolved' thành 'unverified' nếu mặt không sáng lên tương ứng. Không có mask mặt thì
+    không đổi gì.
+    """
+    if "face" not in masks:
+        return
+    regions = {name: subject.mask for name, subject in masks.items()}
+    before_stats, after_stats = region_stats(before, regions), region_stats(after, regions)
+    for change in changes:
+        if change.type != "backlit_subject" or change.region not in people:
+            continue
+        if change.status == "resolved":
+            change.cause = backlit_resolution_cause(change.region, after_stats)
+        progress = backlit_progress(change.region, before_stats, after_stats)
+        if progress is None:
+            continue
+        change.detail = progress.detail
+        if change.status == "resolved" and not progress.consistent:
+            logger.warning(
+                "Backlit '%s' reads resolved but the face did not follow.", change.region
+            )
+            change.status = "unverified"
+
+
 def _track_defects(state: DoctorState, plan: TreatmentPlan) -> List[DefectChange]:
     """
-    Trạng thái (resolved/improved/unchanged/worse) của các lỗi mục tiêu so với ảnh gốc, đo trên
-    đúng vùng của lỗi bằng cùng mask Perceive đã dựng (cache theo ảnh gốc của lượt chạy).
+    Trạng thái (resolved/improved/unchanged/worse/unverified) của các lỗi mục tiêu so với ảnh
+    gốc, đo trên đúng vùng của lỗi bằng cùng mask Perceive đã dựng (cache theo ảnh gốc của lượt
+    chạy). Ngược sáng ở chủ thể người được đo thêm trên vùng mặt (nếu có mask mặt): 'resolved'
+    mà mặt không sáng lên tương ứng → 'unverified'.
     Không theo dõi được lỗi nào (thiếu số đo/mask) hoặc lỗi đo → [], decide_node dùng logic cũ.
     """
     diagnosis = state.get("diagnosis")
@@ -398,10 +508,15 @@ def _track_defects(state: DoctorState, plan: TreatmentPlan) -> List[DefectChange
         if before is None or after is None:
             return []
         boxes = {canonical_region(name): box for name, box in diagnosis.subject_boxes.items()}
-        names = sorted({region for _, region in defects if region != "full"})
+        people = {
+            region
+            for defect_type, region in defects
+            if defect_type == "backlit_subject" and is_person_region(region)
+        }
+        names = {region for _, region in defects if region != "full"}
         masks = resolve_subject_masks(
             original,
-            names,
+            sorted(names | ({"face"} if people else set())),
             boxes,
             subject_cache_key(image_cache_key(original), original.shape),
         )
@@ -422,20 +537,26 @@ def _track_defects(state: DoctorState, plan: TreatmentPlan) -> List[DefectChange
             current_measurement=after,
             assess=assess,
         )
+        changes = [change for change in diff.defects if change.before >= 1]
+        _verify_backlit(changes, masks, before, after, people)
     except Exception as exc:
         logger.warning("Defect tracking failed: %s", exc)
         return []
-    return [change for change in diff.defects if change.before >= 1]
+    return changes
 
 
 def _decide_tracked(changes: List[DefectChange]) -> str:
     """
     Quyết định theo trạng thái lỗi mục tiêu (không kể trường hợp worse, đã xử lý như suy thoái):
+    - có lỗi unverified (số đo vùng cha mâu thuẫn với vùng con) → STOP_BEST_EFFORT: không SHIP
+      theo số đo, cũng không lặp vì Perceive vòng sau chỉ đo lại đúng số đo đó;
     - mọi lỗi resolved → SHIP;
     - có lỗi resolved/improved nhưng còn lỗi chưa hết → RE_PROCESS (decide_node áp giới hạn vòng);
     - mọi lỗi unchanged → STOP_BEST_EFFORT (xử lý không tác động được thêm).
     """
     statuses = {change.status for change in changes}
+    if "unverified" in statuses:
+        return "STOP_BEST_EFFORT"
     if statuses == {"resolved"}:
         return "SHIP"
     if statuses & {"resolved", "improved"}:
