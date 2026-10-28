@@ -272,6 +272,7 @@ export interface SystemInfo {
   pipeline_concurrency: number;
   registration_open: boolean;
   max_upload_mb: number;
+  region_runtime?: Record<string, unknown>;
 }
 
 export interface MemoryStats {

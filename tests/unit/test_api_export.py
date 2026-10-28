@@ -96,6 +96,7 @@ def test_export_contains_analysis_data_without_internals(
     data = response.json()
     assert data["schema"] == "iid.session-export/1"
     assert data["app"]["gemini_key_configured"] is False
+    assert isinstance(data["region_runtime"], dict) and data["region_runtime"]
     assert data["session"]["id"] == sid
     assert [r["rating"] for r in data["ratings"]] == ["good"]
     process = next(r for r in data["runs"] if r["kind"] == "process")

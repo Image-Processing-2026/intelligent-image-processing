@@ -32,6 +32,7 @@ ARTIFACT_KINDS: tuple[str, ...] = (
     "variant_preview",
     "intermediate",
     "region_overlay",
+    "executed_overlay",
     "render",
     "refine",
 )

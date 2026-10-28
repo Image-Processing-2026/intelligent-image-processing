@@ -18,13 +18,14 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.agent.region_overlay import diagnosis_region_overlay
+from src.agent.region_overlay import diagnosis_region_overlay, executed_region_overlay
 from src.agent.regions import canonical_region
 from src.agent.session import SessionResult
 from src.agent.state import DiagnosisEdit, DiagnosisReport
 from src.agent.treatment import treatment_recipe
 from src.agent.user_analysis import apply_edits, validate_edits
 from src.agent.vlm_diagnostician import DEFAULT_GEMINI_MODEL
+from src.region_engine import runtime_capabilities
 
 from .config import AppSettings
 from .errors import MESSAGES
@@ -240,6 +241,29 @@ def save_run_image(
     return artifact
 
 
+def _executed_overlay_artifact(
+    add_image: Callable[[str, np.ndarray, str], Artifact],
+    state: Dict[str, Any],
+    history: List[Any],
+) -> Optional[Artifact]:
+    """
+    Overlay đúng các mask đã thực thi (tra theo mask_hash trong cache của tiến trình). Mask đã
+    bị đẩy khỏi cache (LRU) thì bỏ qua, không báo lỗi; lỗi dựng overlay chỉ ghi log.
+    """
+    executed = [action for entry in history for action in getattr(entry, "executed", [])]
+    original = state.get("original_image")
+    if original is None or not executed:
+        return None
+    try:
+        overlay, drawn = executed_region_overlay(original, executed)
+        if not drawn:
+            return None
+        return add_image("executed_overlay", overlay, "executed_overlay.png")
+    except Exception:
+        logger.warning("Could not build executed-region overlay", exc_info=True)
+        return None
+
+
 def record_process(
     db: Session,
     settings: AppSettings,
@@ -261,6 +285,7 @@ def record_process(
         return save_run_image(db, settings, item, run, kind, image, name)
 
     final = add_image("final", state["current_image"], "final.png")
+    executed_overlay = _executed_overlay_artifact(add_image, state, history)
     intermediates = [
         add_image("intermediate", image, f"iter_{index + 1}.png").id
         for index, image in enumerate(state.get("intermediate_images") or [])
@@ -279,7 +304,11 @@ def record_process(
         "rolled_back": bool(state.get("rolled_back")),
         "is_synthetic": bool(state.get("is_synthetic")),
         "case_id": case_id,
-        "artifacts": {"final": final.id, "intermediate": intermediates},
+        "artifacts": {
+            "final": final.id,
+            "intermediate": intermediates,
+            "executed_overlay": executed_overlay.id if executed_overlay else None,
+        },
         "sources": _sources(history),
     }
     treatment = Treatment(
@@ -606,6 +635,7 @@ def export_payload(db: Session, item: ProcessingSession) -> Dict[str, Any]:
         "schema": EXPORT_SCHEMA,
         "exported_at": utc_now(),
         "app": gemini_mode(),
+        "region_runtime": runtime_capabilities(),
         "session": {
             "id": item.id,
             "title": item.title,
