@@ -27,6 +27,7 @@ KB không dùng embedding. KB chỉ có vài chục mục, và truy vấn chủ 
       region: $defect             # full | $defect (vùng của lỗi đã khớp) | tên vùng
       params: {gamma: {2: 1.4, 3: 1.6}}   # cố định hoặc theo severity
       feather_radius: 30
+      face_when_person: true      # tùy chọn: lỗi ở chủ thể người + Perceive thấy mặt → nhắm riêng 'face' (oval)
   avoid: ["..."]                  # chống chỉ định, đưa nguyên văn vào prompt
   rationale: "..."
   tags: [...]                     # từ khóa cho BM25 (nên có cả tiếng Anh và tiếng Việt)
@@ -35,6 +36,7 @@ KB không dùng embedding. KB chỉ có vài chục mục, và truy vấn chủ 
 
 - `region` trong điều kiện có thể là `full`, `region` (mọi vùng khác full), `any`, hoặc một tên vùng cụ thể.
 - Với tham số theo severity, mức không có khóa dùng khóa thấp hơn gần nhất. Nếu mức thấp hơn mọi khóa thì dùng khóa nhỏ nhất.
+- `face_when_person` (chỉ với `region: $defect`): lỗi ở vùng người (`person`, `man`…) mà Perceive định vị được mặt thì action nhắm `face` với `face_mode: oval`; không có mặt thì giữ vùng người và dùng giá trị của mức thấp hơn một bậc (nên có khóa mức 1 trong `params`). Action sinh từ bước `$defect` luôn mang `defect_ref: <lỗi>@<vùng của lỗi>` để tracking theo dõi đúng lỗi dù action nằm trên vùng con.
 - Card nạp lỗi nếu dùng operation ngoài toolbox, tham số sai tên hoặc vượt `PARAMETER_BOUNDS`, hay dùng loại lỗi, loại cảnh hoặc preserve không có trong từ vựng (`state.py`). Thông báo lỗi chỉ rõ file và id card.
 
 **Khi nào được đặt `auto_apply: true`:** chỉ khi đã đo trên ảnh thật rằng công thức không làm giảm chất lượng mà không cần nhìn ngữ cảnh. Đo đạc cho thấy làm nét và chỉnh màu tự động làm giảm chất lượng (đồ ăn và hoàng hôn ấm là chủ ý), nên card của hai nhóm này chỉ tư vấn cho VLM. Test `test_auto_apply_cards_avoid_measured_regressions` giữ ràng buộc này.

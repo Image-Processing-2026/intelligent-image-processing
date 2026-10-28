@@ -9,7 +9,9 @@ Hai phần:
    - dark_noise: σ nhiễu ở vùng tối phẳng của ảnh gốc tăng (gamma, CLAHE khuếch đại nhiễu);
    - banding: tỉ lệ mức xám bị bỏ trống trong vùng chuyển sắc mịn tăng (giãn tông → răng lược);
    - channel_clipping: tỉ lệ pixel cháy/bệt kênh màu mới xuất hiện;
-   - oversaturation: độ bão hòa C* (p95) tăng mạnh tới mức rực.
+   - oversaturation: độ bão hòa C* (p95) tăng mạnh tới mức rực;
+   - black_lift: điểm đen của ảnh gốc (tóc, áo tối) bị nhấc lên xám trong vùng đã chỉnh, ngoài
+     khuôn mặt. Chỉ ghi nhận (severity bị chặn ở BLACK_LIFT_MAX_SEVERITY), không gây rollback.
 Ngưỡng severity của tác dụng phụ là prior (không có bộ nhãn để khớp), ghi trong hằng số module.
 Chỉ đo, không sửa pixel (ADR-001).
 """
@@ -24,8 +26,10 @@ from .calibration import severity_from_measurement
 from .schemas import MeasurementReport, MeasurementResult, RegionStats
 from .tiles import aggregate
 
-DefectStatus = Literal["resolved", "improved", "unchanged", "worse"]
-SideEffectKind = Literal["halo", "dark_noise", "banding", "channel_clipping", "oversaturation"]
+DefectStatus = Literal["resolved", "improved", "unchanged", "worse", "unverified"]
+SideEffectKind = Literal[
+    "halo", "dark_noise", "banding", "channel_clipping", "oversaturation", "black_lift"
+]
 Stats = Union[RegionStats, MeasurementReport]
 # (loại lỗi, vùng, báo cáo toàn ảnh, số đo theo vùng) → (severity, confidence) hoặc None
 Assessor = Callable[
@@ -63,6 +67,18 @@ CLIPPING_THRESHOLDS = (0.01, 0.03, 0.08)
 # Bão hòa: C* p95 tăng ít nhất chừng này, và sau xử lý vượt OVERSATURATION_MIN_CHROMA
 OVERSATURATION_MIN_CHROMA = 60.0
 OVERSATURATION_THRESHOLDS = (8.0, 15.0, 25.0)
+# Black-lift (ghi nhận, chưa chặn). Mọi hằng số dưới đây tạm thời, chưa hiệu chỉnh (BL-10).
+# Pixel thuộc vùng đã chỉnh khi |ΔL*| ≥ BLACK_LIFT_MIN_DELTA_L; "tối nhất" là L* gốc ≤ BLACK_LIFT_DARK_L
+BLACK_LIFT_MIN_DELTA_L = 0.5
+BLACK_LIFT_DARK_L = 30.0
+# Cần ít nhất tỉ lệ này của diện tích ảnh là pixel tối đã bị chỉnh, nếu không là không có gì để đo
+BLACK_LIFT_MIN_FRACTION = 0.003
+# Mặt nạ mặt ≥ ngưỡng này coi là mặt (loại khỏi phép đo)
+BLACK_LIFT_FACE_MASK = 0.1
+# Dịch trung vị L* của các pixel tối: ngưỡng severity thô (chỉ để mô tả, xem BLACK_LIFT_MAX_SEVERITY)
+BLACK_LIFT_THRESHOLDS = (4.0, 8.0, 14.0)
+# Severity báo ra bị chặn ở mức này, dưới SIDE_EFFECT_ROLLBACK_SEVERITY (2) của graph: không rollback
+BLACK_LIFT_MAX_SEVERITY = 1
 
 
 class DefectChange(BaseModel):
@@ -74,6 +90,9 @@ class DefectChange(BaseModel):
     after: int
     status: DefectStatus
     confidence: float = 0.0
+    # Nguyên nhân hết lỗi (darkness_reduced / gap_below_min / both) và ghi chú kiểm chứng
+    cause: str = ""
+    detail: str = ""
 
 
 class SideEffect(BaseModel):
@@ -86,6 +105,9 @@ class SideEffect(BaseModel):
     before: Optional[float] = None
     after: Optional[float] = None
     evidence: str = ""
+    # black_lift: bbox (xmin, ymin, xmax, ymax) theo pixel ảnh gốc của vùng nghi vấn, và Δchroma
+    bbox: Optional[List[int]] = None
+    chroma_shift: Optional[float] = None
 
 
 class DiffReport(BaseModel):
@@ -255,6 +277,72 @@ def chroma_p95(rgb: np.ndarray) -> float:
     return float(np.percentile(np.hypot(lab[..., 1], lab[..., 2]), 95))
 
 
+def _lab(rgb: np.ndarray) -> np.ndarray:
+    """CIELAB (L* 0..100) của ảnh RGB uint8."""
+    return cv2.cvtColor(rgb.astype(np.float32) / 255.0, cv2.COLOR_RGB2LAB)
+
+
+def black_lift(
+    reference: np.ndarray, current: np.ndarray, face_mask: Optional[np.ndarray] = None
+) -> Optional[SideEffect]:
+    """
+    Điểm đen bị nhấc lên: xét pixel tối của ảnh tham chiếu (L* ≤ BLACK_LIFT_DARK_L) nằm trong
+    vùng đã bị thay đổi (|ΔL*| ≥ BLACK_LIFT_MIN_DELTA_L) và ngoài mask mặt, rồi đo dịch trung vị
+    L* và Δchroma C* của chúng. Không đủ pixel tối đã chỉnh (ảnh không có vùng tối bị đụng tới,
+    hoặc việc nâng sáng chỉ nằm trên mặt) → None. Không có mask mặt thì không loại trừ gì.
+    Severity bị chặn ở BLACK_LIFT_MAX_SEVERITY: ghi nhận, không dùng để rollback.
+    """
+    first = _limit(_rgb(reference), SIDE_EFFECT_MAX_SIDE)
+    second = _limit(_rgb(current), SIDE_EFFECT_MAX_SIDE)
+    if first.shape != second.shape:
+        second = cv2.resize(second, (first.shape[1], first.shape[0]), interpolation=cv2.INTER_AREA)
+    lab_before, lab_after = _lab(first), _lab(second)
+    light_before, light_after = lab_before[..., 0], lab_after[..., 0]
+    candidates = (np.abs(light_after - light_before) >= BLACK_LIFT_MIN_DELTA_L) & (
+        light_before <= BLACK_LIFT_DARK_L
+    )
+    if face_mask is not None:
+        face = face_mask[..., 0] if face_mask.ndim == 3 else face_mask
+        if face.shape != candidates.shape:
+            face = cv2.resize(face.astype(np.float32), (candidates.shape[1], candidates.shape[0]))
+        candidates &= face < BLACK_LIFT_FACE_MASK
+    count = int(candidates.sum())
+    if count < BLACK_LIFT_MIN_FRACTION * candidates.size:
+        return None
+    before = float(np.median(light_before[candidates]))
+    after = float(np.median(light_after[candidates]))
+    shift = after - before
+    chroma_before = np.hypot(lab_before[..., 1], lab_before[..., 2])[candidates]
+    chroma_after = np.hypot(lab_after[..., 1], lab_after[..., 2])[candidates]
+    chroma_shift = float(np.median(chroma_after) - np.median(chroma_before))
+    raw = _severity(shift, BLACK_LIFT_THRESHOLDS)
+    if raw == 0:
+        return None
+    rows, cols = np.nonzero(candidates)
+    scale_y = reference.shape[0] / candidates.shape[0]
+    scale_x = reference.shape[1] / candidates.shape[1]
+    bbox = [
+        int(cols.min() * scale_x),
+        int(rows.min() * scale_y),
+        int((cols.max() + 1) * scale_x),
+        int((rows.max() + 1) * scale_y),
+    ]
+    return SideEffect(
+        kind="black_lift",
+        region="outside_face" if face_mask is not None else "full",
+        severity=min(raw, BLACK_LIFT_MAX_SEVERITY),
+        value=round(shift, 2),
+        before=round(before, 2),
+        after=round(after, 2),
+        evidence=(
+            f"Điểm đen ngoài mặt L* {before:.0f} → {after:.0f} (+{shift:.0f}), "
+            f"C* {chroma_shift:+.1f}, {count / candidates.size:.1%} diện tích ảnh."
+        ),
+        bbox=bbox,
+        chroma_shift=round(chroma_shift, 2),
+    )
+
+
 def side_effects(original: np.ndarray, current: np.ndarray) -> List[SideEffect]:
     """Các tác dụng phụ do xử lý (severity ≥ 1), đo trên ảnh ≤ SIDE_EFFECT_MAX_SIDE."""
     first = _limit(_rgb(original), SIDE_EFFECT_MAX_SIDE)
@@ -353,6 +441,13 @@ def _region_stats(
     if regions and "background" not in stats:
         stats["background"] = aggregate(result, 1.0 - union, "background")
     return stats
+
+
+def region_stats(
+    result: MeasurementResult, regions: Dict[str, np.ndarray]
+) -> Dict[str, RegionStats]:
+    """RegionStats theo mask của một lần đo (kèm 'background'), dùng chung với compare()."""
+    return _region_stats(result, regions)
 
 
 def calibrated_assessor(

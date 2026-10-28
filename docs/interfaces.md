@@ -656,3 +656,98 @@ form `actions` as a JSON list of `RegionOperation`) returns
    on a defect with severity ≥ `VERIFY_SEVERITY` (2), meaning an action on its region or on the
    full image, and iterations remain. The next Perceive then confirms the fix.
 5. Otherwise `RE_PROCESS`, or `STOP_BEST_EFFORT` when `max_iterations` is reached.
+
+---
+
+## 4. Audit-fix contracts (`src/agent/state.py`)
+
+Added by the audit-fix round (`fix/audit-backlit`). Step 0 only introduces the types and their
+defaults; behaviour is unchanged until the lane that owns each field fills it in.
+
+| Type / field | Filled by | Meaning |
+|---|---|---|
+| `RegionOperation.defect_ref: Optional[str]` | planner (S2) | Defect the action targets, `type@region` (e.g. `backlit_subject@person`). Lets a sub-region action (face) be tracked as the parent region's defect. `None` falls back to matching the region name. |
+| `ExecutedAction` | executor (S1) | Per-action report: `region_id, operation, parameters, requested_mode, actual_mode, backend, fallback_reason, feather_requested, feather_actual, strength_scale (1.0), mask_hash, mask_area, skipped, skip_reason`. |
+| `SideEffectCheck` | `graph._side_effects_check` (S2 body, S3 caller) | `status` is `ok`, `unavailable` (measurement failed, never an empty list) or `not_run`; `previous` and `original` are `SideEffect` dicts for previous→candidate and original→candidate. |
+| `ReviewFinding`, `ReviewResult` | `review.py` (S3) | `status` `completed|unavailable|not_run`; `verdict` `ACCEPT|REVISE|REJECT|UNCERTAIN`; plus `goal, preserve, findings, confidence, reason, candidate_sha256, model, prompt_version, latency_ms, error`. |
+| `Outcome` | end of graph (S3) | `status` `ACCEPTED|UNVERIFIED|NOT_MET|KEPT_ORIGINAL|NO_CHANGE`; `accepted_by` `review|reference`; `candidate_sha256`; `reason`. Only `ACCEPTED` corresponds to `final_decision == SHIP`. |
+| `HistoryItem.executed / side_effect_check / review` | `decide_node` | Copied from `executed_actions`, `_side_effects_check(state)` and the review node. `HistoryItem.side_effects` stays and mirrors `side_effect_check.previous`. |
+| `DoctorState.executed_actions / outcome / review` | `process_node`, S3 | Report of the latest iteration; final outcome; final review. |
+
+`ExecutedAction` value sets (filled by S1): `actual_mode` is `bbox`, `oval` or `sam_refined`;
+`backend` includes `face_sam_roi` when SAM refined the face inside its ROI. `detection_box` is
+the face detector box `[x0, y0, x1, y1]`, kept apart from the edit mask that is blended;
+`expand_requested` / `expand_actual` mirror `feather_*` for the expand ratio.
+
+`executor.execute_plan(..., report: Optional[List[ExecutedAction]] = None)` appends one
+`ExecutedAction` per action when a list is passed. `EvaluationResult` is unchanged; agent and API
+code must stop reading `visual_plausibility_passed` and `vlm_feedback` in favour of `Outcome`.
+
+### 4.1 Mask tracing (R-02 to R-04)
+
+- `region_engine.subject.resolve_subject_mask(image, name, box_2d, ..., feather_radius: Optional[int] = None)`:
+  `None` uses `DEFAULT_FEATHER_RADIUS` (15). The feather is part of the cache key, so a caller
+  that passes 15 and one that passes nothing share one cache entry; any other value does not.
+- `executor`: `mask_fingerprint(mask)` returns `(sha256, area_ratio)` of the float32 mask rounded
+  to 3 digits; `executed_mask(mask_hash)` returns the mask an action used (in-process LRU of 32
+  entries, lost on restart); `face_mask_qa(mask, boxes, image_shape)` returns `None` when the mask
+  passes or a failure reason.
+- `agent.region_overlay.executed_region_overlay(image, executed)` draws the masks that were really
+  executed, looked up by `mask_hash`.
+- `GET /system` returns an extra `region_runtime = {interpreter, mobile_sam_installed, face,
+  semantic_models}`.
+- Face exposure operations (`gamma_correct`, `clahe`) default to `face_mode="oval"` when the plan
+  did not set `face_mode` (checked with `model_fields_set`); an explicit `bbox` is respected.
+  A fallback to `bbox` runs at reduced strength (`FALLBACK_STRENGTH_SCALE`, 0.5), and a failed
+  mask QA counts as a failure. Thresholds in `executor.py` (`FALLBACK_STRENGTH_SCALE`,
+  `FACE_QA_*`) are temporary and uncalibrated (BL-10).
+
+### 4.2 Plan and measurement extensions (R-05 to R-07)
+
+No `state.py` change; the new values travel as dicts in `HistoryItem.defect_status` and
+`SideEffectCheck`.
+
+- `RegionOperation.defect_ref` (`type@region`) is set by the `face_when_person` step of the
+  dark-region card and by the VLM (`SYSTEM_PROMPT` rule 7, `PLAN_RESPONSE_SCHEMA`);
+  `planner.normalize_defect_ref` maps an invalid value to `None`. `graph._targeted_defects` and
+  `_needs_verification` match on it before falling back to the region name.
+  `face_when_person`: a defect on a person region with a face located by Perceive
+  (`face_located`: `face` in `region_stats` or `region_metrics`) targets `face` with
+  `face_mode=oval`; with no face the person region is kept at the next lower severity step.
+  An extra light action on the person is off by default (`engine.BACKLIT_LIGHT_PERSON_ENABLED`,
+  `BACKLIT_LIGHT_PERSON_SCALE`). `PERSON_TARGETS` / `is_person_region` live in `agent/regions.py`;
+  a `person` preserve item also blocks actions on `face`.
+- `DefectChange.status` also takes `unverified`; `DefectChange` gains `cause`
+  (`darkness_reduced`, `gap_below_min`, `both`) and `detail`. A `backlit_subject` on a person
+  that measures `resolved` while the face did not brighten by `max(FACE_MIN_GAIN_L, FACE_GAIN_RATIO
+  x person gain)` becomes `unverified`; `_decide_tracked` then returns `STOP_BEST_EFFORT`, which
+  the outcome layer must treat as not verified.
+- `SideEffect.kind` also takes `black_lift` (`diff.black_lift`: dark pixels of the reference L* <= 30
+  inside the changed area and outside the face mask; median L* shift and chroma change).
+  `SideEffect` gains `bbox` (original-image coordinates) and `chroma_shift`. Severity is capped at
+  `BLACK_LIFT_MAX_SEVERITY` (1), below `SIDE_EFFECT_ROLLBACK_SEVERITY`, so it never rolls back.
+  `SideEffectCheck.previous` and `.original` both carry these; round 1 reuses one result for both.
+- All new thresholds (`FACE_MIN_GAIN_L`, `FACE_GAIN_RATIO`, `BLACK_LIFT_*`,
+  `BACKLIT_LIGHT_PERSON_*`) are temporary and uncalibrated (BL-10).
+
+### 4.3 Outcome and review (R-01, R-08)
+
+- `DoctorState.outcome` (`Outcome`) is separate from `decision`, which only steers the loop.
+  `review.derive_outcome` decides it for the image actually returned:
+  `ACCEPTED` (`accepted_by` = `review` for real images, `reference` for synthetic images that
+  reach the PSNR/SSIM targets), `UNVERIFIED`, `NOT_MET`, `KEPT_ORIGINAL` (returned image equals
+  the original although a fix was wanted), `NO_CHANGE` (nothing needed fixing). Running out of
+  iterations or a high heuristic score alone never gives `ACCEPTED`.
+- `DoctorState.review` / `HistoryItem.review` (`ReviewResult`): `review.review_candidate` sends the
+  original, the previous image and the candidate, plus paired crops around the largest changes and
+  around dark areas lifted by `SIDE_EFFECT_SUSPECT_KINDS` (`black_lift`), to Gemini. Verdicts:
+  `ACCEPT`, `REVISE`, `REJECT`, `UNCERTAIN`. `status` is `unavailable` (not a pass) when Gemini
+  fails or no key is set. `review.REVIEW_ENABLED` switches it off (`tests/conftest.py` does for
+  every test). `side_effect_check.status == "unavailable"` is read as unknown, not as clean.
+- API: the `process` run result carries `outcome` and `review`; the result message carries
+  `outcome_status`. The run also stores the overlay of the executed masks
+  (`artifacts.executed_overlay`, kind `executed_overlay`, looked up by `mask_hash`; `null` when a
+  mask has left the 32-entry in-process cache). Session export adds top-level `region_runtime`
+  and per-action `executed` inside `history`.
+- Temporary, uncalibrated (BL-10): `REVIEW_TIMEOUT_MS`, `REVIEW_MAX_CALLS`, `CROP_SIZE`,
+  `MAX_CHANGE_CROPS`, `MIN_CHANGE_LEVEL`, `SUSPECT_DARK_L`, `SUSPECT_MIN_LIFT`.

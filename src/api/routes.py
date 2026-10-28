@@ -125,6 +125,11 @@ async def process_image_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _dump(model: Any) -> Optional[Dict[str, Any]]:
+    """Model Pydantic của state (Outcome, ReviewResult) → dict JSON; None giữ nguyên."""
+    return model.model_dump(mode="json") if model is not None else None
+
+
 def _process_response(
     result_state: Dict[str, Any], case_id: Optional[str] = None
 ) -> ProcessResponse:
@@ -135,6 +140,8 @@ def _process_response(
         total_iterations=result_state["iteration"] - 1,
         final_decision=result_state["decision"],
         final_evaluation=result_state.get("evaluation_result", {}),
+        outcome=_dump(result_state.get("outcome")),
+        review=_dump(result_state.get("review")),
         history=[item.model_dump() if hasattr(item, "model_dump") else item for item in history],
         intermediate_images_base64=[
             _encode_image_to_base64(img) for img in result_state.get("intermediate_images", [])

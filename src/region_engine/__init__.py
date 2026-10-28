@@ -52,6 +52,7 @@ from .subject import (
     clear_subject_mask_cache,
     refine_bbox_mask,
     resolve_subject_mask,
+    runtime_capabilities,
     segment_box,
 )
 from .subject import capabilities as subject_capabilities
@@ -66,6 +67,7 @@ __all__ = [
     "refine_bbox_mask",
     "resolve_subject_mask",
     "segment_box",
+    "runtime_capabilities",
     "subject_capabilities",
     "segment_by_prompt",
     "PromptSegmentationConfig",

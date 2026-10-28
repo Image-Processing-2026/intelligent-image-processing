@@ -5,12 +5,16 @@ Rule engine offline dựa trên Knowledge Base.
 - instantiate: biến công thức của các card auto_apply thành action cho executor.
 """
 
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+import logging
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from ..planner import OPERATION_ORDER
+from ..regions import is_person_region
 from ..state import Defect, DiagnosisReport, PlanSource
 from .models import KnowledgeBase, ParamSpec, ParamValue, RecipeStep
-from .retriever import CardMatch, match_cards
+from .retriever import CardMatch, face_located, match_cards
+
+logger = logging.getLogger(__name__)
 
 # Mức độ mặc định khi card không gắn với lỗi nào (card theo loại cảnh)
 DEFAULT_SEVERITY = 2
@@ -26,6 +30,23 @@ CALIBRATED_DEFECTS = (
     "color_cast_green",
 )
 DEFAULT_FEATHER = 15
+# Tạm thời, chưa hiệu chỉnh (BL-10): có thêm một thao tác nhẹ trên chủ thể người bên cạnh thao
+# tác trên mặt hay không. Mặc định tắt; R-09 so sánh các cấu hình rồi mới chọn.
+BACKLIT_LIGHT_PERSON_ENABLED = False
+# Tạm thời, chưa hiệu chỉnh (BL-10): thao tác nhẹ trên người dùng bấy nhiêu phần độ lệch gamma
+BACKLIT_LIGHT_PERSON_SCALE = 0.4
+
+
+class StepTarget(NamedTuple):
+    """Một nơi bước công thức được áp dụng: vùng, mức, lỗi và cách nhắm tới lỗi đó."""
+
+    region: str
+    severity: int
+    issue: str
+    defect_ref: Optional[str] = None
+    face_mode: Optional[str] = None
+    param_scale: float = 1.0
+    note: str = ""
 
 
 def diagnose_from_metrics(
@@ -113,45 +134,83 @@ def param_value(spec: ParamSpec, severity: int) -> ParamValue:
     return spec[max(lower)] if lower else spec[min(spec)]
 
 
-def _action(step: RecipeStep, region: str, severity: int, issue: str) -> Dict[str, Any]:
+def _scaled(operation: str, params: Dict[str, Any], scale: float) -> Dict[str, Any]:
+    """Giảm cường độ về phía trung hòa (hiện chỉ gamma: 1 + (gamma − 1) × scale)."""
+    if scale == 1.0 or operation != "gamma_correct" or "gamma" not in params:
+        return params
+    return {**params, "gamma": round(1.0 + (float(params["gamma"]) - 1.0) * scale, 3)}
+
+
+def _action(step: RecipeStep, target: StepTarget) -> Dict[str, Any]:
     """Dựng action dạng dict (cho RegionOperation) từ một bước công thức tại một vùng."""
-    params = {name: param_value(spec, severity) for name, spec in step.params.items()}
+    region = target.region
+    params = {name: param_value(spec, target.severity) for name, spec in step.params.items()}
     action: Dict[str, Any] = {
         "region_id": "full_image" if region == "full" else region,
         "target_prompt": region,
         # Vùng cụ thể → None để executor tự suy ra loại vùng (D2)
-        "region_type": "full" if region == "full" else None,
+        "region_type": "full" if region == "full" else ("face" if region == "face" else None),
         "feather_radius": step.feather_radius or DEFAULT_FEATHER,
-        "detected_issue": issue,
+        "detected_issue": target.issue,
         "operation": step.operation,
-        "parameters": params,
+        "parameters": _scaled(step.operation, params, target.param_scale),
     }
-    if step.face_mode:
-        action["face_mode"] = step.face_mode
+    if target.defect_ref:
+        action["defect_ref"] = target.defect_ref
+    face_mode = target.face_mode or step.face_mode
+    if face_mode:
+        action["face_mode"] = face_mode
     return action
 
 
-def step_targets(step: RecipeStep, match: CardMatch) -> List[Tuple[str, int, str]]:
-    """(vùng, severity, lỗi) cho từng nơi bước công thức được áp dụng."""
+def step_targets(step: RecipeStep, match: CardMatch, has_face: bool = False) -> List[StepTarget]:
+    """
+    Các nơi bước công thức được áp dụng. has_face: Perceive đã định vị được khuôn mặt; dùng cho
+    bước face_when_person (lỗi ở chủ thể người → nhắm riêng mặt, hoặc giảm một bậc nếu không có
+    mặt).
+    """
     if step.region != "$defect":
         severity = max((d.severity for d in match.bindings), default=DEFAULT_SEVERITY)
         issue = match.bindings[0].type if match.bindings else match.card.id
-        return [(step.region, severity, issue)]
-    targets: Dict[str, Tuple[int, str]] = {}
+        return [StepTarget(step.region, severity, issue)]
+    found: Dict[str, Tuple[int, str]] = {}
     for defect in match.bindings:
-        previous = targets.get(defect.region)
+        previous = found.get(defect.region)
         if previous is None or defect.severity > previous[0]:
-            targets[defect.region] = (defect.severity, defect.type)
-    return [(region, severity, issue) for region, (severity, issue) in targets.items()]
+            found[defect.region] = (defect.severity, defect.type)
+    targets: List[StepTarget] = []
+    for region, (severity, issue) in found.items():
+        ref = f"{issue}@{region}"
+        if not (step.face_when_person and is_person_region(region)):
+            targets.append(StepTarget(region, severity, issue, ref))
+        elif has_face:
+            note = f"[{match.card.id}] Đã định vị khuôn mặt: chỉnh riêng 'face' (oval) cho {ref}."
+            targets.append(StepTarget("face", severity, issue, ref, "oval", note=note))
+            if BACKLIT_LIGHT_PERSON_ENABLED:
+                scale = BACKLIT_LIGHT_PERSON_SCALE
+                targets.append(StepTarget(region, severity, issue, ref, None, scale))
+        else:
+            lowered = max(1, severity - 1)
+            note = (
+                f"[{match.card.id}] Không định vị được khuôn mặt trong '{region}': giữ recipe "
+                f"trên '{region}', giảm một bậc (mức {severity} → {lowered}) cho {ref}."
+            )
+            targets.append(StepTarget(region, lowered, issue, ref, note=note))
+    return targets
 
 
 def instantiate(
-    matches: Sequence[CardMatch], auto_only: bool = True
+    matches: Sequence[CardMatch],
+    auto_only: bool = True,
+    has_face: bool = False,
+    notes: Optional[List[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
     """
     Sinh action từ công thức của các card (mặc định chỉ card auto_apply).
     Card priority cao hơn thắng khi hai card cùng (operation, vùng). Action được sắp theo
     thứ tự thực thi an toàn của planner.
+    has_face: Perceive đã định vị được khuôn mặt (xem step_targets). notes: nếu truyền vào, nhận
+    ghi chú lý do chọn vùng (nhắm mặt, hoặc giảm một bậc vì không thấy mặt).
 
     Returns:
         (actions, card_ids): action dạng dict cho RegionOperation và id các card đã dùng.
@@ -164,12 +223,16 @@ def instantiate(
         if auto_only and not match.card.auto_apply:
             continue
         for step in match.card.recipe:
-            for region, severity, issue in step_targets(step, match):
-                key = (step.operation, region)
+            for target in step_targets(step, match, has_face):
+                key = (step.operation, target.region)
                 if key in seen:
                     continue
                 seen.add(key)
-                actions.append(_action(step, region, severity, issue))
+                actions.append(_action(step, target))
+                if target.note:
+                    logger.info(target.note)
+                    if notes is not None and target.note not in notes:
+                        notes.append(target.note)
                 if match.card.id not in used:
                     used.append(match.card.id)
     actions.sort(key=lambda action: OPERATION_ORDER.get(action["operation"], 99))
@@ -182,6 +245,7 @@ def plan_actions_from_knowledge(
     diagnosis: Optional[DiagnosisReport],
     metrics: Dict[str, Any],
     kb: Optional[KnowledgeBase] = None,
+    notes: Optional[List[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Kế hoạch offline: chẩn đoán (+ lỗi từ chỉ số) → card khớp → action."""
     effective = (
@@ -189,4 +253,6 @@ def plan_actions_from_knowledge(
         if diagnosis is not None
         else diagnose_from_metrics(metrics)
     )
-    return instantiate(match_cards(effective, metrics, kb))
+    return instantiate(
+        match_cards(effective, metrics, kb), has_face=face_located(effective), notes=notes
+    )

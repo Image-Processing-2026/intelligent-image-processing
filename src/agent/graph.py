@@ -4,7 +4,7 @@ Quản lý chu trình khép kín: Analyze -> Diagnose -> Plan -> Process -> Eval
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import cv2
 import numpy as np
@@ -23,24 +23,47 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
 from src.analyzer_evaluator.analyzer import analyze_image
-from src.analyzer_evaluator.measurement.diff import DefectChange, SideEffect, compare, side_effects
+from src.analyzer_evaluator.measurement.diff import (
+    DefectChange,
+    black_lift,
+    compare,
+    region_stats,
+    side_effects,
+)
 from src.analyzer_evaluator.metadata import ImageMetadata
 from src.analyzer_evaluator.no_reference_eval import evaluate_no_reference
 from src.analyzer_evaluator.reference_eval import evaluate_reference
 
 from .executor import execute_plan, image_cache_key, subject_cache_key
-from .fusion import measure_hypothesis, plan_contraindications
+from .fusion import (
+    backlit_progress,
+    backlit_resolution_cause,
+    measure_hypothesis,
+    plan_contraindications,
+)
 from .intent import apply_intent, build_questions, intent_from_answers, intent_prompt
+from .knowledge.retriever import face_located
 from .memory import DEFAULT_USER, experience_prompt, get_case_memory
 from .perception import _measure, perceive, resolve_subject_masks
 from .planner import (
     action_region,
     apply_contraindications,
     apply_preserve_guard,
+    normalize_defect_ref,
     validate_and_sort_plan,
 )
-from .regions import canonical_region
-from .state import DiagnosisReport, DoctorState, HistoryItem, IntentProfile, TreatmentPlan
+from .regions import canonical_region, is_person_region
+from .review import derive_outcome, review_candidate, review_context_from_state, same_image
+from .state import (
+    DiagnosisReport,
+    DoctorState,
+    ExecutedAction,
+    HistoryItem,
+    IntentProfile,
+    ReviewResult,
+    SideEffectCheck,
+    TreatmentPlan,
+)
 from .user_analysis import validate_edits
 from .vlm_diagnostician import diagnose_and_plan
 
@@ -195,48 +218,77 @@ def process_node(state: DoctorState) -> Dict[str, Any]:
     """Node 4: Thực thi kế hoạch điều trị (Module 2 & Module 3)."""
     prev_img = state["current_image"].copy()
     if not state.get("treatment_plan") or not state["treatment_plan"].actions:
-        return {"current_image": state["current_image"], "previous_image": prev_img}
+        return {
+            "current_image": state["current_image"],
+            "previous_image": prev_img,
+            "executed_actions": [],
+        }
 
     # Vùng Perceive đã định vị bằng bbox dùng lại mask đã đo (cache theo ảnh gốc của lượt chạy)
     diagnosis = state.get("diagnosis")
+    report: List[ExecutedAction] = []
     processed_img = execute_plan(
         state["current_image"],
         state["treatment_plan"],
         subject_boxes=diagnosis.subject_boxes if diagnosis is not None else None,
         cache_key=image_cache_key(state["original_image"]),
+        report=report,
     )
-    return {"current_image": processed_img, "previous_image": prev_img}
+    return {
+        "current_image": processed_img,
+        "previous_image": prev_img,
+        "executed_actions": report,
+    }
+
+
+def _evaluate_image(
+    state: DoctorState, image: np.ndarray, previous: np.ndarray, iteration: int
+) -> Dict[str, Any]:
+    """
+    Đánh giá một ảnh theo ADR-002: tham chiếu khi là synthetic có ground truth, ngược lại
+    no-reference. Chuẩn hóa về dict thuần trước khi đưa vào state: DoctorState khai báo
+    evaluation_result là Dict, HistoryItem.eval_score và ProcessResponse cũng yêu cầu dict
+    (model thô gây ValidationError và không JSON-serializable).
+    """
+    gt = state.get("ground_truth_image")
+    if state.get("is_synthetic", False) and gt is not None:
+        eval_metrics = evaluate_reference(
+            current_image=image,
+            ground_truth_image=gt,
+            iteration=iteration,
+            previous_image=previous,
+        )
+    else:
+        eval_metrics = evaluate_no_reference(
+            current_image=image,
+            previous_image=previous,
+            iteration=iteration,
+        )
+    return eval_metrics.model_dump()
 
 
 def evaluate_node(state: DoctorState) -> Dict[str, Any]:
     """Node 5: Đánh giá chất lượng sau khi xử lý (Module 1)."""
-    is_syn = state.get("is_synthetic", False)
-    gt = state.get("ground_truth_image")
     prev_img = (
         state["previous_image"]
         if state.get("previous_image") is not None
         else state["original_image"]
     )
     iteration = state.get("iteration", 1)
+    return {
+        "evaluation_result": _evaluate_image(state, state["current_image"], prev_img, iteration)
+    }
 
-    if is_syn and gt is not None:
-        eval_metrics = evaluate_reference(
-            current_image=state["current_image"],
-            ground_truth_image=gt,
-            iteration=iteration,
-            previous_image=prev_img,
-        )
-    else:
-        eval_metrics = evaluate_no_reference(
-            current_image=state["current_image"],
-            previous_image=prev_img,
-            iteration=iteration,
-        )
 
-    # Chuẩn hóa về dict thuần trước khi đưa vào state: DoctorState khai báo
-    # evaluation_result là Dict, HistoryItem.eval_score và ProcessResponse
-    # cũng yêu cầu dict (model thô gây ValidationError và không JSON-serializable).
-    return {"evaluation_result": eval_metrics.model_dump()}
+def _reference_met(eval_result: Dict[str, Any]) -> bool:
+    """True nếu chỉ số tham chiếu (synthetic) đạt cả ngưỡng PSNR lẫn SSIM."""
+    psnr, ssim = eval_result.get("psnr"), eval_result.get("ssim")
+    return (
+        psnr is not None
+        and ssim is not None
+        and float(psnr) >= PSNR_THRESHOLD
+        and float(ssim) >= SSIM_THRESHOLD
+    )
 
 
 def _is_degraded_synthetic(eval_result: Dict[str, Any], history: List[HistoryItem]) -> bool:
@@ -312,31 +364,97 @@ def _decide_real(eval_result: Dict[str, Any], history: List[HistoryItem]) -> str
     return "RE_PROCESS"
 
 
+def _plan_targets(plan: TreatmentPlan) -> Tuple[Set[str], Set[Tuple[str, str]]]:
+    """
+    (vùng đã tác động, các lỗi 'type@region' mà action tự khai qua defect_ref). Action trên vùng
+    con (face) khai lỗi của vùng cha (person) bằng defect_ref nên vẫn được theo dõi.
+    """
+    touched = {action_region(action) for action in plan.actions}
+    refs: Set[Tuple[str, str]] = set()
+    for action in plan.actions:
+        ref = normalize_defect_ref(action.defect_ref)
+        if ref is not None:
+            defect_type, _, region = ref.partition("@")
+            refs.add((defect_type, region))
+    return touched, refs
+
+
+def _is_targeted(
+    defect_type: str, region: str, touched: Set[str], refs: Set[Tuple[str, str]]
+) -> bool:
+    """Lỗi được kế hoạch nhắm tới: action toàn ảnh, trên đúng vùng, hoặc khai qua defect_ref."""
+    return "full" in touched or region in touched or (defect_type, region) in refs
+
+
 def _needs_verification(
     diagnosis: Optional[DiagnosisReport], plan: Optional[TreatmentPlan]
 ) -> bool:
     """
     True nếu kế hoạch vòng này đã tác động lên một lỗi severity >= VERIFY_SEVERITY
-    (action trên đúng vùng của lỗi, hoặc trên toàn ảnh) → cần Perceive lại để xác nhận.
+    (action trên đúng vùng của lỗi, trên toàn ảnh, hoặc khai lỗi qua defect_ref)
+    → cần Perceive lại để xác nhận.
     Lỗi không có action nào nhắm tới (ví dụ ám xanh lá mà toolbox không sửa được) không
     chặn SHIP, vì chẩn đoán lại cũng không đổi được gì.
     """
     if diagnosis is None or plan is None:
         return False
-    touched = {action_region(action) for action in plan.actions}
+    touched, refs = _plan_targets(plan)
     return any(
-        defect.severity >= VERIFY_SEVERITY and ("full" in touched or defect.region in touched)
+        defect.severity >= VERIFY_SEVERITY
+        and _is_targeted(defect.type, canonical_region(defect.region), touched, refs)
         for defect in diagnosis.defects
     )
 
 
-def _side_effects(previous: np.ndarray, current: np.ndarray) -> List[SideEffect]:
-    """Tác dụng phụ của vòng vừa xử lý (diff ảnh trước/sau vòng); lỗi đo không chặn pipeline."""
+def _face_mask(state: DoctorState) -> Optional[np.ndarray]:
+    """Mask mặt trên ảnh gốc (cùng cache với Perceive/executor); không định vị được → None."""
+    diagnosis = state.get("diagnosis")
+    original = state.get("original_image")
+    if diagnosis is None or original is None or not face_located(diagnosis):
+        return None
+    boxes = {canonical_region(name): box for name, box in diagnosis.subject_boxes.items()}
+    masks = resolve_subject_masks(
+        original, ["face"], boxes, subject_cache_key(image_cache_key(original), original.shape)
+    )
+    return masks["face"].mask if "face" in masks else None
+
+
+def _effects_between(
+    reference: np.ndarray, current: np.ndarray, face: Optional[np.ndarray]
+) -> List[Dict[str, Any]]:
+    """Tác dụng phụ (kể cả black_lift ngoài mặt) khi đi từ ảnh tham chiếu tới ảnh hiện tại."""
+    found = side_effects(reference, current)
+    lift = black_lift(reference, current, face)
+    if lift is not None:
+        found.append(lift)
+    return [effect.model_dump() for effect in found]
+
+
+def _side_effects_check(state: DoctorState) -> SideEffectCheck:
+    """
+    Tác dụng phụ của vòng vừa xử lý, đo hai chiều: ảnh trước vòng → hiện tại (previous, dùng để
+    rollback) và ảnh gốc → hiện tại (original, chỉ ghi nhận). black_lift chỉ ghi nhận (severity
+    bị chặn dưới ngưỡng rollback). Phép đo lỗi trả status 'unavailable', không bao giờ trả danh
+    sách rỗng giả; không có ảnh nào để so thì 'not_run'.
+    """
+    previous = state.get("previous_image")
+    original = state.get("original_image")
+    current = state["current_image"]
+    if previous is None and original is None:
+        return SideEffectCheck(status="not_run")
     try:
-        return side_effects(previous, current)
+        face = _face_mask(state)
+        from_previous = _effects_between(previous, current, face) if previous is not None else []
+        if original is None:
+            from_original: List[Dict[str, Any]] = []
+        elif previous is not None and (previous is original or np.array_equal(previous, original)):
+            from_original = list(from_previous)  # vòng 1: hai chiều trùng nhau
+        else:
+            from_original = _effects_between(original, current, face)
     except Exception as exc:
         logger.warning("Side-effect analysis failed: %s", exc)
-        return []
+        return SideEffectCheck(status="unavailable", error=str(exc))
+    return SideEffectCheck(status="ok", previous=from_previous, original=from_original)
 
 
 def _targeted_defects(
@@ -344,23 +462,61 @@ def _targeted_defects(
 ) -> List[Tuple[str, str]]:
     """
     Các lỗi (loại, vùng chuẩn hóa) toolbox sửa được mà kế hoạch vòng này nhắm tới: action trên
-    đúng vùng của lỗi, hoặc trên toàn ảnh (cùng quy ước với _needs_verification).
+    đúng vùng của lỗi, trên toàn ảnh, hoặc khai lỗi qua defect_ref (cùng quy ước với
+    _needs_verification).
     """
     if diagnosis is None or plan is None:
         return []
-    touched = {action_region(action) for action in plan.actions}
+    touched, refs = _plan_targets(plan)
     targeted: List[Tuple[str, str]] = []
     for defect in diagnosis.actionable_defects:
         region = canonical_region(defect.region)
-        if ("full" in touched or region in touched) and (defect.type, region) not in targeted:
+        if (defect.type, region) in targeted:
+            continue
+        if _is_targeted(defect.type, region, touched, refs):
             targeted.append((defect.type, region))
     return targeted
 
 
+def _verify_backlit(
+    changes: List[DefectChange],
+    masks: Dict[str, Any],
+    before: Any,
+    after: Any,
+    people: Set[str],
+) -> None:
+    """
+    Kiểm chứng chéo ngược sáng ở chủ thể người bằng vùng mặt (R-06), sửa trực tiếp `changes`:
+    ghi nguyên nhân hết lỗi (độ tối giảm hay khoảng cách nền-chủ thể < BACKLIT_MIN_GAP_L) và
+    đổi 'resolved' thành 'unverified' nếu mặt không sáng lên tương ứng. Không có mask mặt thì
+    không đổi gì.
+    """
+    if "face" not in masks:
+        return
+    regions = {name: subject.mask for name, subject in masks.items()}
+    before_stats, after_stats = region_stats(before, regions), region_stats(after, regions)
+    for change in changes:
+        if change.type != "backlit_subject" or change.region not in people:
+            continue
+        if change.status == "resolved":
+            change.cause = backlit_resolution_cause(change.region, after_stats)
+        progress = backlit_progress(change.region, before_stats, after_stats)
+        if progress is None:
+            continue
+        change.detail = progress.detail
+        if change.status == "resolved" and not progress.consistent:
+            logger.warning(
+                "Backlit '%s' reads resolved but the face did not follow.", change.region
+            )
+            change.status = "unverified"
+
+
 def _track_defects(state: DoctorState, plan: TreatmentPlan) -> List[DefectChange]:
     """
-    Trạng thái (resolved/improved/unchanged/worse) của các lỗi mục tiêu so với ảnh gốc, đo trên
-    đúng vùng của lỗi bằng cùng mask Perceive đã dựng (cache theo ảnh gốc của lượt chạy).
+    Trạng thái (resolved/improved/unchanged/worse/unverified) của các lỗi mục tiêu so với ảnh
+    gốc, đo trên đúng vùng của lỗi bằng cùng mask Perceive đã dựng (cache theo ảnh gốc của lượt
+    chạy). Ngược sáng ở chủ thể người được đo thêm trên vùng mặt (nếu có mask mặt): 'resolved'
+    mà mặt không sáng lên tương ứng → 'unverified'.
     Không theo dõi được lỗi nào (thiếu số đo/mask) hoặc lỗi đo → [], decide_node dùng logic cũ.
     """
     diagnosis = state.get("diagnosis")
@@ -373,10 +529,15 @@ def _track_defects(state: DoctorState, plan: TreatmentPlan) -> List[DefectChange
         if before is None or after is None:
             return []
         boxes = {canonical_region(name): box for name, box in diagnosis.subject_boxes.items()}
-        names = sorted({region for _, region in defects if region != "full"})
+        people = {
+            region
+            for defect_type, region in defects
+            if defect_type == "backlit_subject" and is_person_region(region)
+        }
+        names = {region for _, region in defects if region != "full"}
         masks = resolve_subject_masks(
             original,
-            names,
+            sorted(names | ({"face"} if people else set())),
             boxes,
             subject_cache_key(image_cache_key(original), original.shape),
         )
@@ -397,20 +558,26 @@ def _track_defects(state: DoctorState, plan: TreatmentPlan) -> List[DefectChange
             current_measurement=after,
             assess=assess,
         )
+        changes = [change for change in diff.defects if change.before >= 1]
+        _verify_backlit(changes, masks, before, after, people)
     except Exception as exc:
         logger.warning("Defect tracking failed: %s", exc)
         return []
-    return [change for change in diff.defects if change.before >= 1]
+    return changes
 
 
 def _decide_tracked(changes: List[DefectChange]) -> str:
     """
     Quyết định theo trạng thái lỗi mục tiêu (không kể trường hợp worse, đã xử lý như suy thoái):
+    - có lỗi unverified (số đo vùng cha mâu thuẫn với vùng con) → STOP_BEST_EFFORT: không SHIP
+      theo số đo, cũng không lặp vì Perceive vòng sau chỉ đo lại đúng số đo đó;
     - mọi lỗi resolved → SHIP;
     - có lỗi resolved/improved nhưng còn lỗi chưa hết → RE_PROCESS (decide_node áp giới hạn vòng);
     - mọi lỗi unchanged → STOP_BEST_EFFORT (xử lý không tác động được thêm).
     """
     statuses = {change.status for change in changes}
+    if "unverified" in statuses:
+        return "STOP_BEST_EFFORT"
     if statuses == {"resolved"}:
         return "SHIP"
     if statuses & {"resolved", "improved"}:
@@ -480,17 +647,24 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
     degraded = has_actions and not unchanged and regressed
     # P7: tác dụng phụ do xử lý của vòng này (halo, nhiễu vùng tối tăng, banding…), ảnh thực.
     # Severity ≥ SIDE_EFFECT_ROLLBACK_SEVERITY → coi như suy thoái → rollback
-    effects = (
-        _side_effects(previous_image, state["current_image"])
+    check = (
+        _side_effects_check(state)
         if has_actions and not unchanged and not is_syn and previous_image is not None
-        else []
+        else SideEffectCheck()
     )
-    history_entry.side_effects = [effect.model_dump() for effect in effects]
-    if any(effect.severity >= SIDE_EFFECT_ROLLBACK_SEVERITY for effect in effects):
+    history_entry.side_effect_check = check
+    history_entry.executed = list(state.get("executed_actions") or [])
+    history_entry.side_effects = list(check.previous)
+    risky = [
+        (effect["kind"], effect["severity"])
+        for effect in check.previous
+        if effect["severity"] >= SIDE_EFFECT_ROLLBACK_SEVERITY
+    ]
+    if risky:
         logger.warning(
             "Iteration %d introduced processing side effects %s; treating it as degraded.",
             iteration,
-            [(effect.kind, effect.severity) for effect in effects],
+            risky,
         )
         degraded = True
 
@@ -555,7 +729,7 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
     thumbnail = _create_thumbnail(state["current_image"])
     new_intermediates = list(state.get("intermediate_images") or []) + [thumbnail]
 
-    return {
+    update: Dict[str, Any] = {
         "current_image": final_image,
         "rolled_back": rolled_back,
         "iteration": iteration + 1,
@@ -563,11 +737,86 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
         "history": new_history,
         "intermediate_images": new_intermediates,
     }
+    if rolled_back:
+        # evaluation_result đang mô tả ảnh bị loại: tính lại cho ảnh thực sự được trả
+        update["evaluation_result"] = _evaluate_returned(state, final_image, iteration)
+    return update
+
+
+def _evaluate_returned(state: DoctorState, image: np.ndarray, iteration: int) -> Dict[str, Any]:
+    """
+    Đánh giá ảnh được trả sau rollback/từ chối, so với ảnh gốc (không còn "ảnh trước vòng").
+    Lỗi đo → {} chứ không giữ số của ảnh khác.
+    """
+    try:
+        return _evaluate_image(state, image, state["original_image"], iteration)
+    except Exception as exc:
+        logger.warning("Re-evaluating the returned image failed: %s", exc)
+        return {}
 
 
 def should_continue(state: DoctorState) -> str:
-    """Điều hướng sau decide: lặp lại vòng xử lý hoặc kết thúc."""
+    """Điều hướng sau decide: lặp lại vòng xử lý hoặc sang bước review rồi kết thúc."""
     return "re_process" if state["decision"] == "RE_PROCESS" else "ship"
+
+
+def review_node(state: DoctorState) -> Dict[str, Any]:
+    """
+    Node 7: review ảnh SẼ TRẢ (R-08). Chỉ chạy cho ảnh thật đã bị đổi so với ảnh gốc.
+    REJECT → trả ảnh trước vòng cuối (hoặc ảnh gốc), tính lại evaluation cho ảnh đó.
+    Các verdict khác không đổi ảnh; kết cục do finalize_node quyết định.
+    """
+    returned = state["current_image"]
+    original = state["original_image"]
+    history = list(state.get("history") or [])
+    reference_run = bool(state.get("is_synthetic", False)) and (
+        state.get("ground_truth_image") is not None
+    )
+    if reference_run or same_image(returned, original):
+        return {"review": ReviewResult(status="not_run", reason="nothing to review")}
+
+    # Sau rollback ảnh trả chính là ảnh trước vòng cuối: không còn ảnh "trước" để đối chiếu
+    previous = None if state.get("rolled_back") else state.get("previous_image")
+    review = review_candidate(
+        original,
+        previous,
+        returned,
+        review_context_from_state(history, state.get("intent")),
+    )
+    update: Dict[str, Any] = {"review": review}
+    if history:
+        history[-1] = history[-1].model_copy(update={"review": review})
+        update["history"] = history
+    if review.status == "completed" and review.verdict == "REJECT":
+        fallback = previous if previous is not None else original
+        logger.warning("Review rejected the result; returning the previous image.")
+        update["current_image"] = fallback
+        update["rolled_back"] = True
+        update["evaluation_result"] = _evaluate_returned(
+            state, fallback, int(state.get("iteration", 1))
+        )
+    return update
+
+
+def finalize_node(state: DoctorState) -> Dict[str, Any]:
+    """
+    Node 8: chốt kết cục (R-01). `decision` cuối chỉ là SHIP khi kết cục là ACCEPTED; các kết
+    cục khác là STOP_BEST_EFFORT (pipeline đã dừng nhưng chưa có ai xác nhận ảnh tốt).
+    """
+    outcome = derive_outcome(
+        original=state["original_image"],
+        returned=state["current_image"],
+        is_synthetic=bool(state.get("is_synthetic", False))
+        and state.get("ground_truth_image") is not None,
+        reference_met=_reference_met(state.get("evaluation_result") or {}),
+        history=list(state.get("history") or []),
+        intent=state.get("intent"),
+        review=state.get("review"),
+    )
+    return {
+        "outcome": outcome,
+        "decision": "SHIP" if outcome.status == "ACCEPTED" else "STOP_BEST_EFFORT",
+    }
 
 
 # ---------------------------------------------------------
@@ -584,6 +833,8 @@ def build_doctor_graph(checkpointer: Optional[BaseCheckpointSaver] = None):
     workflow.add_node("process", process_node)
     workflow.add_node("evaluate", evaluate_node)
     workflow.add_node("decide", decide_node)
+    workflow.add_node("review", review_node)
+    workflow.add_node("finalize", finalize_node)
 
     workflow.set_entry_point("analyze")
 
@@ -597,8 +848,10 @@ def build_doctor_graph(checkpointer: Optional[BaseCheckpointSaver] = None):
     workflow.add_conditional_edges(
         "decide",
         should_continue,
-        {"re_process": "analyze", "ship": END},
+        {"re_process": "analyze", "ship": "review"},
     )
+    workflow.add_edge("review", "finalize")
+    workflow.add_edge("finalize", END)
 
     return workflow.compile(checkpointer=checkpointer)
 
@@ -663,5 +916,8 @@ def initial_doctor_state(
         "intent": intent,
         "user_id": user_id,
         "image_metadata": image_metadata,
+        "executed_actions": [],
+        "outcome": None,
+        "review": None,
     }
     return initial_state

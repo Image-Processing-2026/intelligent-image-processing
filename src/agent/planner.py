@@ -7,8 +7,8 @@ import logging
 import math
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
-from .regions import canonical_region
-from .state import PreserveItem, RegionOperation, TreatmentPlan
+from .regions import canonical_region, is_person_region
+from .state import DEFECT_TYPES, PreserveItem, RegionOperation, TreatmentPlan
 
 logger = logging.getLogger(__name__)
 
@@ -227,6 +227,20 @@ def clamp_parameters(operation: str, params: Dict[str, Any]) -> Dict[str, Any]:
     return clamped
 
 
+def normalize_defect_ref(ref: Any) -> Optional[str]:
+    """
+    Chuẩn hóa tham chiếu lỗi 'type@region' (vùng qua canonical_region). Sai định dạng hoặc loại
+    lỗi lạ → None, action quay về cách so tên vùng.
+    """
+    if not isinstance(ref, str) or "@" not in ref:
+        return None
+    defect_type, _, region = ref.partition("@")
+    defect_type = defect_type.strip().casefold()
+    if defect_type not in DEFECT_TYPES:
+        return None
+    return f"{defect_type}@{canonical_region(region)}"
+
+
 def sanitize_actions(actions: List[RegionOperation]) -> List[RegionOperation]:
     """
     Lọc và kẹp các thao tác, GIỮ NGUYÊN thứ tự:
@@ -246,6 +260,8 @@ def sanitize_actions(actions: List[RegionOperation]) -> List[RegionOperation]:
         }
         for name, value in clamp_region_fields(region_fields).items():
             setattr(action, name, value)
+        if action.defect_ref is not None:
+            action.defect_ref = normalize_defect_ref(action.defect_ref)
         valid_actions.append(action)
     return valid_actions
 
@@ -300,8 +316,11 @@ def _in_scope(region: str, item: PreserveItem) -> bool:
     """
     Preserve toàn ảnh áp dụng cho mọi action (cùng quy ước với perception và retriever);
     preserve một vùng áp dụng cho action trên vùng đó và action toàn ảnh (vì cũng tác động lên nó).
+    Khuôn mặt là con của chủ thể người: preserve 'person' cũng áp dụng cho action 'face'.
     """
     preserved_region = canonical_region(item.region)
+    if region == "face" and is_person_region(preserved_region):
+        return True
     return preserved_region == "full" or region in (preserved_region, "full")
 
 

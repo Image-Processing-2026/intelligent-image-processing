@@ -18,13 +18,14 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.agent.region_overlay import diagnosis_region_overlay
+from src.agent.region_overlay import diagnosis_region_overlay, executed_region_overlay
 from src.agent.regions import canonical_region
 from src.agent.session import SessionResult
 from src.agent.state import DiagnosisEdit, DiagnosisReport
 from src.agent.treatment import treatment_recipe
 from src.agent.user_analysis import apply_edits, validate_edits
 from src.agent.vlm_diagnostician import DEFAULT_GEMINI_MODEL
+from src.region_engine import runtime_capabilities
 
 from .config import AppSettings
 from .errors import MESSAGES
@@ -240,6 +241,29 @@ def save_run_image(
     return artifact
 
 
+def _executed_overlay_artifact(
+    add_image: Callable[[str, np.ndarray, str], Artifact],
+    state: Dict[str, Any],
+    history: List[Any],
+) -> Optional[Artifact]:
+    """
+    Overlay đúng các mask đã thực thi (tra theo mask_hash trong cache của tiến trình). Mask đã
+    bị đẩy khỏi cache (LRU) thì bỏ qua, không báo lỗi; lỗi dựng overlay chỉ ghi log.
+    """
+    executed = [action for entry in history for action in getattr(entry, "executed", [])]
+    original = state.get("original_image")
+    if original is None or not executed:
+        return None
+    try:
+        overlay, drawn = executed_region_overlay(original, executed)
+        if not drawn:
+            return None
+        return add_image("executed_overlay", overlay, "executed_overlay.png")
+    except Exception:
+        logger.warning("Could not build executed-region overlay", exc_info=True)
+        return None
+
+
 def record_process(
     db: Session,
     settings: AppSettings,
@@ -261,6 +285,7 @@ def record_process(
         return save_run_image(db, settings, item, run, kind, image, name)
 
     final = add_image("final", state["current_image"], "final.png")
+    executed_overlay = _executed_overlay_artifact(add_image, state, history)
     intermediates = [
         add_image("intermediate", image, f"iter_{index + 1}.png").id
         for index, image in enumerate(state.get("intermediate_images") or [])
@@ -270,13 +295,20 @@ def record_process(
         "total_iterations": int(state.get("iteration", 1)) - 1,
         "final_decision": str(state.get("decision") or ""),
         "final_evaluation": plain(state.get("evaluation_result") or {}),
+        # Kết cục trung thực (R-01) và kết quả review (R-08) của đúng ảnh được trả
+        "outcome": plain(state.get("outcome")),
+        "review": plain(state.get("review")),
         "history": plain(history),
         "treatment": plain(treatment_recipe(history)),
         "intent": plain(state.get("intent")),
         "rolled_back": bool(state.get("rolled_back")),
         "is_synthetic": bool(state.get("is_synthetic")),
         "case_id": case_id,
-        "artifacts": {"final": final.id, "intermediate": intermediates},
+        "artifacts": {
+            "final": final.id,
+            "intermediate": intermediates,
+            "executed_overlay": executed_overlay.id if executed_overlay else None,
+        },
         "sources": _sources(history),
     }
     treatment = Treatment(
@@ -298,6 +330,7 @@ def record_process(
             "run_id": run.id,
             "final_artifact_id": final.id,
             "final_decision": run.result["final_decision"],
+            "outcome_status": (run.result["outcome"] or {}).get("status"),
             "total_iterations": run.result["total_iterations"],
         },
     )
@@ -435,6 +468,7 @@ def summaries(db: Session, items: List[ProcessingSession]) -> List[SessionSummar
     ids = [item.id for item in items]
     thumbs: Dict[str, Artifact] = {}
     decisions: Dict[str, str] = {}
+    outcomes: Dict[str, Optional[str]] = {}
     if ids:
         for artifact in db.scalars(
             select(Artifact).where(Artifact.session_id.in_(ids), Artifact.kind == "thumbnail")
@@ -446,6 +480,7 @@ def summaries(db: Session, items: List[ProcessingSession]) -> List[SessionSummar
             .order_by(Run.created_at)
         ):
             decisions[run.session_id] = str(run.result.get("final_decision") or "") or None
+            outcomes[run.session_id] = (run.result.get("outcome") or {}).get("status")
     return [
         SessionSummaryOut(
             id=item.id,
@@ -455,6 +490,7 @@ def summaries(db: Session, items: List[ProcessingSession]) -> List[SessionSummar
             updated_at=item.updated_at,
             thumbnail_url=artifact_out(thumbs[item.id]).url if item.id in thumbs else None,
             final_decision=decisions.get(item.id),
+            outcome_status=outcomes.get(item.id),
         )
         for item in items
     ]
@@ -599,6 +635,7 @@ def export_payload(db: Session, item: ProcessingSession) -> Dict[str, Any]:
         "schema": EXPORT_SCHEMA,
         "exported_at": utc_now(),
         "app": gemini_mode(),
+        "region_runtime": runtime_capabilities(),
         "session": {
             "id": item.id,
             "title": item.title,

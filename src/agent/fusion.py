@@ -30,7 +30,7 @@ cùng đầu vào và cùng câu trả lời verify, kết quả luôn như nhau
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Literal, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, List, Literal, NamedTuple, Optional, Sequence, Tuple, Union
 
 from pydantic import BaseModel, Field
 
@@ -479,6 +479,68 @@ def backlit_measurement(
         ),
     ]
     return Measured(severity, round(confidence, 3), evidence)
+
+
+# Kiểm chứng tiến triển ngược sáng trên mặt (R-06). Tạm thời, chưa hiệu chỉnh (BL-10).
+# Lỗi ở chủ thể người "hết" nhưng mặt phải sáng lên ít nhất chừng này (L*) và ít nhất tỉ lệ này
+# của mức sáng lên của cả vùng người; nếu không thì số đo của vùng người mâu thuẫn với mặt.
+# FACE_MID_L không dùng ở đây: chỉ xét hướng và độ lớn thay đổi, không có đích tuyệt đối.
+FACE_MIN_GAIN_L = 3.0
+FACE_GAIN_RATIO = 0.5
+
+
+class BacklitProgress(NamedTuple):
+    """Kiểm chứng chéo giữa vùng người và vùng mặt sau khi xử lý ngược sáng."""
+
+    consistent: bool
+    person_gain: float
+    face_gain: float
+    detail: str
+
+
+def _mean_l(stats: Optional[RegionStats]) -> Optional[float]:
+    """L* trung bình của một vùng, None nếu thiếu số đo."""
+    estimate = stats.values.get("exposure.mean_l") if stats is not None else None
+    return None if estimate is None else float(estimate.value)
+
+
+def backlit_resolution_cause(region: str, after: Dict[str, RegionStats]) -> str:
+    """
+    Vì sao ngược sáng ở vùng chủ thể được coi là hết (severity 0 sau xử lý):
+    darkness_reduced (chủ thể đủ sáng so với mốc), gap_below_min (nền chỉ còn sáng hơn chủ thể
+    dưới BACKLIT_MIN_GAP_L), both, hoặc '' nếu không suy ra được từ số đo.
+    """
+    subject_l, backdrop_l = _mean_l(after.get(region)), _mean_l(after.get("background"))
+    if subject_l is None or backdrop_l is None:
+        return ""
+    mid = FACE_MID_L if canonical_region(region) == "face" else SUBJECT_MID_L
+    dark_gone = mid - subject_l < BACKLIT_SEVERITY_L[0]
+    gap_closed = backdrop_l - subject_l < BACKLIT_MIN_GAP_L
+    if dark_gone and gap_closed:
+        return "both"
+    return "darkness_reduced" if dark_gone else ("gap_below_min" if gap_closed else "")
+
+
+def backlit_progress(
+    region: str, before: Dict[str, RegionStats], after: Dict[str, RegionStats]
+) -> Optional[BacklitProgress]:
+    """
+    So mức sáng lên (L*) của vùng chủ thể người với vùng mặt. Thiếu số đo của một trong hai
+    → None (không kiểm chứng được, giữ kết quả cũ). Mặt không sáng lên tương ứng
+    (dưới FACE_MIN_GAIN_L hoặc dưới FACE_GAIN_RATIO × mức của vùng người) → không nhất quán.
+    """
+    person = (_mean_l(before.get(region)), _mean_l(after.get(region)))
+    face = (_mean_l(before.get("face")), _mean_l(after.get("face")))
+    if None in person or None in face:
+        return None
+    person_gain, face_gain = person[1] - person[0], face[1] - face[0]
+    needed = max(FACE_MIN_GAIN_L, FACE_GAIN_RATIO * person_gain)
+    consistent = face_gain >= needed
+    detail = (
+        f"{region} L* {person[0]:.0f}→{person[1]:.0f} ({person_gain:+.1f}), "
+        f"mặt L* {face[0]:.0f}→{face[1]:.0f} ({face_gain:+.1f}, cần ≥ {needed:.1f})"
+    )
+    return BacklitProgress(consistent, round(person_gain, 2), round(face_gain, 2), detail)
 
 
 def measure_hypothesis(

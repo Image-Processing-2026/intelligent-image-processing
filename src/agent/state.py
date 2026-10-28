@@ -198,6 +198,9 @@ class RegionOperation(BaseModel):
     )
     parameters: Dict[str, Any] = Field(default_factory=dict, description="Các siêu tham số cụ thể")
     order: int = Field(default=0, description="Thứ tự ưu tiên xử lý")
+    # Lỗi mà thao tác này nhắm tới, dạng 'type@region' (ví dụ 'backlit_subject@person'). Cho phép
+    # action trên vùng con (face) vẫn được theo dõi như lỗi của vùng cha. None → so tên vùng.
+    defect_ref: Optional[str] = Field(default=None, description="Lỗi mục tiêu, dạng 'type@region'")
 
 
 class TreatmentPlan(BaseModel):
@@ -213,6 +216,74 @@ class TreatmentPlan(BaseModel):
         default_factory=list, description="Id playbook card/nguyên lý đã dùng để lập kế hoạch"
     )
     source: PlanSource = Field(default="vlm", description="Nguồn gốc kế hoạch điều trị")
+
+
+class ExecutedAction(BaseModel):
+    """Báo cáo thực thi của một action (executor điền): yêu cầu so với thực tế, để audit."""
+
+    region_id: str
+    operation: str
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    requested_mode: Optional[str] = Field(default=None, description="face_mode được yêu cầu")
+    actual_mode: Optional[str] = Field(default=None, description="face_mode thực sự dùng")
+    backend: str = Field(default="", description="Bộ phân giải vùng đã tạo mask")
+    fallback_reason: Optional[str] = None
+    feather_requested: Optional[int] = None
+    feather_actual: Optional[int] = None
+    expand_requested: Optional[float] = None
+    expand_actual: Optional[float] = None
+    # Hộp dò tìm mặt (x0, y0, x1, y1) theo pixel, tách khỏi mask chỉnh (edit_mask) dùng để blend
+    detection_box: Optional[List[int]] = None
+    strength_scale: float = Field(default=1.0, description="Hệ số giảm cường độ khi fallback")
+    mask_hash: Optional[str] = Field(default=None, description="sha256 của mask float32 làm tròn")
+    mask_area: Optional[float] = Field(default=None, description="Tỉ lệ diện tích mask / ảnh")
+    skipped: bool = False
+    skip_reason: Optional[str] = None
+
+
+class SideEffectCheck(BaseModel):
+    """Kết quả kiểm tra tác dụng phụ hai chiều (so ảnh trước vòng và so ảnh gốc)."""
+
+    # unavailable: phép đo lỗi (khác với 'không có tác dụng phụ'); not_run: không áp dụng
+    status: Literal["ok", "unavailable", "not_run"] = "not_run"
+    previous: List[Dict[str, Any]] = Field(default_factory=list)
+    original: List[Dict[str, Any]] = Field(default_factory=list)
+    error: Optional[str] = None
+
+
+class ReviewFinding(BaseModel):
+    """Một nhận xét của bước review, trỏ tới crop làm bằng chứng."""
+
+    crop_id: str = ""
+    issue: str = ""
+    severity: int = Field(default=1, ge=0, le=3)
+    text: str = ""
+
+
+class ReviewResult(BaseModel):
+    """Kết quả review ảnh sẽ trả về (VLM đọc ảnh gốc, ảnh trước và ảnh ứng viên)."""
+
+    status: Literal["completed", "unavailable", "not_run"] = "not_run"
+    verdict: Optional[Literal["ACCEPT", "REVISE", "REJECT", "UNCERTAIN"]] = None
+    goal: str = ""
+    preserve: List[str] = Field(default_factory=list)
+    findings: List[ReviewFinding] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    reason: str = ""
+    candidate_sha256: Optional[str] = None
+    model: str = ""
+    prompt_version: str = ""
+    latency_ms: Optional[int] = None
+    error: Optional[str] = None
+
+
+class Outcome(BaseModel):
+    """Kết cục cuối của một lượt chạy, tách khỏi decision điều khiển vòng lặp."""
+
+    status: Literal["ACCEPTED", "UNVERIFIED", "NOT_MET", "KEPT_ORIGINAL", "NO_CHANGE"]
+    accepted_by: Optional[Literal["review", "reference"]] = None
+    candidate_sha256: Optional[str] = None
+    reason: str = ""
 
 
 class HistoryItem(BaseModel):
@@ -241,6 +312,11 @@ class HistoryItem(BaseModel):
             "(measurement.diff.DefectChange dạng dict); rỗng nếu không theo dõi được"
         ),
     )
+    executed: List[ExecutedAction] = Field(
+        default_factory=list, description="Báo cáo thực thi từng action của vòng này"
+    )
+    side_effect_check: SideEffectCheck = Field(default_factory=SideEffectCheck)
+    review: Optional[ReviewResult] = None
 
 
 # Phong cách cũ (đã bỏ); chỉ giữ để IntentProfile.style đọc được dữ liệu cũ
@@ -318,3 +394,7 @@ class DoctorState(TypedDict):
     user_id: str  # Chủ của các ca trong bộ nhớ (Phase 5)
     # Metadata EXIF/JPEG của file gốc (Phase 3); None khi không có. Perceive đưa prior vào prompt.
     image_metadata: Optional[ImageMetadata]
+    # Audit-fix: báo cáo thực thi của vòng gần nhất, kết cục cuối và kết quả review
+    executed_actions: List[ExecutedAction]
+    outcome: Optional[Outcome]
+    review: Optional[ReviewResult]

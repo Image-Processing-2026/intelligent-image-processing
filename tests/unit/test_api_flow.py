@@ -112,6 +112,12 @@ def test_answer_runs_pipeline_and_persists_everything(
     process = body["process"]
     assert process["final_decision"] in {"SHIP", "STOP_BEST_EFFORT", "RE_PROCESS"}
     assert process["total_iterations"] == 1
+    # Kết cục trung thực: ảnh thật không có review không bao giờ ACCEPTED/SHIP
+    assert process["outcome"]["status"] in {"UNVERIFIED", "KEPT_ORIGINAL", "NO_CHANGE"}
+    assert process["outcome"]["candidate_sha256"]
+    assert process["review"]["status"] == "not_run"
+    assert process["final_decision"] != "SHIP"
+    assert body["outcome_status"] == process["outcome"]["status"]
     assert set(process["sources"]["plan"]) <= {"rule_based"}
     assert process["is_synthetic"] is False
     assert len(process["history"]) == 1

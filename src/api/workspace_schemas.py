@@ -90,6 +90,8 @@ class SessionSummaryOut(BaseModel):
     updated_at: str
     thumbnail_url: Optional[str] = None
     final_decision: Optional[str] = None
+    # Kết cục trung thực của lần xử lý gần nhất (ACCEPTED, UNVERIFIED, …); None với phiên cũ
+    outcome_status: Optional[str] = None
 
 
 class SessionDetailOut(SessionSummaryOut):
@@ -180,3 +182,5 @@ class SystemOut(BaseModel):
     pipeline_concurrency: int
     registration_open: bool
     max_upload_mb: int
+    # Môi trường phân vùng thật của máy chủ (interpreter, face/semantic, mobile_sam)
+    region_runtime: Dict[str, Any] = Field(default_factory=dict)

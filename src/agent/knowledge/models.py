@@ -54,12 +54,17 @@ class RecipeStep(BaseModel):
     params: Dict[str, ParamSpec] = Field(default_factory=dict)
     feather_radius: Optional[int] = Field(default=None, ge=5, le=50)
     face_mode: Optional[Literal["bbox", "oval"]] = None
+    # Bước $defect trên vùng chủ thể người: nhắm riêng khuôn mặt (oval) khi Perceive định vị được
+    # mặt; không có mặt thì giữ vùng cũ nhưng dùng giá trị của mức thấp hơn một bậc
+    face_when_person: bool = False
 
     @model_validator(mode="after")
     def _within_toolbox(self) -> "RecipeStep":
         """Operation thuộc toolbox; tham số đúng tên, khóa severity 0..3, trong biên."""
         if self.operation not in ALLOWED_OPERATIONS:
             raise ValueError(f"operation '{self.operation}' is not in the toolbox")
+        if self.face_when_person and self.region != "$defect":
+            raise ValueError("face_when_person needs region '$defect'")
         bounds = PARAMETER_BOUNDS[self.operation]
         for name, spec in self.params.items():
             if name not in bounds:

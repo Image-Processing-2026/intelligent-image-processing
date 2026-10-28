@@ -43,6 +43,13 @@ class ProcessResponse(BaseModel):
     total_iterations: int
     final_decision: str
     final_evaluation: Dict[str, Any]
+    outcome: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Kết cục trung thực (ACCEPTED/UNVERIFIED/NOT_MET/KEPT_ORIGINAL/NO_CHANGE)",
+    )
+    review: Optional[Dict[str, Any]] = Field(
+        default=None, description="Kết quả review ảnh được trả (R-08)"
+    )
     history: List[Dict[str, Any]]
     image_metadata: Optional[ImageMetadata] = None
     intermediate_images_base64: List[str] = Field(
