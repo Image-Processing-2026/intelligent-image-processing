@@ -7,6 +7,10 @@ là toàn ảnh, để preserve guard, chẩn đoán và executor không hiểu 
 FACE_TARGETS = frozenset(("face", "faces", "khuôn mặt", "khuôn mặt người"))
 FULL_TARGETS = frozenset(("full", "all", "toàn", "toàn bộ", "toàn ảnh", "full_image"))
 SPATIAL_TARGETS = frozenset(("top", "bottom", "left", "right", "center", "giữa"))
+# Vùng chủ thể là người (cha của 'face'): action trên khuôn mặt vẫn thuộc lỗi của vùng này
+PERSON_TARGETS = frozenset(
+    ("person", "people", "man", "woman", "boy", "girl", "child", "portrait", "human", "subject")
+)
 
 
 def canonical_region(name: object) -> str:
@@ -20,3 +24,8 @@ def canonical_region(name: object) -> str:
     if region in FACE_TARGETS:
         return "face"
     return region
+
+
+def is_person_region(name: object) -> bool:
+    """True nếu vùng là chủ thể người (không tính 'face'), cha của khuôn mặt."""
+    return canonical_region(name) in PERSON_TARGETS

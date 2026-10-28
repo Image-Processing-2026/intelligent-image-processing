@@ -19,17 +19,23 @@ def _range_hint(spec: ParamSpec) -> str:
     return f" [{steps}]"
 
 
-def _describe_step(step: RecipeStep, match: CardMatch) -> List[str]:
+def _describe_step(step: RecipeStep, match: CardMatch, has_face: bool = False) -> List[str]:
     """Mô tả một bước công thức với tham số đã chọn cho từng vùng áp dụng."""
     lines: List[str] = []
-    for region, severity, _ in step_targets(step, match):
+    for target in step_targets(step, match, has_face):
         params = ", ".join(
-            f"{name}={param_value(spec, severity)}{_range_hint(spec)}"
+            f"{name}={param_value(spec, target.severity)}{_range_hint(spec)}"
             for name, spec in step.params.items()
         )
-        where = "toàn ảnh" if region == "full" else f"vùng '{region}'"
+        where = "toàn ảnh" if target.region == "full" else f"vùng '{target.region}'"
         feather = f", feather_radius={step.feather_radius}" if step.feather_radius else ""
-        lines.append(f"{step.operation} trên {where} (mức {severity}): {params}{feather}")
+        face = f", face_mode={target.face_mode}" if target.face_mode else ""
+        ref = f', defect_ref="{target.defect_ref}"' if target.defect_ref else ""
+        lines.append(
+            f"{step.operation} trên {where} (mức {target.severity}): {params}{feather}{face}{ref}"
+        )
+        if target.note:
+            lines.append(target.note)
     return lines
 
 
@@ -42,7 +48,9 @@ def format_context(context: KnowledgeContext) -> str:
         card = match.card
         bound = ", ".join(f"{d.type}@{d.region} (mức {d.severity})" for d in match.bindings)
         lines.append(f"[{card.id}] {card.title} — áp dụng cho: {bound or ', '.join(card.scenes)}")
-        steps = [text for step in card.recipe for text in _describe_step(step, match)]
+        steps = [
+            text for step in card.recipe for text in _describe_step(step, match, context.has_face)
+        ]
         if steps:
             lines.append("  Công thức: " + "; rồi ".join(steps))
         for item in card.avoid:

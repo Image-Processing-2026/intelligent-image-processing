@@ -29,7 +29,13 @@ from .knowledge import (
     plan_actions_from_knowledge,
     retrieve,
 )
-from .planner import ALLOWED_OPERATIONS, PARAMETER_BOUNDS, REGION_FIELD_BOUNDS, clamp_region_fields
+from .planner import (
+    ALLOWED_OPERATIONS,
+    PARAMETER_BOUNDS,
+    REGION_FIELD_BOUNDS,
+    clamp_region_fields,
+    normalize_defect_ref,
+)
 from .state import (
     DiagnosisReport,
     HistoryItem,
@@ -81,6 +87,10 @@ Nhiệm vụ của bạn:
 7. Nếu có CHẨN ĐOÁN (giai đoạn 1): chỉ lập kế hoạch cho các defect có severity >= 1,
    dùng region của defect làm target_prompt và type của defect làm detected_issue;
    cường độ tham số tỉ lệ với severity (1 nhẹ tay, 3 mạnh tay).
+   Được phép chỉnh một VÙNG CON của vùng defect (ví dụ defect ngược sáng ở "person" thì chỉnh
+   riêng "face" với face_mode "oval", để tóc, áo và nền không bị kéo theo). Khi đó BẮT BUỘC điền
+   "defect_ref" dạng "type@region" của defect gốc (ví dụ "backlit_subject@person") để hệ thống
+   theo dõi đúng lỗi; action trên chính vùng của defect hoặc toàn ảnh có thể bỏ trống defect_ref.
    Defect có "fixable": false (motion_blur, jpeg_artifacts, haze, highlight_clipping) là lỗi
    toolbox KHÔNG sửa được: không lập action cho chúng, chỉ dùng để tránh làm nặng thêm.
    Tôn trọng "contraindications" của defect: "no_sharpen" → không dùng sharpen;
@@ -110,6 +120,7 @@ Viết "reasoning" bằng tiếng Việt có dấu. Trả về kết quả dư�
       "target_prompt": "sky",
       "region_type": "semantic",
       "detected_issue": "overexposed",
+      "defect_ref": "overexposed@sky",
       "operation": "gamma_correct",
       "parameters": {"gamma": 0.8},
       "order": 1
@@ -149,6 +160,7 @@ def _build_plan_response_schema() -> Dict[str, Any]:
         "instance_selection": {"type": "string", "enum": ["all", "largest"]},
         "feather_radius": {"type": "integer", "minimum": feather["min"], "maximum": feather["max"]},
         "detected_issue": {"type": "string"},
+        "defect_ref": {"type": "string"},
     }
     variants = [
         {
@@ -202,6 +214,7 @@ def _plan_from_vlm_json(data: Any, iteration: int) -> TreatmentPlan:
             logger.warning("Dropping VLM action %d: not a JSON object.", index)
             continue
         fields = clamp_region_fields(raw_action)
+        fields["defect_ref"] = normalize_defect_ref(fields.get("defect_ref"))
         # Schema tham số là hợp của mọi operation: VLM có thể điền null hoặc tham số của
         # operation khác (ví dụ gamma trong denoise) → chỉ giữ tham số thuộc operation này
         if isinstance(fields.get("parameters"), dict):
@@ -311,9 +324,12 @@ def _rule_based_plan(
     chẩn đoán (bổ sung lỗi từ chỉ số Module 1). Dùng khi không có GEMINI_API_KEY hoặc khi lời
     gọi/parse Gemini thất bại, để lỗi API không bị biến thành plan rỗng (= SHIP âm thầm).
     """
-    actions, card_ids = plan_actions_from_knowledge(diagnosis, metrics)
+    notes: List[str] = []
+    actions, card_ids = plan_actions_from_knowledge(diagnosis, metrics, notes=notes)
     if card_ids:
         reasoning = f"{reasoning} Playbook: {', '.join(card_ids)}."
+    if notes:
+        reasoning = f"{reasoning} {' '.join(notes)}"
     return TreatmentPlan(
         iteration=iteration,
         reasoning=reasoning,

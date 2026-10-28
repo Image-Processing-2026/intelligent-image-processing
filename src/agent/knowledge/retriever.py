@@ -91,11 +91,17 @@ class CardMatch:
     bindings: Tuple[Defect, ...] = ()
 
 
+def face_located(diagnosis: DiagnosisReport) -> bool:
+    """Perceive đã định vị được khuôn mặt (có số đo hoặc mask vùng 'face')."""
+    return "face" in diagnosis.region_stats or "face" in diagnosis.region_metrics
+
+
 @dataclass
 class KnowledgeContext:
     """Tri thức truy xuất cho một chẩn đoán."""
 
     cards: List[CardMatch] = field(default_factory=list)
+    has_face: bool = False
     principles: List[Principle] = field(default_factory=list)
 
     @property
@@ -253,4 +259,8 @@ def retrieve(
         key=lambda pair: pair[0],
         reverse=True,
     )
-    return KnowledgeContext(cards=cards, principles=[p for _, p in ranked[:max_principles]])
+    return KnowledgeContext(
+        cards=cards,
+        has_face=face_located(diagnosis),
+        principles=[p for _, p in ranked[:max_principles]],
+    )
