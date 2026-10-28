@@ -701,3 +701,31 @@ code must stop reading `visual_plausibility_passed` and `vlm_feedback` in favour
   A fallback to `bbox` runs at reduced strength (`FALLBACK_STRENGTH_SCALE`, 0.5), and a failed
   mask QA counts as a failure. Thresholds in `executor.py` (`FALLBACK_STRENGTH_SCALE`,
   `FACE_QA_*`) are temporary and uncalibrated (BL-10).
+
+### 4.2 Plan and measurement extensions (R-05 to R-07)
+
+No `state.py` change; the new values travel as dicts in `HistoryItem.defect_status` and
+`SideEffectCheck`.
+
+- `RegionOperation.defect_ref` (`type@region`) is set by the `face_when_person` step of the
+  dark-region card and by the VLM (`SYSTEM_PROMPT` rule 7, `PLAN_RESPONSE_SCHEMA`);
+  `planner.normalize_defect_ref` maps an invalid value to `None`. `graph._targeted_defects` and
+  `_needs_verification` match on it before falling back to the region name.
+  `face_when_person`: a defect on a person region with a face located by Perceive
+  (`face_located`: `face` in `region_stats` or `region_metrics`) targets `face` with
+  `face_mode=oval`; with no face the person region is kept at the next lower severity step.
+  An extra light action on the person is off by default (`engine.BACKLIT_LIGHT_PERSON_ENABLED`,
+  `BACKLIT_LIGHT_PERSON_SCALE`). `PERSON_TARGETS` / `is_person_region` live in `agent/regions.py`;
+  a `person` preserve item also blocks actions on `face`.
+- `DefectChange.status` also takes `unverified`; `DefectChange` gains `cause`
+  (`darkness_reduced`, `gap_below_min`, `both`) and `detail`. A `backlit_subject` on a person
+  that measures `resolved` while the face did not brighten by `max(FACE_MIN_GAIN_L, FACE_GAIN_RATIO
+  x person gain)` becomes `unverified`; `_decide_tracked` then returns `STOP_BEST_EFFORT`, which
+  the outcome layer must treat as not verified.
+- `SideEffect.kind` also takes `black_lift` (`diff.black_lift`: dark pixels of the reference L* <= 30
+  inside the changed area and outside the face mask; median L* shift and chroma change).
+  `SideEffect` gains `bbox` (original-image coordinates) and `chroma_shift`. Severity is capped at
+  `BLACK_LIFT_MAX_SEVERITY` (1), below `SIDE_EFFECT_ROLLBACK_SEVERITY`, so it never rolls back.
+  `SideEffectCheck.previous` and `.original` both carry these; round 1 reuses one result for both.
+- All new thresholds (`FACE_MIN_GAIN_L`, `FACE_GAIN_RATIO`, `BLACK_LIFT_*`,
+  `BACKLIT_LIGHT_PERSON_*`) are temporary and uncalibrated (BL-10).
