@@ -674,6 +674,30 @@ defaults; behaviour is unchanged until the lane that owns each field fills it in
 | `HistoryItem.executed / side_effect_check / review` | `decide_node` | Copied from `executed_actions`, `_side_effects_check(state)` and the review node. `HistoryItem.side_effects` stays and mirrors `side_effect_check.previous`. |
 | `DoctorState.executed_actions / outcome / review` | `process_node`, S3 | Report of the latest iteration; final outcome; final review. |
 
+`ExecutedAction` value sets (filled by S1): `actual_mode` is `bbox`, `oval` or `sam_refined`;
+`backend` includes `face_sam_roi` when SAM refined the face inside its ROI. `detection_box` is
+the face detector box `[x0, y0, x1, y1]`, kept apart from the edit mask that is blended;
+`expand_requested` / `expand_actual` mirror `feather_*` for the expand ratio.
+
 `executor.execute_plan(..., report: Optional[List[ExecutedAction]] = None)` appends one
 `ExecutedAction` per action when a list is passed. `EvaluationResult` is unchanged; agent and API
 code must stop reading `visual_plausibility_passed` and `vlm_feedback` in favour of `Outcome`.
+
+### 4.1 Mask tracing (R-02 to R-04)
+
+- `region_engine.subject.resolve_subject_mask(image, name, box_2d, ..., feather_radius: Optional[int] = None)`:
+  `None` uses `DEFAULT_FEATHER_RADIUS` (15). The feather is part of the cache key, so a caller
+  that passes 15 and one that passes nothing share one cache entry; any other value does not.
+- `executor`: `mask_fingerprint(mask)` returns `(sha256, area_ratio)` of the float32 mask rounded
+  to 3 digits; `executed_mask(mask_hash)` returns the mask an action used (in-process LRU of 32
+  entries, lost on restart); `face_mask_qa(mask, boxes, image_shape)` returns `None` when the mask
+  passes or a failure reason.
+- `agent.region_overlay.executed_region_overlay(image, executed)` draws the masks that were really
+  executed, looked up by `mask_hash`.
+- `GET /system` returns an extra `region_runtime = {interpreter, mobile_sam_installed, face,
+  semantic_models}`.
+- Face exposure operations (`gamma_correct`, `clahe`) default to `face_mode="oval"` when the plan
+  did not set `face_mode` (checked with `model_fields_set`); an explicit `bbox` is respected.
+  A fallback to `bbox` runs at reduced strength (`FALLBACK_STRENGTH_SCALE`, 0.5), and a failed
+  mask QA counts as a failure. Thresholds in `executor.py` (`FALLBACK_STRENGTH_SCALE`,
+  `FACE_QA_*`) are temporary and uncalibrated (BL-10).

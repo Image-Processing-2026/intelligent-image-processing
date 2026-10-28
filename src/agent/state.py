@@ -230,6 +230,10 @@ class ExecutedAction(BaseModel):
     fallback_reason: Optional[str] = None
     feather_requested: Optional[int] = None
     feather_actual: Optional[int] = None
+    expand_requested: Optional[float] = None
+    expand_actual: Optional[float] = None
+    # Hộp dò tìm mặt (x0, y0, x1, y1) theo pixel, tách khỏi mask chỉnh (edit_mask) dùng để blend
+    detection_box: Optional[List[int]] = None
     strength_scale: float = Field(default=1.0, description="Hệ số giảm cường độ khi fallback")
     mask_hash: Optional[str] = Field(default=None, description="sha256 của mask float32 làm tròn")
     mask_area: Optional[float] = Field(default=None, description="Tỉ lệ diện tích mask / ảnh")
