@@ -2,6 +2,7 @@
 Unit tests for Module 4: Agent & Plan Validator.
 """
 
+import json
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -113,14 +114,17 @@ def test_build_history_feedback_with_data():
         )
     ]
     feedback = _build_history_feedback(history)
-    assert "Vòng 1" in feedback
-    assert "denoise" in feedback
-    assert "bilateral" in feedback
-    assert "background" in feedback
-    assert "noise_variance: 25.00 → 15.00 (giảm 10.00)" in feedback
-    assert "RE_PROCESS" in feedback
-    assert "Khử nhiễu vùng nền" in feedback
-    assert "TINH CHỈNH" in feedback
+    [row] = json.loads(feedback.split("\n", 2)[2])
+    assert row["iteration"] == 1
+    assert row["planned"] == history[0].plan.model_dump(mode="json")
+    # Không được coi action dự kiến là action đã thực thi.
+    assert row["executed"] == []
+    assert row["metrics_before"]["noise_variance"] == 25.0
+    assert row["metrics_after"]["noise_variance"] == 15.0
+    assert row["decision"] == "RE_PROCESS"
+    assert row["review"] is None
+    assert row["defect_status"] == []
+    assert row["rolled_back"] is False
 
 
 def test_build_history_feedback_window_limit():
@@ -141,9 +145,9 @@ def test_build_history_feedback_window_limit():
         for i in range(1, 4)
     ]
     feedback = _build_history_feedback(history)
-    assert "Vòng 1" not in feedback
-    assert "Vòng 2" in feedback
-    assert "Vòng 3" in feedback
+    rows = json.loads(feedback.split("\n", 2)[2])
+    assert [row["iteration"] for row in rows] == [2, 3]
+    assert [row["planned"]["reasoning"] for row in rows] == ["Reasoning 2", "Reasoning 3"]
 
 
 def test_diagnose_and_plan_fallback_accepts_history():
@@ -203,9 +207,14 @@ def test_diagnose_and_plan_vlm_prompt_includes_history(monkeypatch):
         assert plan.iteration == 2
         mock_model.generate_content.assert_called_once()
         prompt_sent = mock_model.generate_content.call_args.kwargs["contents"][0]
-        assert "--- PHẢN HỒI TỪ CÁC VÒNG TRƯỚC ---" in prompt_sent
-        assert "Vòng 1" in prompt_sent
-        assert "noise_variance: 50.00 → 30.00 (giảm 20.00)" in prompt_sent
+        feedback = _build_history_feedback(history)
+        assert feedback in prompt_sent
+        [row] = json.loads(feedback.split("\n", 2)[2])
+        assert row["iteration"] == 1
+        assert row["planned"]["actions"][0]["operation"] == "denoise"
+        assert row["executed"] == []
+        assert row["metrics_before"]["noise_variance"] == 50.0
+        assert row["metrics_after"]["noise_variance"] == 30.0
 
 
 def test_diagnose_and_plan_node_passes_history():
