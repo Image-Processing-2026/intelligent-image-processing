@@ -3,14 +3,100 @@ Module Region Engine & Mask Synthesis.
 Cung cấp các công cụ phân đoạn ngữ nghĩa, nhận diện khuôn mặt và tạo mặt nạ mềm.
 """
 
-from .detector import segment_by_prompt
-from .face_detector import detect_faces
+from .controller import (
+    InvalidRegionRequestError,
+    RegionBackendUnavailableError,
+    RegionEngineError,
+    RegionInferenceError,
+    RegionRequest,
+    RegionResult,
+    capabilities,
+    resolve_region,
+)
+from .detector import (
+    PromptSegmentationConfig,
+    PromptSegmentationResult,
+    resolve_prompt_instances,
+    segment_by_prompt,
+)
+from .face_detector import (
+    FaceDetectionError,
+    FaceDetectionRecord,
+    FaceDetectorUnavailableError,
+    close_face_detector,
+    detect_faces,
+    reset_face_detector,
+)
+from .face_landmarker import (
+    FaceLandmarkerError,
+    FaceLandmarkerUnavailableError,
+    FaceOval,
+    close_face_landmarker,
+    detect_face_ovals,
+    reset_face_landmarker,
+)
 from .mask_utils import blend_regions, create_soft_mask
+from .segmentation_backend import (
+    SegmentationInferenceError,
+    SegmentationUnavailableError,
+    close_segmentation_backend,
+    reset_segmentation_backend,
+)
 from .spatial import create_bbox_mask, create_quadrant_mask
+from .subject import (
+    Box2D,
+    BoxXYXY,
+    MaskSource,
+    SubjectMask,
+    box2d_to_xyxy,
+    clear_subject_mask_cache,
+    refine_bbox_mask,
+    resolve_subject_mask,
+    runtime_capabilities,
+    segment_box,
+)
+from .subject import capabilities as subject_capabilities
 
 __all__ = [
+    "Box2D",
+    "BoxXYXY",
+    "MaskSource",
+    "SubjectMask",
+    "box2d_to_xyxy",
+    "clear_subject_mask_cache",
+    "refine_bbox_mask",
+    "resolve_subject_mask",
+    "segment_box",
+    "runtime_capabilities",
+    "subject_capabilities",
     "segment_by_prompt",
+    "PromptSegmentationConfig",
+    "PromptSegmentationResult",
+    "resolve_prompt_instances",
+    "InvalidRegionRequestError",
+    "RegionBackendUnavailableError",
+    "RegionEngineError",
+    "RegionInferenceError",
+    "RegionRequest",
+    "RegionResult",
+    "capabilities",
+    "resolve_region",
+    "SegmentationInferenceError",
+    "SegmentationUnavailableError",
+    "close_segmentation_backend",
+    "reset_segmentation_backend",
     "detect_faces",
+    "FaceDetectionError",
+    "FaceDetectionRecord",
+    "FaceDetectorUnavailableError",
+    "close_face_detector",
+    "reset_face_detector",
+    "detect_face_ovals",
+    "FaceLandmarkerError",
+    "FaceLandmarkerUnavailableError",
+    "FaceOval",
+    "close_face_landmarker",
+    "reset_face_landmarker",
     "create_soft_mask",
     "blend_regions",
     "create_bbox_mask",

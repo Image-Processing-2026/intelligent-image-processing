@@ -1,0 +1,54 @@
+{
+  "assets": [
+    {
+      "id": "grounding_dino_tiny_snapshot",
+      "kind": "snapshot",
+      "path": "models/segmentation/grounding-dino-tiny",
+      "repo_id": "IDEA-Research/grounding-dino-tiny",
+      "revision": "a2bb814dd30d776dcf7e30523b00659f4f141c71",
+      "url": null,
+      "sha256": null,
+      "files": {
+        "model.safetensors": "1a2412ef99bd74bcd3c2a246fa1e48581f8889a1300c9051974741314fc042f3"
+      },
+      "required_files": [
+        "config.json",
+        "preprocessor_config.json",
+        "tokenizer.json",
+        "special_tokens_map.json",
+        "added_tokens.json",
+        "model.safetensors"
+      ],
+      "note": "Hugging Face snapshot at the pinned revision. scripts/fetch_segmentation_models.py downloads it and checks the sha256 in files."
+    },
+    {
+      "id": "mobile_sam_vit_t",
+      "kind": "file",
+      "path": "models/segmentation/mobile_sam.pt",
+      "revision": "f706ad9c4eb7f219c00d9050e46328518ffb65d2",
+      "url": "https://github.com/ChaoningZhang/MobileSAM/raw/f706ad9c4eb7f219c00d9050e46328518ffb65d2/weights/mobile_sam.pt",
+      "sha256": "6dbb90523a35330fedd7f1d3dfc66f995213d81b29a5ca8108dbcdd4e37d6c2f",
+      "note": "MobileSAM vit_t checkpoint at the commit pinned in requirements-semantic.txt."
+    }
+  ],
+  "datasets": {
+    "penn_fudan": {
+      "image_root": "tests/fixtures/prompt_segmentation/penn_fudan/PNGImages",
+      "mask_root": "tests/fixtures/prompt_segmentation/penn_fudan/PedMasks",
+      "note": "Download exact image/mask bytes and add per-file hashes before real evaluation."
+    },
+    "ade20k_sky": {
+      "note": "Sky fixture is intentionally not claimed until class metadata and hashes are pinned."
+    }
+  },
+  "real_model_cases": {
+    "person_penn_fudan_00046": {
+      "image": "tests/fixtures/prompt_segmentation/penn_fudan/PNGImages/FudanPed00046.png",
+      "ground_truth": "tests/fixtures/prompt_segmentation/penn_fudan/PedMasks/FudanPed00046_mask.png",
+      "prompt": "person",
+      "expected_nonempty": true,
+      "min_iou": 0.3,
+      "min_dice": 0.45
+    }
+  }
+}

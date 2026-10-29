@@ -1,0 +1,138 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./studio.css";
+
+/* Dark mode bật bằng class .dark trên <html> (ThemeProvider) */
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Token màu shadcn: nền trung tính, màu nhấn teal.
+ * Teal-700 trên nền sáng và teal-400 trên nền tối để chữ/nút đạt tương phản AA.
+ */
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.985 0.002 197);
+  --foreground: oklch(0.2 0.01 197);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2 0.01 197);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2 0.01 197);
+  --primary: oklch(0.511 0.096 186.391);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.955 0.008 197);
+  --secondary-foreground: oklch(0.25 0.01 197);
+  --muted: oklch(0.955 0.008 197);
+  --muted-foreground: oklch(0.48 0.015 197);
+  --accent: oklch(0.953 0.051 180.801);
+  --accent-foreground: oklch(0.386 0.063 188.416);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --success: oklch(0.49 0.13 150.069);
+  --warning: oklch(0.555 0.163 48.998);
+  --border: oklch(0.905 0.01 197);
+  --input: oklch(0.88 0.01 197);
+  --ring: oklch(0.6 0.118 184.704);
+  --sidebar: oklch(0.97 0.004 197);
+  --sidebar-foreground: oklch(0.2 0.01 197);
+  --sidebar-border: oklch(0.905 0.01 197);
+}
+
+.dark {
+  --background: oklch(0.17 0.008 197);
+  --foreground: oklch(0.96 0.005 197);
+  --card: oklch(0.21 0.01 197);
+  --card-foreground: oklch(0.96 0.005 197);
+  --popover: oklch(0.21 0.01 197);
+  --popover-foreground: oklch(0.96 0.005 197);
+  --primary: oklch(0.777 0.152 181.912);
+  --primary-foreground: oklch(0.19 0.03 190);
+  --secondary: oklch(0.27 0.012 197);
+  --secondary-foreground: oklch(0.96 0.005 197);
+  --muted: oklch(0.27 0.012 197);
+  --muted-foreground: oklch(0.72 0.012 197);
+  --accent: oklch(0.3 0.04 187);
+  --accent-foreground: oklch(0.91 0.07 181);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.19 0.03 20);
+  --success: oklch(0.792 0.209 151.711);
+  --warning: oklch(0.837 0.128 66.29);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.704 0.14 182.503);
+  --sidebar: oklch(0.19 0.009 197);
+  --sidebar-foreground: oklch(0.96 0.005 197);
+  --sidebar-border: oklch(1 0 0 / 10%);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  /* Phần tử gốc (summary, range, nút/link tự viết) chưa có kiểu focus riêng: viền rõ hơn
+     outline mặc định mảnh; :where() không tăng độ ưu tiên nên class outline-none vẫn thắng */
+  :where(a, button, summary, input[type="range"]):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family:
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      "Helvetica Neue",
+      Arial,
+      sans-serif;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+  /* Spinner vẫn quay chậm: là chỉ báo trạng thái, không phải trang trí */
+  .animate-spin {
+    animation-duration: 1.5s !important;
+  }
+}

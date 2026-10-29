@@ -82,11 +82,8 @@ Dự án tuân theo chuẩn [Conventional Commits](https://www.conventionalcommi
 3. **Type Annotations**: Tất cả các hàm và method bắt buộc phải có đầy đủ type hinting:
    ```python
    def apply_gamma(
-       image: np.ndarray,
-       mask: Optional[np.ndarray] = None,
-       gamma: float = 1.0
-   ) -> np.ndarray:
-       ...
+       image: np.ndarray, mask: Optional[np.ndarray] = None, gamma: float = 1.0
+   ) -> np.ndarray: ...
    ```
 4. **Kiến trúc Classical CV (ADR-001)**:
    - Các thuật toán biến đổi pixel trong `src/processing_engine/` phải là thuật toán xử lý ảnh kinh điển (OpenCV, scikit-image, NumPy).

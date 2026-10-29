@@ -17,6 +17,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!web/src/lib/
 lib64/
 parts/
 sdist/
@@ -28,8 +29,13 @@ wheels/
 
 # Testing & Coverage
 .pytest_cache/
+**/.pytest_cache/
 .coverage
 htmlcov/
+.ruff_cache/
+**/.ruff_cache/
+.playwright-mcp/
+scratch/
 
 # Environment variables & keys
 .env
@@ -56,8 +62,29 @@ weights/
 *.onnx
 data/synthetic/clean/*
 data/synthetic/degraded/*
+# Bộ hiệu chỉnh synthetic (scripts/build_calibration_set.py): ảnh sinh ra, không commit
+data/synthetic/calibration/
 data/real/*
+# Bộ nhớ ca bệnh (Phase 5): số liệu và lựa chọn của người dùng, không commit
+data/memory/
+# Web app: tài khoản, phiên xử lý và ảnh người dùng, không commit
+data/app/
 !data/synthetic/clean/.gitkeep
 !data/synthetic/degraded/.gitkeep
 !data/real/.gitkeep
 
+# Generated artifacts (output images, reports) — keep explicitly committed ones
+artifacts/*
+!artifacts/region_engine_person_output.png
+
+# Web app frontend (web/)
+/node_modules/
+web/node_modules/
+web/dist/
+web/coverage/
+
+# Phân vùng ngữ nghĩa: model tải về (scripts/fetch_segmentation_models.py)
+models/segmentation/
+
+# Bằng chứng A/B cục bộ: snapshot, request ảnh và kết quả benchmark
+data/prompt_ab/

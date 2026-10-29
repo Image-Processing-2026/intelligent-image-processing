@@ -2,11 +2,14 @@
 Mô hình dữ liệu Request & Response cho REST API (API Schemas).
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from src.agent.state import TreatmentPlan
+from src.agent.intent import Question
+from src.agent.refine import Adjustment
+from src.agent.state import DiagnosisReport, IntentProfile, RegionOperation, TreatmentPlan
+from src.analyzer_evaluator.metadata import ImageMetadata
 
 
 class DiagnoseRequest(BaseModel):
@@ -19,7 +22,18 @@ class DiagnoseResponse(BaseModel):
     """Kết quả chẩn đoán và đề xuất điều trị."""
 
     technical_metrics: Dict[str, Any]
+    diagnosis: Optional[DiagnosisReport] = None
     treatment_plan: TreatmentPlan
+    image_metadata: Optional[ImageMetadata] = None
+
+
+class RenderResponse(BaseModel):
+    """Ảnh full-res của một phác đồ được render lại."""
+
+    image_base64: str
+    width: int
+    height: int
+    applied_actions: List[RegionOperation]
 
 
 class ProcessResponse(BaseModel):
@@ -29,4 +43,63 @@ class ProcessResponse(BaseModel):
     total_iterations: int
     final_decision: str
     final_evaluation: Dict[str, Any]
+    outcome: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Kết cục trung thực (ACCEPTED/UNVERIFIED/NOT_MET/KEPT_ORIGINAL/NO_CHANGE)",
+    )
+    review: Optional[Dict[str, Any]] = Field(
+        default=None, description="Kết quả review ảnh được trả (R-08)"
+    )
     history: List[Dict[str, Any]]
+    image_metadata: Optional[ImageMetadata] = None
+    intermediate_images_base64: List[str] = Field(
+        default_factory=list,
+        description="Danh sách ảnh trung gian sau mỗi vòng lặp (Base64 PNG thumbnails)",
+    )
+    treatment: List[RegionOperation] = Field(
+        default_factory=list,
+        description="Phác đồ của ảnh kết quả (các vòng không rollback); gửi /refine để chỉnh",
+    )
+    intent: Optional[IntentProfile] = None
+    case_id: Optional[str] = Field(
+        default=None,
+        description="Id ca trong bộ nhớ; gửi kèm /refine để ghi góp ý",
+    )
+
+
+class SessionResponse(BaseModel):
+    """Một bước của phiên tương tác: cần trả lời câu hỏi, hoặc đã có kết quả."""
+
+    session_id: str
+    status: str = Field(..., description="'needs_input' hoặc 'done'")
+    questions: List[Question] = Field(default_factory=list)
+    diagnosis: Optional[DiagnosisReport] = None
+    result: Optional[ProcessResponse] = None
+
+
+class AnswerRequest(BaseModel):
+    """Câu trả lời cho các câu hỏi của phiên (id câu hỏi → value của lựa chọn) và ghi chú."""
+
+    answers: Dict[str, str] = Field(default_factory=dict)
+    notes: str = ""
+
+
+class RefineResponse(BaseModel):
+    """Ảnh và phác đồ sau khi chỉnh theo góp ý."""
+
+    image_base64: str
+    width: int
+    height: int
+    actions: List[RegionOperation]
+    adjustments: List[Adjustment]
+    notes: List[str] = Field(default_factory=list, description="Điều chỉnh đã làm, tiếng Việt")
+    source: str = Field(..., description="'rules', 'vlm' hoặc 'none' (không hiểu góp ý)")
+    quality_score: Optional[float] = None
+
+
+class MemoryStats(BaseModel):
+    """Thống kê bộ nhớ ca bệnh."""
+
+    enabled: bool
+    cases: int = 0
+    feedback: Dict[str, int] = Field(default_factory=dict)

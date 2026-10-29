@@ -1,0 +1,583 @@
+{
+  "source": "independent pixel bbox oracle and scipy.ndimage.gaussian_filter",
+  "numpy_version": "2.2.6",
+  "scipy_version": "1.17.1",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "feather_radii": [
+    0,
+    1,
+    3,
+    20,
+    21
+  ],
+  "reference": {
+    "bbox": "floor(x-r*w), floor(y-r*h), ceil(x+w+r*w), ceil(y+h+r*h)",
+    "clip": "half-open intersection with [0,W) x [0,H)",
+    "feather_identity_radii": [
+      0,
+      1
+    ],
+    "sigma": "odd_kernel / 3.0",
+    "mode": "mirror",
+    "output": "float64"
+  },
+  "cases": {
+    "CENTER": {
+      "shape": [
+        10,
+        12
+      ],
+      "detections": [
+        {
+          "x": 4,
+          "y": 3,
+          "width": 4,
+          "height": 4,
+          "score": 0.9
+        }
+      ],
+      "bboxes": [
+        [
+          4,
+          3,
+          8,
+          7
+        ]
+      ],
+      "expand_ratio": 0.0,
+      "mask_count": 1,
+      "hard_masks": [
+        {
+          "path": "hard/CENTER_0.npy",
+          "sha256": "d94abaa61a3d21a45d477c8cfef01a9e77326ef2e645e38fbbab1cd1566dabfb"
+        }
+      ],
+      "soft_masks": {
+        "0": {
+          "masks": [
+            {
+              "path": "soft/CENTER_0_f0.npy",
+              "sha256": "d94abaa61a3d21a45d477c8cfef01a9e77326ef2e645e38fbbab1cd1566dabfb"
+            }
+          ],
+          "merged": "soft/CENTER_merged_f0.npy",
+          "merged_sha256": "d94abaa61a3d21a45d477c8cfef01a9e77326ef2e645e38fbbab1cd1566dabfb"
+        },
+        "1": {
+          "masks": [
+            {
+              "path": "soft/CENTER_0_f1.npy",
+              "sha256": "d94abaa61a3d21a45d477c8cfef01a9e77326ef2e645e38fbbab1cd1566dabfb"
+            }
+          ],
+          "merged": "soft/CENTER_merged_f1.npy",
+          "merged_sha256": "d94abaa61a3d21a45d477c8cfef01a9e77326ef2e645e38fbbab1cd1566dabfb"
+        },
+        "3": {
+          "masks": [
+            {
+              "path": "soft/CENTER_0_f3.npy",
+              "sha256": "7a144801dce39e9d2726b2425d425fbfbe1beffd8021c8073668c15618e8248b"
+            }
+          ],
+          "merged": "soft/CENTER_merged_f3.npy",
+          "merged_sha256": "7a144801dce39e9d2726b2425d425fbfbe1beffd8021c8073668c15618e8248b"
+        },
+        "20": {
+          "masks": [
+            {
+              "path": "soft/CENTER_0_f20.npy",
+              "sha256": "428c648e094adde2d08590837e94eac8fab14609a675d6b706eec5232d6bf64a"
+            }
+          ],
+          "merged": "soft/CENTER_merged_f20.npy",
+          "merged_sha256": "428c648e094adde2d08590837e94eac8fab14609a675d6b706eec5232d6bf64a"
+        },
+        "21": {
+          "masks": [
+            {
+              "path": "soft/CENTER_0_f21.npy",
+              "sha256": "428c648e094adde2d08590837e94eac8fab14609a675d6b706eec5232d6bf64a"
+            }
+          ],
+          "merged": "soft/CENTER_merged_f21.npy",
+          "merged_sha256": "428c648e094adde2d08590837e94eac8fab14609a675d6b706eec5232d6bf64a"
+        }
+      },
+      "hard_merged": "hard/CENTER_merged.npy",
+      "hard_merged_sha256": "d94abaa61a3d21a45d477c8cfef01a9e77326ef2e645e38fbbab1cd1566dabfb"
+    },
+    "EXPAND": {
+      "shape": [
+        10,
+        12
+      ],
+      "detections": [
+        {
+          "x": 4,
+          "y": 3,
+          "width": 4,
+          "height": 4,
+          "score": 0.9
+        }
+      ],
+      "bboxes": [
+        [
+          3,
+          2,
+          9,
+          8
+        ]
+      ],
+      "expand_ratio": 0.25,
+      "mask_count": 1,
+      "hard_masks": [
+        {
+          "path": "hard/EXPAND_0.npy",
+          "sha256": "0ba2a6e33c4c0fbdd5e201283bff65df9ee0ee1e6d921eb8f61c8c69e4b94f24"
+        }
+      ],
+      "soft_masks": {
+        "0": {
+          "masks": [
+            {
+              "path": "soft/EXPAND_0_f0.npy",
+              "sha256": "0ba2a6e33c4c0fbdd5e201283bff65df9ee0ee1e6d921eb8f61c8c69e4b94f24"
+            }
+          ],
+          "merged": "soft/EXPAND_merged_f0.npy",
+          "merged_sha256": "0ba2a6e33c4c0fbdd5e201283bff65df9ee0ee1e6d921eb8f61c8c69e4b94f24"
+        },
+        "1": {
+          "masks": [
+            {
+              "path": "soft/EXPAND_0_f1.npy",
+              "sha256": "0ba2a6e33c4c0fbdd5e201283bff65df9ee0ee1e6d921eb8f61c8c69e4b94f24"
+            }
+          ],
+          "merged": "soft/EXPAND_merged_f1.npy",
+          "merged_sha256": "0ba2a6e33c4c0fbdd5e201283bff65df9ee0ee1e6d921eb8f61c8c69e4b94f24"
+        },
+        "3": {
+          "masks": [
+            {
+              "path": "soft/EXPAND_0_f3.npy",
+              "sha256": "0ee241f1046ae013f19137471affecc5c833ba3ce6ebe046e175c2ae4b1900af"
+            }
+          ],
+          "merged": "soft/EXPAND_merged_f3.npy",
+          "merged_sha256": "0ee241f1046ae013f19137471affecc5c833ba3ce6ebe046e175c2ae4b1900af"
+        },
+        "20": {
+          "masks": [
+            {
+              "path": "soft/EXPAND_0_f20.npy",
+              "sha256": "3cc9d8824a706be8a7be8254fb432a803027d79bf3c769e9131a16e5c4bfa2c5"
+            }
+          ],
+          "merged": "soft/EXPAND_merged_f20.npy",
+          "merged_sha256": "3cc9d8824a706be8a7be8254fb432a803027d79bf3c769e9131a16e5c4bfa2c5"
+        },
+        "21": {
+          "masks": [
+            {
+              "path": "soft/EXPAND_0_f21.npy",
+              "sha256": "3cc9d8824a706be8a7be8254fb432a803027d79bf3c769e9131a16e5c4bfa2c5"
+            }
+          ],
+          "merged": "soft/EXPAND_merged_f21.npy",
+          "merged_sha256": "3cc9d8824a706be8a7be8254fb432a803027d79bf3c769e9131a16e5c4bfa2c5"
+        }
+      },
+      "hard_merged": "hard/EXPAND_merged.npy",
+      "hard_merged_sha256": "0ba2a6e33c4c0fbdd5e201283bff65df9ee0ee1e6d921eb8f61c8c69e4b94f24"
+    },
+    "DEFAULT_EXPAND": {
+      "shape": [
+        10,
+        12
+      ],
+      "detections": [
+        {
+          "x": 4,
+          "y": 3,
+          "width": 4,
+          "height": 4,
+          "score": 0.9
+        }
+      ],
+      "bboxes": [
+        [
+          3,
+          2,
+          9,
+          8
+        ]
+      ],
+      "expand_ratio": 0.15,
+      "mask_count": 1,
+      "hard_masks": [
+        {
+          "path": "hard/DEFAULT_EXPAND_0.npy",
+          "sha256": "0ba2a6e33c4c0fbdd5e201283bff65df9ee0ee1e6d921eb8f61c8c69e4b94f24"
+        }
+      ],
+      "soft_masks": {
+        "0": {
+          "masks": [
+            {
+              "path": "soft/DEFAULT_EXPAND_0_f0.npy",
+              "sha256": "0ba2a6e33c4c0fbdd5e201283bff65df9ee0ee1e6d921eb8f61c8c69e4b94f24"
+            }
+          ],
+          "merged": "soft/DEFAULT_EXPAND_merged_f0.npy",
+          "merged_sha256": "0ba2a6e33c4c0fbdd5e201283bff65df9ee0ee1e6d921eb8f61c8c69e4b94f24"
+        },
+        "1": {
+          "masks": [
+            {
+              "path": "soft/DEFAULT_EXPAND_0_f1.npy",
+              "sha256": "0ba2a6e33c4c0fbdd5e201283bff65df9ee0ee1e6d921eb8f61c8c69e4b94f24"
+            }
+          ],
+          "merged": "soft/DEFAULT_EXPAND_merged_f1.npy",
+          "merged_sha256": "0ba2a6e33c4c0fbdd5e201283bff65df9ee0ee1e6d921eb8f61c8c69e4b94f24"
+        },
+        "3": {
+          "masks": [
+            {
+              "path": "soft/DEFAULT_EXPAND_0_f3.npy",
+              "sha256": "0ee241f1046ae013f19137471affecc5c833ba3ce6ebe046e175c2ae4b1900af"
+            }
+          ],
+          "merged": "soft/DEFAULT_EXPAND_merged_f3.npy",
+          "merged_sha256": "0ee241f1046ae013f19137471affecc5c833ba3ce6ebe046e175c2ae4b1900af"
+        },
+        "20": {
+          "masks": [
+            {
+              "path": "soft/DEFAULT_EXPAND_0_f20.npy",
+              "sha256": "3cc9d8824a706be8a7be8254fb432a803027d79bf3c769e9131a16e5c4bfa2c5"
+            }
+          ],
+          "merged": "soft/DEFAULT_EXPAND_merged_f20.npy",
+          "merged_sha256": "3cc9d8824a706be8a7be8254fb432a803027d79bf3c769e9131a16e5c4bfa2c5"
+        },
+        "21": {
+          "masks": [
+            {
+              "path": "soft/DEFAULT_EXPAND_0_f21.npy",
+              "sha256": "3cc9d8824a706be8a7be8254fb432a803027d79bf3c769e9131a16e5c4bfa2c5"
+            }
+          ],
+          "merged": "soft/DEFAULT_EXPAND_merged_f21.npy",
+          "merged_sha256": "3cc9d8824a706be8a7be8254fb432a803027d79bf3c769e9131a16e5c4bfa2c5"
+        }
+      },
+      "hard_merged": "hard/DEFAULT_EXPAND_merged.npy",
+      "hard_merged_sha256": "0ba2a6e33c4c0fbdd5e201283bff65df9ee0ee1e6d921eb8f61c8c69e4b94f24"
+    },
+    "EDGE": {
+      "shape": [
+        10,
+        12
+      ],
+      "detections": [
+        {
+          "x": 0,
+          "y": 0,
+          "width": 4,
+          "height": 4,
+          "score": 0.9
+        }
+      ],
+      "bboxes": [
+        [
+          -1,
+          -1,
+          5,
+          5
+        ]
+      ],
+      "expand_ratio": 0.25,
+      "mask_count": 1,
+      "hard_masks": [
+        {
+          "path": "hard/EDGE_0.npy",
+          "sha256": "c21c3a7fbeb275869b629f2bbb94fb9cd44205cd9b459dfca30b9ab9bbe3c8d9"
+        }
+      ],
+      "soft_masks": {
+        "0": {
+          "masks": [
+            {
+              "path": "soft/EDGE_0_f0.npy",
+              "sha256": "c21c3a7fbeb275869b629f2bbb94fb9cd44205cd9b459dfca30b9ab9bbe3c8d9"
+            }
+          ],
+          "merged": "soft/EDGE_merged_f0.npy",
+          "merged_sha256": "c21c3a7fbeb275869b629f2bbb94fb9cd44205cd9b459dfca30b9ab9bbe3c8d9"
+        },
+        "1": {
+          "masks": [
+            {
+              "path": "soft/EDGE_0_f1.npy",
+              "sha256": "c21c3a7fbeb275869b629f2bbb94fb9cd44205cd9b459dfca30b9ab9bbe3c8d9"
+            }
+          ],
+          "merged": "soft/EDGE_merged_f1.npy",
+          "merged_sha256": "c21c3a7fbeb275869b629f2bbb94fb9cd44205cd9b459dfca30b9ab9bbe3c8d9"
+        },
+        "3": {
+          "masks": [
+            {
+              "path": "soft/EDGE_0_f3.npy",
+              "sha256": "9ab3b8e65fb0197ba87298d6bb71cc3a1f3ca6a4267e8270517f2c66016bb595"
+            }
+          ],
+          "merged": "soft/EDGE_merged_f3.npy",
+          "merged_sha256": "9ab3b8e65fb0197ba87298d6bb71cc3a1f3ca6a4267e8270517f2c66016bb595"
+        },
+        "20": {
+          "masks": [
+            {
+              "path": "soft/EDGE_0_f20.npy",
+              "sha256": "14376713fe7006de7b703c25ff29f91a076ea53ec004aeca9a7ffb1d50214680"
+            }
+          ],
+          "merged": "soft/EDGE_merged_f20.npy",
+          "merged_sha256": "14376713fe7006de7b703c25ff29f91a076ea53ec004aeca9a7ffb1d50214680"
+        },
+        "21": {
+          "masks": [
+            {
+              "path": "soft/EDGE_0_f21.npy",
+              "sha256": "14376713fe7006de7b703c25ff29f91a076ea53ec004aeca9a7ffb1d50214680"
+            }
+          ],
+          "merged": "soft/EDGE_merged_f21.npy",
+          "merged_sha256": "14376713fe7006de7b703c25ff29f91a076ea53ec004aeca9a7ffb1d50214680"
+        }
+      },
+      "hard_merged": "hard/EDGE_merged.npy",
+      "hard_merged_sha256": "c21c3a7fbeb275869b629f2bbb94fb9cd44205cd9b459dfca30b9ab9bbe3c8d9"
+    },
+    "OUTSIDE": {
+      "shape": [
+        10,
+        12
+      ],
+      "detections": [
+        {
+          "x": 20,
+          "y": 20,
+          "width": 2,
+          "height": 2,
+          "score": 0.9
+        }
+      ],
+      "bboxes": [
+        [
+          20,
+          20,
+          22,
+          22
+        ]
+      ],
+      "expand_ratio": 0.0,
+      "mask_count": 0,
+      "hard_masks": [],
+      "soft_masks": {
+        "0": {
+          "masks": [],
+          "merged": "soft/OUTSIDE_merged_f0.npy",
+          "merged_sha256": "e0aae76e04f9b436e968af76d8edabad55b4d32cb304c4be74804dbb022fc615"
+        },
+        "1": {
+          "masks": [],
+          "merged": "soft/OUTSIDE_merged_f1.npy",
+          "merged_sha256": "e0aae76e04f9b436e968af76d8edabad55b4d32cb304c4be74804dbb022fc615"
+        },
+        "3": {
+          "masks": [],
+          "merged": "soft/OUTSIDE_merged_f3.npy",
+          "merged_sha256": "e0aae76e04f9b436e968af76d8edabad55b4d32cb304c4be74804dbb022fc615"
+        },
+        "20": {
+          "masks": [],
+          "merged": "soft/OUTSIDE_merged_f20.npy",
+          "merged_sha256": "e0aae76e04f9b436e968af76d8edabad55b4d32cb304c4be74804dbb022fc615"
+        },
+        "21": {
+          "masks": [],
+          "merged": "soft/OUTSIDE_merged_f21.npy",
+          "merged_sha256": "e0aae76e04f9b436e968af76d8edabad55b4d32cb304c4be74804dbb022fc615"
+        }
+      },
+      "hard_merged": "hard/OUTSIDE_merged.npy",
+      "hard_merged_sha256": "e0aae76e04f9b436e968af76d8edabad55b4d32cb304c4be74804dbb022fc615"
+    },
+    "EMPTY": {
+      "shape": [
+        10,
+        12
+      ],
+      "detections": [],
+      "bboxes": [],
+      "expand_ratio": 0.15,
+      "mask_count": 0,
+      "hard_masks": [],
+      "soft_masks": {
+        "0": {
+          "masks": [],
+          "merged": "soft/EMPTY_merged_f0.npy",
+          "merged_sha256": "e0aae76e04f9b436e968af76d8edabad55b4d32cb304c4be74804dbb022fc615"
+        },
+        "1": {
+          "masks": [],
+          "merged": "soft/EMPTY_merged_f1.npy",
+          "merged_sha256": "e0aae76e04f9b436e968af76d8edabad55b4d32cb304c4be74804dbb022fc615"
+        },
+        "3": {
+          "masks": [],
+          "merged": "soft/EMPTY_merged_f3.npy",
+          "merged_sha256": "e0aae76e04f9b436e968af76d8edabad55b4d32cb304c4be74804dbb022fc615"
+        },
+        "20": {
+          "masks": [],
+          "merged": "soft/EMPTY_merged_f20.npy",
+          "merged_sha256": "e0aae76e04f9b436e968af76d8edabad55b4d32cb304c4be74804dbb022fc615"
+        },
+        "21": {
+          "masks": [],
+          "merged": "soft/EMPTY_merged_f21.npy",
+          "merged_sha256": "e0aae76e04f9b436e968af76d8edabad55b4d32cb304c4be74804dbb022fc615"
+        }
+      },
+      "hard_merged": "hard/EMPTY_merged.npy",
+      "hard_merged_sha256": "e0aae76e04f9b436e968af76d8edabad55b4d32cb304c4be74804dbb022fc615"
+    },
+    "MULTI": {
+      "shape": [
+        10,
+        12
+      ],
+      "detections": [
+        {
+          "x": 0,
+          "y": 2,
+          "width": 2,
+          "height": 2,
+          "score": 0.8
+        },
+        {
+          "x": 4,
+          "y": 5,
+          "width": 2,
+          "height": 2,
+          "score": 0.99
+        }
+      ],
+      "bboxes": [
+        [
+          0,
+          2,
+          2,
+          4
+        ],
+        [
+          4,
+          5,
+          6,
+          7
+        ]
+      ],
+      "expand_ratio": 0.0,
+      "mask_count": 2,
+      "hard_masks": [
+        {
+          "path": "hard/MULTI_0.npy",
+          "sha256": "a50df4b3f0f6b706c4624558199c70e8ab7d6f416039f00b8b2a0ad53616c301"
+        },
+        {
+          "path": "hard/MULTI_1.npy",
+          "sha256": "09da00b6bf759ae27e1ddf52a7a34e7f2fcf764bf9f4d590f069ffda2cb8a483"
+        }
+      ],
+      "soft_masks": {
+        "0": {
+          "masks": [
+            {
+              "path": "soft/MULTI_0_f0.npy",
+              "sha256": "a50df4b3f0f6b706c4624558199c70e8ab7d6f416039f00b8b2a0ad53616c301"
+            },
+            {
+              "path": "soft/MULTI_1_f0.npy",
+              "sha256": "09da00b6bf759ae27e1ddf52a7a34e7f2fcf764bf9f4d590f069ffda2cb8a483"
+            }
+          ],
+          "merged": "soft/MULTI_merged_f0.npy",
+          "merged_sha256": "0f9286af9a88b6cc3e9585aed6c44441e714cbfaddad4e0bcdc33274d5de6d16"
+        },
+        "1": {
+          "masks": [
+            {
+              "path": "soft/MULTI_0_f1.npy",
+              "sha256": "a50df4b3f0f6b706c4624558199c70e8ab7d6f416039f00b8b2a0ad53616c301"
+            },
+            {
+              "path": "soft/MULTI_1_f1.npy",
+              "sha256": "09da00b6bf759ae27e1ddf52a7a34e7f2fcf764bf9f4d590f069ffda2cb8a483"
+            }
+          ],
+          "merged": "soft/MULTI_merged_f1.npy",
+          "merged_sha256": "0f9286af9a88b6cc3e9585aed6c44441e714cbfaddad4e0bcdc33274d5de6d16"
+        },
+        "3": {
+          "masks": [
+            {
+              "path": "soft/MULTI_0_f3.npy",
+              "sha256": "a7eca09c8772a16dbd3b83f31138fe7c3f067a6e18cf0b097d3008f3974d341e"
+            },
+            {
+              "path": "soft/MULTI_1_f3.npy",
+              "sha256": "d8efad6ea2e2544f0757c9cb7ec51d778c2ee666c337dff39032f0df09e24155"
+            }
+          ],
+          "merged": "soft/MULTI_merged_f3.npy",
+          "merged_sha256": "44b572f5852636bb8a5de850d75f948a30adf8641acf1c5ff080b29b8218c1d4"
+        },
+        "20": {
+          "masks": [
+            {
+              "path": "soft/MULTI_0_f20.npy",
+              "sha256": "a410f05cb3e14c46c7c9e1bca058673b75757e65513f6d70c604e1b97495327e"
+            },
+            {
+              "path": "soft/MULTI_1_f20.npy",
+              "sha256": "d5f0306b4388c0f077fd5df609802f211b81cea1f004af187fb510c0f8530af5"
+            }
+          ],
+          "merged": "soft/MULTI_merged_f20.npy",
+          "merged_sha256": "424211bc0baf211298c6622b656f9cc4e9d270e1de4448ab86e62981974c2f54"
+        },
+        "21": {
+          "masks": [
+            {
+              "path": "soft/MULTI_0_f21.npy",
+              "sha256": "a410f05cb3e14c46c7c9e1bca058673b75757e65513f6d70c604e1b97495327e"
+            },
+            {
+              "path": "soft/MULTI_1_f21.npy",
+              "sha256": "d5f0306b4388c0f077fd5df609802f211b81cea1f004af187fb510c0f8530af5"
+            }
+          ],
+          "merged": "soft/MULTI_merged_f21.npy",
+          "merged_sha256": "424211bc0baf211298c6622b656f9cc4e9d270e1de4448ab86e62981974c2f54"
+        }
+      },
+      "hard_merged": "hard/MULTI_merged.npy",
+      "hard_merged_sha256": "0f9286af9a88b6cc3e9585aed6c44441e714cbfaddad4e0bcdc33274d5de6d16"
+    }
+  }
+}

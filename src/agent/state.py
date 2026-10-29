@@ -3,10 +3,151 @@ Trạng thái làm việc của LangGraph (Doctor State Schema).
 Lưu trữ toàn bộ dữ liệu ảnh, chỉ số kỹ thuật, lịch sử xử lý và kế hoạch điều trị.
 """
 
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from src.analyzer_evaluator.measurement import MeasurementReport, RegionStats
+from src.analyzer_evaluator.metadata import ImageMetadata
+
+from .regions import canonical_region
+
+PlanSource = Literal["vlm", "rule_based", "vlm_fallback"]
+
+# Từ vựng chẩn đoán (giai đoạn Perceive). Gồm lỗi mà toolbox 5 công cụ xử lý được và lỗi cần
+# nhận diện để KHÔNG xử lý sai (D2: motion_blur, jpeg_artifacts, haze, highlight_clipping có
+# fixable=False — báo người dùng, sinh contraindication, không lập action).
+DEFECT_TYPES: tuple[str, ...] = (
+    "underexposed",
+    "overexposed",
+    "backlit_subject",
+    "low_contrast",
+    "noise",
+    "blur",
+    "color_cast_warm",
+    "color_cast_cool",
+    "color_cast_green",
+    "oversaturated",
+    "undersaturated",
+    "motion_blur",
+    "jpeg_artifacts",
+    "haze",
+    "highlight_clipping",
+)
+SCENE_TYPES: tuple[str, ...] = (
+    "portrait",
+    "group",
+    "landscape",
+    "cityscape",
+    "night",
+    "indoor",
+    "food",
+    "product",
+    "document",
+    "animal",
+    "macro",
+    "other",
+)
+# Đặc điểm thẩm mỹ có chủ ý; planner.apply_preserve_guard chặn thao tác phá vỡ chúng
+PRESERVE_ASPECTS: tuple[str, ...] = (
+    "warm_tone",
+    "cool_tone",
+    "low_key",
+    "high_key",
+    "silhouette",
+    "film_grain",
+    "soft_focus",
+    "muted_colors",
+    "vivid_colors",
+)
+
+
+class Evidence(BaseModel):
+    """Một bằng chứng cho lỗi: số đo, quan sát của VLM, EXIF hoặc lời người dùng (C6)."""
+
+    source: Literal["measured", "vlm", "exif", "user"]
+    metric: str = ""
+    value: Optional[float] = None
+    text: str = ""
+
+
+class Defect(BaseModel):
+    """Một lỗi kỹ thuật được chẩn đoán trên một vùng."""
+
+    type: Literal[DEFECT_TYPES]  # type: ignore[valid-type]
+    region: str = Field(default="full", description="'full' hoặc target_prompt của một vùng")
+    severity: int = Field(default=1, ge=0, le=3, description="0 không đáng kể … 3 nặng")
+    evidence: str = Field(default="", description="Bằng chứng ngắn gọn")
+    # vlm: VLM chẩn đoán; rule: luật từ metric toàn cục; measured: suy ra từ số đo theo vùng;
+    # user: người dùng yêu cầu sửa (Phase 4)
+    origin: Literal["vlm", "rule", "measured", "user"] = "vlm"
+    # Analysis v2 (C6): độ tin cậy (VLM: tỉ lệ đồng thuận self-consistency), bằng chứng có cấu
+    # trúc, lỗi toolbox sửa được hay không, và điều cần tránh khi xử lý
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    evidence_items: List[Evidence] = Field(default_factory=list)
+    fixable: bool = True
+    contraindications: List[str] = Field(default_factory=list)
+
+
+class PreserveItem(BaseModel):
+    """Một đặc điểm thẩm mỹ có chủ ý cần giữ nguyên."""
+
+    aspect: Literal[PRESERVE_ASPECTS]  # type: ignore[valid-type]
+    region: str = Field(default="full", description="'full' hoặc target_prompt của một vùng")
+    reason: str = ""
+
+
+class RegionMetrics(BaseModel):
+    """Số đo độ sáng của một vùng, tính có trọng số theo mặt nạ mềm của Module 2."""
+
+    region: str
+    backend: str = Field(default="unknown", description="Bộ phân giải vùng đã tạo mask")
+    area_ratio: float = Field(..., description="Tỉ lệ diện tích vùng / ảnh (theo trọng số mask)")
+    brightness_mean: float
+    brightness_std: float
+    brightness_level: Literal["underexposed", "normal", "overexposed"]
+    highlight_clip_ratio: float
+    shadow_clip_ratio: float
+    brightness_vs_rest: Optional[float] = Field(
+        default=None, description="Độ sáng vùng trừ độ sáng phần còn lại; None nếu vùng phủ gần hết"
+    )
+
+
+class DiagnosisReport(BaseModel):
+    """Kết quả giai đoạn Perceive: hiểu cảnh, lỗi theo vùng và điều cần giữ."""
+
+    iteration: int = 1
+    scene_type: Literal[SCENE_TYPES] = "other"  # type: ignore[valid-type]
+    lighting: str = ""
+    subjects: List[str] = Field(default_factory=list, description="Vùng quan trọng cần đo riêng")
+    defects: List[Defect] = Field(default_factory=list)
+    preserve: List[PreserveItem] = Field(default_factory=list)
+    summary: str = ""
+    region_metrics: Dict[str, RegionMetrics] = Field(default_factory=dict)
+    source: PlanSource = "vlm"
+    # Analysis v2 (C6). rejected: giả thuyết bị loại (ví dụ không đủ đồng thuận); ask_user: cần
+    # hỏi người dùng; measurement: tóm tắt đo toàn ảnh; region_stats: số đo gộp theo vùng
+    # (luôn có 'full' và 'background' khi đo được)
+    rejected: List[Defect] = Field(default_factory=list)
+    ask_user: List[Defect] = Field(default_factory=list)
+    measurement: Optional[MeasurementReport] = None
+    region_stats: Dict[str, RegionStats] = Field(default_factory=dict)
+    # bbox Gemini (ymin, xmin, ymax, xmax) 0..1000 của từng subject; executor dùng lại để phân
+    # giải cùng mask. Không đưa vào prompt Plan (prompt Plan cấm bbox)
+    subject_boxes: Dict[str, List[int]] = Field(default_factory=dict)
+    # Bản đồ tile của lần đo (MAP_KEYS → np.ndarray): chỉ dùng trong tiến trình, không
+    # serialize ra JSON/HistoryItem/API
+    measurement_maps: Optional[Any] = Field(default=None, exclude=True, repr=False)
+    # Nhật ký bảng quyết định hợp nhất (P6), mỗi giả thuyết một dòng: để giải thích và benchmark
+    fusion_notes: List[str] = Field(default_factory=list)
+    # Phân tích khác biệt so với ảnh gốc ở vòng ≥ 2 (P7, measurement.diff.DiffReport dạng dict)
+    diff: Optional[Dict[str, Any]] = None
+
+    @property
+    def actionable_defects(self) -> List[Defect]:
+        """Các lỗi có severity >= 1 mà toolbox sửa được (cần lập kế hoạch xử lý)."""
+        return [defect for defect in self.defects if defect.severity >= 1 and defect.fixable]
 
 
 class RegionOperation(BaseModel):
@@ -14,6 +155,40 @@ class RegionOperation(BaseModel):
 
     region_id: str = Field(..., description="Tên vùng, ví dụ: 'sky', 'face', 'full'")
     target_prompt: str = Field(..., description="Từ khóa nhận diện vùng hoặc mô tả không gian")
+    # None → executor suy ra loại vùng từ target_prompt (face/full/quadrant/semantic)
+    region_type: Optional[Literal["semantic", "face", "spatial", "full", "bbox", "binary_mask"]] = (
+        Field(
+            default=None,
+            description="Bộ phân giải vùng của Module 2; None thì suy ra từ target_prompt",
+        )
+    )
+    bbox: Optional[tuple[int, int, int, int]] = Field(
+        default=None,
+        description="Half-open pixel bbox (xmin, ymin, xmax, ymax) for bbox regions",
+    )
+    quadrant: Optional[str] = Field(
+        default=None,
+        description="top, bottom, left, right, or center for spatial regions",
+    )
+    binary_mask: Optional[Any] = Field(
+        default=None,
+        description="In-process bool/uint8 binary mask for binary_mask regions",
+    )
+    # Không đặt ge/le ở đây: một giá trị vượt biên từ VLM sẽ làm hỏng cả kế hoạch.
+    # Biên được kẹp trong planner.REGION_FIELD_BOUNDS (giống PARAMETER_BOUNDS).
+    feather_radius: int = Field(default=15)
+    expand_ratio: float = Field(default=0.15)
+    merge_policy: Literal["max"] = Field(default="max")
+    face_mode: Literal["bbox", "oval", "sam_refined"] = Field(
+        default="bbox",
+        description="Face region mode. bbox is backward-compatible; oval requires Face Landmarker.",
+    )
+    num_faces: int = Field(default=4)
+    instance_selection: Literal["all", "largest", "index"] = Field(default="all")
+    instance_index: Optional[int] = Field(default=None)
+    box_threshold: float = Field(default=0.35)
+    text_threshold: float = Field(default=0.25)
+    nms_iou_threshold: float = Field(default=0.8)
     detected_issue: str = Field(
         ..., description="Vấn đề kỹ thuật: underexposed, noise, low_contrast, etc."
     )
@@ -23,6 +198,9 @@ class RegionOperation(BaseModel):
     )
     parameters: Dict[str, Any] = Field(default_factory=dict, description="Các siêu tham số cụ thể")
     order: int = Field(default=0, description="Thứ tự ưu tiên xử lý")
+    # Lỗi mà thao tác này nhắm tới, dạng 'type@region' (ví dụ 'backlit_subject@person'). Cho phép
+    # action trên vùng con (face) vẫn được theo dõi như lỗi của vùng cha. None → so tên vùng.
+    defect_ref: Optional[str] = Field(default=None, description="Lỗi mục tiêu, dạng 'type@region'")
 
 
 class TreatmentPlan(BaseModel):
@@ -33,6 +211,79 @@ class TreatmentPlan(BaseModel):
     actions: List[RegionOperation] = Field(
         default_factory=list, description="Danh sách các thao tác thực thi"
     )
+    # vlm: do Gemini lập; rule_based: không có API key; vlm_fallback: gọi Gemini lỗi → luật dự phòng
+    knowledge: List[str] = Field(
+        default_factory=list, description="Id playbook card/nguyên lý đã dùng để lập kế hoạch"
+    )
+    source: PlanSource = Field(default="vlm", description="Nguồn gốc kế hoạch điều trị")
+
+
+class ExecutedAction(BaseModel):
+    """Báo cáo thực thi của một action (executor điền): yêu cầu so với thực tế, để audit."""
+
+    region_id: str
+    operation: str
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    requested_mode: Optional[str] = Field(default=None, description="face_mode được yêu cầu")
+    actual_mode: Optional[str] = Field(default=None, description="face_mode thực sự dùng")
+    backend: str = Field(default="", description="Bộ phân giải vùng đã tạo mask")
+    fallback_reason: Optional[str] = None
+    feather_requested: Optional[int] = None
+    feather_actual: Optional[int] = None
+    expand_requested: Optional[float] = None
+    expand_actual: Optional[float] = None
+    # Hộp dò tìm mặt (x0, y0, x1, y1) theo pixel, tách khỏi mask chỉnh (edit_mask) dùng để blend
+    detection_box: Optional[List[int]] = None
+    strength_scale: float = Field(default=1.0, description="Hệ số giảm cường độ khi fallback")
+    mask_hash: Optional[str] = Field(default=None, description="sha256 của mask float32 làm tròn")
+    mask_area: Optional[float] = Field(default=None, description="Tỉ lệ diện tích mask / ảnh")
+    skipped: bool = False
+    skip_reason: Optional[str] = None
+
+
+class SideEffectCheck(BaseModel):
+    """Kết quả kiểm tra tác dụng phụ hai chiều (so ảnh trước vòng và so ảnh gốc)."""
+
+    # unavailable: phép đo lỗi (khác với 'không có tác dụng phụ'); not_run: không áp dụng
+    status: Literal["ok", "unavailable", "not_run"] = "not_run"
+    previous: List[Dict[str, Any]] = Field(default_factory=list)
+    original: List[Dict[str, Any]] = Field(default_factory=list)
+    error: Optional[str] = None
+
+
+class ReviewFinding(BaseModel):
+    """Một nhận xét của bước review, trỏ tới crop làm bằng chứng."""
+
+    crop_id: str = ""
+    issue: str = ""
+    severity: int = Field(default=1, ge=0, le=3)
+    text: str = ""
+
+
+class ReviewResult(BaseModel):
+    """Kết quả review ảnh sẽ trả về (VLM đọc ảnh gốc, ảnh trước và ảnh ứng viên)."""
+
+    status: Literal["completed", "unavailable", "not_run"] = "not_run"
+    verdict: Optional[Literal["ACCEPT", "REVISE", "REJECT", "UNCERTAIN"]] = None
+    goal: str = ""
+    preserve: List[str] = Field(default_factory=list)
+    findings: List[ReviewFinding] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    reason: str = ""
+    candidate_sha256: Optional[str] = None
+    model: str = ""
+    prompt_version: str = ""
+    latency_ms: Optional[int] = None
+    error: Optional[str] = None
+
+
+class Outcome(BaseModel):
+    """Kết cục cuối của một lượt chạy, tách khỏi decision điều khiển vòng lặp."""
+
+    status: Literal["ACCEPTED", "UNVERIFIED", "NOT_MET", "KEPT_ORIGINAL", "NO_CHANGE"]
+    accepted_by: Optional[Literal["review", "reference"]] = None
+    candidate_sha256: Optional[str] = None
+    reason: str = ""
 
 
 class HistoryItem(BaseModel):
@@ -44,6 +295,79 @@ class HistoryItem(BaseModel):
     metrics_after: Dict[str, Any]
     eval_score: Dict[str, Any]
     decision: str
+    diagnosis: Optional[DiagnosisReport] = Field(
+        default=None, description="Chẩn đoán giai đoạn Perceive của vòng này"
+    )
+    rolled_back: bool = Field(
+        default=False, description="True nếu vòng này suy thoái và đã rollback về ảnh trước đó"
+    )
+    side_effects: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Tác dụng phụ do xử lý của vòng này (measurement.diff.SideEffect dạng dict)",
+    )
+    defect_status: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Trạng thái các lỗi mục tiêu của vòng này so với ảnh gốc, đo trên đúng vùng của lỗi "
+            "(measurement.diff.DefectChange dạng dict); rỗng nếu không theo dõi được"
+        ),
+    )
+    executed: List[ExecutedAction] = Field(
+        default_factory=list, description="Báo cáo thực thi từng action của vòng này"
+    )
+    side_effect_check: SideEffectCheck = Field(default_factory=SideEffectCheck)
+    review: Optional[ReviewResult] = None
+
+
+# Phong cách cũ (đã bỏ); chỉ giữ để IntentProfile.style đọc được dữ liệu cũ
+STYLE_CHOICES: tuple[str, ...] = ("natural", "balanced", "vivid")
+
+
+class DiagnosisEdit(BaseModel):
+    """Một chỉnh sửa của người dùng lên chẩn đoán (chat bổ sung phân tích)."""
+
+    op: Literal["add_defect", "remove_defect", "keep"]
+    type: Optional[Literal[DEFECT_TYPES]] = None  # type: ignore[valid-type]
+    aspect: Optional[str] = Field(default=None, description="Aspect cần giữ (op=keep)")
+    region: str = Field(default="full", description="Luôn qua regions.canonical_region")
+    severity: int = Field(default=2, ge=1, le=3, description="Chỉ dùng cho add_defect")
+    source_text: str = Field(default="", description="Mệnh đề gốc của người dùng, để hiển thị")
+
+    @field_validator("region", mode="before")
+    @classmethod
+    def _canonical_region(cls, value: Any) -> str:
+        """Chuẩn hóa tên vùng theo từ vựng chung."""
+        return canonical_region(value)
+
+    @model_validator(mode="after")
+    def _check_target(self) -> "DiagnosisEdit":
+        """add/remove_defect cần type; keep cần aspect thuộc PRESERVE_ASPECTS."""
+        if self.op == "keep":
+            if self.aspect not in PRESERVE_ASPECTS:
+                raise ValueError(f"keep edit needs a known aspect, got {self.aspect!r}")
+        elif self.type is None:
+            raise ValueError(f"{self.op} edit needs a defect type")
+        return self
+
+
+class IntentProfile(BaseModel):
+    """Ý định của người dùng, thu từ hội thoại trước khi xử lý (Phase 4)."""
+
+    # Deprecated: không còn câu hỏi phong cách, luôn None; giữ field để đọc được dữ liệu cũ
+    style: Optional[Literal[STYLE_CHOICES]] = None  # type: ignore[valid-type]
+    edits: List[DiagnosisEdit] = Field(
+        default_factory=list, description="Chỉnh sửa chẩn đoán từ chat bổ sung phân tích"
+    )
+    keep: List[PreserveItem] = Field(
+        default_factory=list, description="Đặc điểm người dùng muốn giữ (ghi đè chẩn đoán)"
+    )
+    fix: List[Literal[DEFECT_TYPES]] = Field(  # type: ignore[valid-type]
+        default_factory=list, description="Loại lỗi người dùng muốn sửa dù VLM coi là chủ ý"
+    )
+    notes: str = Field(default="", description="Ghi chú tự do của người dùng, đưa vào prompt Plan")
+    answers: Dict[str, str] = Field(
+        default_factory=dict, description="Câu trả lời thô: id câu hỏi → lựa chọn"
+    )
 
 
 class DoctorState(TypedDict):
@@ -51,13 +375,26 @@ class DoctorState(TypedDict):
 
     original_image: np.ndarray
     current_image: np.ndarray
+    previous_image: Optional[np.ndarray] = None
     ground_truth_image: Optional[np.ndarray]
     is_synthetic: bool
     iteration: int
     max_iterations: int
     technical_metrics: Dict[str, Any]
+    diagnosis: Optional[DiagnosisReport]
     treatment_plan: Optional[TreatmentPlan]
     evaluation_result: Dict[str, Any]
     history: List[HistoryItem]
+    intermediate_images: List[np.ndarray]  # Ảnh thumbnail sau mỗi vòng lặp
     decision: str  # "SHIP", "RE_PROCESS", "STOP_BEST_EFFORT"
+    rolled_back: bool  # True nếu kết quả cuối là ảnh đã rollback do suy thoái
     error_message: Optional[str]
+    interactive: bool  # True → dừng sau chẩn đoán đầu tiên để hỏi ý định (cần checkpointer)
+    intent: Optional[IntentProfile]
+    user_id: str  # Chủ của các ca trong bộ nhớ (Phase 5)
+    # Metadata EXIF/JPEG của file gốc (Phase 3); None khi không có. Perceive đưa prior vào prompt.
+    image_metadata: Optional[ImageMetadata]
+    # Audit-fix: báo cáo thực thi của vòng gần nhất, kết cục cuối và kết quả review
+    executed_actions: List[ExecutedAction]
+    outcome: Optional[Outcome]
+    review: Optional[ReviewResult]

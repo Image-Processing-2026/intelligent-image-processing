@@ -1,0 +1,313 @@
+"""
+Unit tests cho hội thoại ý định (Phase 4): câu hỏi tất định từ chẩn đoán, ghi chú tự do,
+áp ý định lên chẩn đoán, node clarify với interrupt/resume và phiên tương tác.
+Chạy offline; Gemini được mock.
+"""
+
+import json
+from unittest.mock import MagicMock, patch
+
+import numpy as np
+import pytest
+
+from src.agent import session as session_module
+from src.agent.graph import run_pipeline
+from src.agent.intent import (
+    MAX_QUESTIONS,
+    apply_intent,
+    build_questions,
+    intent_from_answers,
+    intent_prompt,
+    parse_notes,
+)
+from src.agent.session import (
+    SessionNotFoundError,
+    answer_session,
+    end_session,
+    start_session,
+)
+from src.agent.state import (
+    Defect,
+    DiagnosisEdit,
+    DiagnosisReport,
+    IntentProfile,
+    PreserveItem,
+)
+from src.agent.user_analysis import validate_edits
+
+FAKE_KEY = {"GEMINI_API_KEY": "fake-key-for-test"}
+
+
+def _diagnosis(*defects: Defect, preserve=()) -> DiagnosisReport:
+    return DiagnosisReport(defects=list(defects), preserve=list(preserve))
+
+
+def _dark_image() -> np.ndarray:
+    gradient = np.tile(np.linspace(10, 60, 48), (48, 1)).astype(np.uint8)
+    return np.repeat(gradient[:, :, None], 3, axis=2)
+
+
+# ============================================================
+# Câu hỏi
+# ============================================================
+class TestQuestions:
+    def test_clean_image_asks_nothing(self):
+        assert build_questions(_diagnosis()) == []
+        assert build_questions(None) == []
+
+    def test_asks_one_recommend_or_custom_question(self):
+        diagnosis = _diagnosis(
+            Defect(type="underexposed", severity=2),
+            Defect(type="color_cast_warm", severity=1),
+            Defect(type="noise", severity=3),
+            preserve=[PreserveItem(aspect="warm_tone")],
+        )
+        [question] = build_questions(diagnosis)
+        assert len(build_questions(diagnosis)) == MAX_QUESTIONS == 1
+        assert question.id == "approach"
+        assert [c.value for c in question.choices] == ["recommend", "custom"]
+        assert question.default == "recommend"
+        # Đề xuất nêu lỗi nặng trước và phần giữ nguyên
+        assert question.text.index("hạt") < question.text.index("tối")
+        assert "warm_tone" in question.text
+
+    def test_choices_have_no_automatic_effect(self):
+        [question] = build_questions(_diagnosis(Defect(type="noise", severity=2)))
+        assert all(c.keep is None and c.fix is None for c in question.choices)
+        intent = intent_from_answers([question], {"approach": "custom"}, "giữ hạt film")
+        assert [p.aspect for p in intent.keep] == ["film_grain"]
+        assert intent.fix == []
+
+    def test_unfixable_defects_alone_ask_nothing(self):
+        diagnosis = _diagnosis(Defect(type="motion_blur", severity=3, fixable=False))
+        assert build_questions(diagnosis) == []
+
+    def test_questions_are_deterministic(self):
+        diagnosis = _diagnosis(Defect(type="noise", severity=2))
+        assert build_questions(diagnosis) == build_questions(diagnosis)
+
+
+# ============================================================
+# Câu trả lời và ghi chú
+# ============================================================
+class TestAnswers:
+    @pytest.mark.parametrize(
+        "notes,expected",
+        [
+            ("khử vàng đi", {"warm": "fix"}),
+            ("giữ tông ấm nhé", {"warm": "keep"}),
+            ("muốn ảnh tâm trạng, giữ tối", {"mood": "keep_dark"}),
+            ("làm sáng rõ mặt", {"mood": "brighten"}),
+            ("cho mịn hơn", {"grain": "smooth"}),
+            ("giữ hạt film", {"grain": "keep"}),
+            ("rực rỡ lên", {}),
+            ("tự nhiên thôi", {}),
+            ("", {}),
+        ],
+    )
+    def test_parse_notes(self, notes, expected):
+        assert parse_notes(notes) == expected
+
+    def test_explicit_answers_win_over_notes(self):
+        intent = intent_from_answers([], {"warm": "keep"}, "khử vàng đi")
+        assert intent.answers["warm"] == "keep"
+        assert [p.aspect for p in intent.keep] == ["warm_tone"]
+        assert intent.fix == []
+
+    def test_unknown_values_are_ignored(self):
+        intent = intent_from_answers(build_questions(None), {"style": "vivid", "ghost": "x"})
+        assert intent.style is None and intent.answers == {}
+
+    def test_notes_about_unasked_questions_still_apply(self):
+        intent = intent_from_answers(build_questions(None), {}, "giữ hạt film")
+        assert intent.style is None
+        assert [p.aspect for p in intent.keep] == ["film_grain"]
+        assert intent.notes == "giữ hạt film"
+
+
+# ============================================================
+# Áp ý định lên chẩn đoán
+# ============================================================
+class TestApplyIntent:
+    def test_fix_removes_conflicting_preserve_and_adds_user_defect(self):
+        diagnosis = _diagnosis(preserve=[PreserveItem(aspect="warm_tone")])
+        updated = apply_intent(diagnosis, IntentProfile(fix=["color_cast_warm"]))
+        assert updated.preserve == []
+        [defect] = updated.defects
+        assert (defect.type, defect.severity, defect.origin) == ("color_cast_warm", 2, "user")
+        assert diagnosis.preserve  # bản gốc không đổi
+
+    def test_fix_raises_existing_severity(self):
+        diagnosis = _diagnosis(Defect(type="noise", severity=1))
+        [defect] = apply_intent(diagnosis, IntentProfile(fix=["noise"])).defects
+        assert (defect.severity, defect.origin) == (2, "vlm")
+
+    def test_keep_drops_conflicting_defects(self):
+        diagnosis = _diagnosis(
+            Defect(type="underexposed", severity=3),
+            Defect(type="backlit_subject", region="face", severity=2),
+            Defect(type="noise", severity=2),
+        )
+        intent = IntentProfile(keep=[PreserveItem(aspect="low_key")])
+        updated = apply_intent(diagnosis, intent)
+        assert [d.type for d in updated.defects] == ["noise"]
+        assert [p.aspect for p in updated.preserve] == ["low_key"]
+
+    def test_no_intent_is_a_no_op(self):
+        diagnosis = _diagnosis(Defect(type="noise", severity=2))
+        assert apply_intent(diagnosis, None) is diagnosis
+
+    def test_intent_prompt(self):
+        intent = IntentProfile(
+            keep=[PreserveItem(aspect="warm_tone")],
+            fix=["noise"],
+            notes="làm rõ mặt",
+        )
+        text = intent_prompt(intent)
+        assert text.startswith("Ý ĐỊNH NGƯỜI DÙNG")
+        assert "Phong cách" not in text and "warm_tone@full" in text and "noise" in text
+        assert "làm rõ mặt" in text
+        assert intent_prompt(None) == "" and intent_prompt(IntentProfile()) == ""
+
+
+# ============================================================
+# Graph và phiên tương tác
+# ============================================================
+class TestInteractivePipeline:
+    def test_non_interactive_pipeline_does_not_pause(self):
+        state = run_pipeline(_dark_image(), max_iterations=1)
+        assert state["intent"] is None
+        assert "__interrupt__" not in state
+
+    def test_session_asks_then_applies_the_intent(self):
+        started = start_session(_dark_image(), max_iterations=2)
+        assert started.status == "needs_input"
+        assert [q.id for q in started.questions] == ["approach"]
+        assert started.diagnosis is not None
+
+        done = answer_session(started.session_id, {}, "giữ tông ấm")
+        state = done.state
+        assert done.status == "done"
+        assert state["intent"].style is None
+        # Ý định áp vào chẩn đoán của mọi vòng
+        assert all(
+            "warm_tone" in [p.aspect for p in item.diagnosis.preserve] for item in state["history"]
+        )
+        end_session(started.session_id)
+
+    def test_session_still_pauses_without_questions(self, monkeypatch):
+        monkeypatch.setattr("src.agent.graph.build_questions", lambda diagnosis: [])
+        started = start_session(_dark_image(), max_iterations=1)
+        assert started.status == "needs_input"
+        assert started.questions == []
+        assert answer_session(started.session_id, {}).status == "done"
+        end_session(started.session_id)
+
+    def test_answering_unknown_or_finished_sessions_fails(self):
+        with pytest.raises(SessionNotFoundError):
+            answer_session("no-such-session", {})
+        started = start_session(_dark_image(), max_iterations=1)
+        answer_session(started.session_id, {})
+        with pytest.raises(ValueError, match="not waiting"):
+            answer_session(started.session_id, {})
+        end_session(started.session_id)
+
+    def test_old_sessions_are_evicted(self, monkeypatch):
+        monkeypatch.setattr(session_module, "MAX_SESSIONS", 1)
+        first = start_session(_dark_image(), max_iterations=1)
+        second = start_session(_dark_image(), max_iterations=1)
+        with pytest.raises(SessionNotFoundError):
+            answer_session(first.session_id, {})
+        assert answer_session(second.session_id, {}).status == "done"
+        end_session(second.session_id)
+
+    @patch.dict("os.environ", FAKE_KEY)
+    @patch("src.agent.vlm_diagnostician.genai")
+    def test_plan_prompt_carries_the_intent(self, mock_genai):
+        from src.agent.perception import PERCEIVE_RESPONSE_SCHEMA
+
+        diagnosis = {
+            "scene_type": "food",
+            "defects": [{"type": "underexposed", "region": "full", "severity": 2}],
+            "preserve": [],
+            "summary": "Tối.",
+        }
+        plan = {"reasoning": "ok", "actions": []}
+
+        def generate_content(*, model, contents, config):
+            is_perceive = config.response_json_schema == PERCEIVE_RESPONSE_SCHEMA
+            return MagicMock(text=json.dumps(diagnosis if is_perceive else plan))
+
+        models = MagicMock()
+        models.generate_content.side_effect = generate_content
+        mock_genai.Client.return_value.models = models
+
+        started = start_session(_dark_image(), max_iterations=1)
+        answer_session(started.session_id, {}, "giữ tông ấm")
+        end_session(started.session_id)
+
+        prompts = [
+            call.kwargs["contents"][0]
+            for call in models.generate_content.call_args_list
+            if call.kwargs["config"].response_json_schema != PERCEIVE_RESPONSE_SCHEMA
+        ]
+        assert prompts and "Ý ĐỊNH NGƯỜI DÙNG" in prompts[0]
+        assert "warm_tone@full" in prompts[0]
+
+
+# ============================================================
+# Edits chẩn đoán qua clarify/session (T4)
+# ============================================================
+class TestClarifyEdits:
+    def test_intent_from_answers_carries_edits(self):
+        edit = DiagnosisEdit(op="add_defect", type="underexposed", region="face", severity=3)
+        intent = intent_from_answers([], {}, "", [edit])
+        assert intent.edits == [edit]
+        assert intent_from_answers([], {}).edits == []
+
+    def test_intent_prompt_lists_edits(self):
+        intent = IntentProfile(
+            edits=[
+                DiagnosisEdit(op="add_defect", type="underexposed", region="face", severity=3),
+                DiagnosisEdit(op="remove_defect", type="noise"),
+                DiagnosisEdit(op="keep", aspect="warm_tone"),
+            ]
+        )
+        text = intent_prompt(intent)
+        assert "Người dùng bổ sung phân tích" in text
+        assert "add underexposed@face (3)" in text
+        assert "remove noise@full" in text and "keep warm_tone@full" in text
+
+    def test_validate_edits_skips_broken_items(self, caplog):
+        good = {"op": "add_defect", "type": "underexposed", "region": "khuôn mặt", "severity": 2}
+        bad = [{"op": "add_defect"}, {"op": "nonsense"}, "text", None]
+        edits = validate_edits([good, *bad])
+        assert [(e.type, e.region) for e in edits] == [("underexposed", "face")]
+        assert "Skipping invalid diagnosis edit" in caplog.text
+        assert validate_edits(None) == [] and validate_edits("x") == []
+
+    def test_resume_with_edit_adds_a_user_defect_and_targets_it(self):
+        # Ảnh sáng vừa: số đo toàn ảnh không thêm underexposed@full (sẽ chặn card dark-region)
+        gradient = np.tile(np.linspace(100, 160, 48), (48, 1)).astype(np.uint8)
+        image = np.repeat(gradient[:, :, None], 3, axis=2)
+        started = start_session(image, max_iterations=1)
+        edit = DiagnosisEdit(op="add_defect", type="underexposed", region="face", severity=3)
+        done = answer_session(started.session_id, {}, "", [edit])
+        state = done.state
+        assert done.status == "done"
+        assert edit in state["intent"].edits
+        item = state["history"][0]
+        user_defects = [d for d in item.diagnosis.defects if d.origin == "user"]
+        assert [(d.type, d.region, d.severity) for d in user_defects] == [
+            ("underexposed", "face", 3)
+        ]
+        assert any(a.region_id == "face" for a in item.plan.actions)
+        end_session(started.session_id)
+
+    def test_resume_with_broken_edit_still_finishes(self, caplog):
+        started = start_session(_dark_image(), max_iterations=1)
+        done = answer_session(started.session_id, {}, "", [{"op": "add_defect"}])
+        assert done.status == "done"
+        assert done.state["intent"].edits == []
+        assert "Skipping invalid diagnosis edit" in caplog.text
+        end_session(started.session_id)
