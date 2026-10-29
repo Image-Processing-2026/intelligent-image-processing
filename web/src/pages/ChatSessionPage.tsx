@@ -1,20 +1,22 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, FileJson, PanelRight } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
+import { operationLabel } from "@/lib/actions";
+import { regionLabel } from "@/lib/labels";
 import { ApiError, errorMessage } from "@/api/client";
 import type { Question, Rating, SessionDetail, Treatment, Variant } from "@/api/types";
 import {
   SESSIONS_KEY,
   activateTreatment,
-  addAnalysisNote,
   answerQuestions,
   clarifyAgain,
   deleteAnalysisEdit,
   exportUrl,
-  refineTreatment,
+  conversationChat,
+  executeProposal,
   renderVariant,
   sessionKey,
   useSession,
@@ -71,7 +73,7 @@ function ChatSessionView({ detail }: { detail: SessionDetail }) {
     onError: onFlowError,
   });
   const addNote = useMutation({
-    mutationFn: (message: string) => addAnalysisNote(detail.id, message),
+    mutationFn: (message: string) => conversationChat(detail.id, detail.conversation?.revision ?? 0, message),
     onSuccess: applyDetail,
     onError: (error) => {
       if (error instanceof ApiError && error.status !== 401) refresh();
@@ -97,9 +99,26 @@ function ChatSessionView({ detail }: { detail: SessionDetail }) {
   });
   const refine = useMutation({
     mutationFn: (feedback: string) =>
-      refineTreatment(detail.id, feedback, detail.active_treatment_id),
+      conversationChat(detail.id, detail.conversation?.revision ?? 0, feedback),
     onSuccess: applyDetail,
     onError: onFlowError,
+  });
+  const [draftText, setDraftText] = useState("");
+  const prepareAttempt = useRef(false);
+  useEffect(() => {
+    if (!prepareAttempt.current && detail.status === "awaiting_answers" && !detail.conversation?.revision) {
+      prepareAttempt.current = true;
+      addNote.mutate("");
+    }
+  }, [detail.status, detail.conversation?.revision]);
+  const executionAttempt = useRef<{revision: number; key: string} | null>(null);
+  const proposalExecute = useMutation({
+    mutationFn: () => {
+      const revision = detail.conversation?.revision ?? 0;
+      if (executionAttempt.current?.revision !== revision) executionAttempt.current = {revision, key: crypto.randomUUID()};
+      return executeProposal(detail.id, revision, executionAttempt.current.key);
+    },
+    onSuccess: applyDetail, onError: onFlowError,
   });
   const activate = useMutation({
     mutationFn: (treatment: Treatment) => activateTreatment(detail.id, treatment.id),
@@ -111,6 +130,7 @@ function ChatSessionView({ detail }: { detail: SessionDetail }) {
   });
 
   const busy =
+    proposalExecute.isPending ||
     answer.isPending ||
     addNote.isPending ||
     removeEdit.isPending ||
@@ -200,6 +220,17 @@ function ChatSessionView({ detail }: { detail: SessionDetail }) {
                 busy,
               }}
             >
+            {detail.status === "awaiting_answers" || detail.status === "done" ? (
+              <section className="mx-auto my-4 grid max-w-3xl gap-3 rounded-lg border p-4" aria-label="Phương án sẽ áp dụng">
+                <h2>Phương án sẽ áp dụng</h2>
+                <p>{detail.conversation?.reply ?? "Chuẩn bị phương án để xem giải thích và các thao tác trước khi xử lý."}</p>
+                {detail.conversation?.actions?.map((action, index) => <p key={index}>{operationLabel(action.operation)} · {regionLabel(action.region_id)}</p>)}
+                <p>{detail.conversation?.source_reason}</p>
+                <p>Bạn có thể tiếp tục trao đổi với AI để làm rõ phân tích và điều chỉnh đề xuất. Khi hài lòng với phương án, hãy bấm “{detail.status === "done" ? "Xử lý lại" : "Xử lý ảnh"}” để áp dụng.</p>
+                {!detail.conversation?.revision || detail.conversation.status === "superseded" ? <Button disabled={busy} onClick={() => addNote.mutate("")}>Chuẩn bị phương án</Button> : null}
+                <Button disabled={busy || Boolean(draftText.trim()) || detail.conversation?.status !== "ready"} onClick={() => proposalExecute.mutate()}>{detail.status === "done" ? "Xử lý lại" : "Xử lý ảnh"}</Button>
+              </section>
+            ) : null}
               {/* Phiên được tải lại tự cập nhật (poll) cho tới khi pipeline xong */}
               {busy || detail.status === "running" ? <WaitingNotice /> : null}
             </ChatContainer>
@@ -207,6 +238,7 @@ function ChatSessionView({ detail }: { detail: SessionDetail }) {
           <div ref={inputRef} className="border-t bg-background p-3">
             <div className="mx-auto max-w-3xl">
               <ChatInputBar
+                onDraftTextChange={setDraftText}
                 sessionId={detail.id}
                 sessionStatus={busy ? "running" : detail.status}
                 activeTreatmentId={detail.active_treatment_id}

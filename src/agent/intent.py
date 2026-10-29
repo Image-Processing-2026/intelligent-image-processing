@@ -87,11 +87,22 @@ def recommendation_text(diagnosis: DiagnosisReport) -> str:
 def build_questions(diagnosis: Optional[DiagnosisReport]) -> List[Question]:
     """
     Câu hỏi cho một chẩn đoán: đúng một câu "theo đề xuất hay cách khác" khi AI có điều gì để
-    đề xuất; rỗng khi ảnh không có lỗi cần xử lý. Tất định, nên sinh lại khi resume cho đúng
+    đề xuất; hỏi giữ hay sửa khi chỉ còn ask_user; rỗng khi không có cả hai. Tất định, nên sinh lại khi resume cho đúng
     cùng câu hỏi.
     """
-    if diagnosis is None or not diagnosis.actionable_defects:
+    if diagnosis is None:
         return []
+    if not diagnosis.actionable_defects:
+        if not diagnosis.ask_user:
+            return []
+        return [Question(
+            id=APPROACH_QUESTION_ID,
+            text="Có hiện tượng chưa chắc là lỗi: " + recommendation_text(diagnosis)
+                 + " Bạn muốn giữ hay mô tả cách sửa?",
+            choices=[Choice(value=APPROACH_RECOMMEND, label="Giữ nguyên"),
+                     Choice(value=APPROACH_CUSTOM, label="Mô tả cách sửa")],
+            default=APPROACH_RECOMMEND,
+        )]
     return [
         Question(
             id=APPROACH_QUESTION_ID,

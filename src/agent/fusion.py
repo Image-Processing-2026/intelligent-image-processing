@@ -325,7 +325,7 @@ VERIFY_RESPONSE_SCHEMA: Dict[str, object] = {
                 "type": "object",
                 "properties": {
                     "hypothesis_id": {"type": "string"},
-                    "verdict": {"type": "string", "enum": list(VERDICTS)},
+                    "verdict": {"type": "string", "enum": [*VERDICTS, "uncertain"]},
                     "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
                     "reason": {"type": "string"},
                 },
@@ -350,6 +350,8 @@ tâm trạng, hoàng hôn ấm, ảnh sáng nhẹ high-key thường là chủ �
 confidence (0–1) là độ chắc của bạn. reason: một câu tiếng Việt có dấu.
 Trả lời đủ mọi mã câu hỏi.
 """
+
+VERIFY_PROMPT += '\nNếu ảnh/crop không đủ để kết luận, trả verdict "uncertain"; không dùng not_present thay cho thiếu bằng chứng.'
 
 
 def _weak_rejected_enabled() -> bool:
@@ -706,29 +708,15 @@ def _measured_text(hypothesis: Hypothesis) -> str:
 
 
 def verify_question(hypothesis: Hypothesis, crops: Sequence[str] = ()) -> VerifyQuestion:
-    """Câu hỏi đóng cho một giả thuyết, liệt kê các phương án verdict theo loại lỗi."""
+    """Hỏi về hiện tượng quan sát, không khẳng định trước đó là lỗi."""
     phenomenon, intentional, texture = VERIFY_PHRASES.get(
-        hypothesis.type, (hypothesis.type, "chủ ý thẩm mỹ", "bản chất của vật")
+        hypothesis.type, (hypothesis.type, "chủ ý", "texture")
     )
-    source = "VLM quan sát thấy" if hypothesis.vlm is not None else "Số đo cho thấy"
-    options = ["defect = lỗi cần sửa"]
-    if intentional != "—":
-        options.append(f"intentional = {intentional}")
-    if texture != "—":
-        options.append(f"texture = {texture}")
-    options.append("not_present = không thấy rõ")
-    crop_text = f" Xem crop {', '.join(crops)}." if crops else ""
-    question = (
-        f"{source} {_region_text(hypothesis.region)} {phenomenon}{_measured_text(hypothesis)}."
-        f"{crop_text} Đây là gì? ({'; '.join(options)})"
-    )
-    return VerifyQuestion(
-        hypothesis_id=hypothesis.id,
-        defect_type=hypothesis.type,
-        region=hypothesis.region,
-        question=question,
-        crops=list(crops),
-    )
+    text = (f"Quan sát vùng '{hypothesis.region}': {phenomenon} có nhìn thấy rõ không? "
+            f"Xem crop {', '.join(crops)}. Phân biệt lỗi cần sửa với {intentional}, {texture}, "
+            "không có hiện tượng, hoặc chưa đủ bằng chứng. " + _measured_text(hypothesis))
+    return VerifyQuestion(hypothesis_id=hypothesis.id, defect_type=hypothesis.type,
+                          region=hypothesis.region, question=text, crops=list(crops))
 
 
 def parse_verify_answers(data: object) -> Dict[str, VerifyAnswer]:
@@ -736,6 +724,9 @@ def parse_verify_answers(data: object) -> Dict[str, VerifyAnswer]:
     answers: Dict[str, VerifyAnswer] = {}
     raw = data.get("answers") if isinstance(data, dict) else None
     for item in raw if isinstance(raw, list) else []:
+        # V2: chưa đủ bằng chứng đi theo nhánh chưa kiểm chứng hiện hữu.
+        if isinstance(item, dict) and item.get("verdict") == "uncertain":
+            continue
         try:
             answer = VerifyAnswer(**item)
         except Exception as exc:

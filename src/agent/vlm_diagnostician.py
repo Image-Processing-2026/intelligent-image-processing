@@ -129,6 +129,8 @@ Viết "reasoning" bằng tiếng Việt có dấu. Trả về kết quả dư�
 }
 """
 
+SYSTEM_PROMPT += '\nQUY ƯỚC LẬP KẾ HOẠCH: Khi đã có chẩn đoán, nhiệm vụ là chuyển lỗi đã hợp nhất thành action,\nkhông tự thêm lỗi. Giới hạn toolbox và chống chỉ định luôn bắt buộc. Yêu cầu rõ của người\ndùng quyết định mục tiêu; preserve do AI suy đoán không được ghi đè yêu cầu đó.\nTrong giới hạn này, dùng công thức phù hợp; nếu lệch để đáp ứng mục tiêu hãy nêu lý do.\nPhản hồi reviewer là bằng chứng cần đối chiếu lại với ảnh, không phải chân lý.\nAction bị bỏ qua không có nghĩa đã sửa lỗi; không lặp cùng cách nếu không tác động được vùng.\n'
+
 
 def _build_plan_response_schema() -> Dict[str, Any]:
     """
@@ -246,74 +248,17 @@ def _plan_from_vlm_json(data: Any, iteration: int) -> TreatmentPlan:
 
 
 def _build_history_feedback(history: Optional[List[HistoryItem]]) -> str:
-    """
-    Tổng hợp lịch sử các vòng lặp trước thành đoạn văn bản phản hồi
-    để đưa vào prompt gửi VLM, giúp VLM hiểu ngữ cảnh liên vòng.
-    """
     if not history:
         return ""
-
-    feedback_parts = ["\n--- PHẢN HỒI TỪ CÁC VÒNG TRƯỚC ---"]
-    recent_history = history[-2:] if len(history) > 2 else history
-
-    for item in recent_history:
-        actions_summary = []
-        if item.plan and item.plan.actions:
-            for action in item.plan.actions:
-                params_str = ", ".join(f"{k}={v}" for k, v in action.parameters.items())
-                actions_summary.append(
-                    f"  - [{action.operation}] trên vùng '{action.region_id}' ({params_str})"
-                )
-
-        actions_text = (
-            "\n".join(actions_summary) if actions_summary else "  (Không có thao tác nào)"
-        )
-
-        # Trích xuất delta metrics nếu có
-        metrics_before = item.metrics_before or {}
-        metrics_after = item.metrics_after or {}
-        delta_info = []
-        for key in [
-            "brightness_mean",
-            "contrast_std",
-            "noise_variance",
-            "sharpness_laplacian_var",
-        ]:
-            before_val = metrics_before.get(key)
-            after_val = metrics_after.get(key)
-            if before_val is not None and after_val is not None:
-                try:
-                    delta = float(after_val) - float(before_val)
-                    direction = "tăng" if delta > 0 else "giảm"
-                    delta_info.append(
-                        f"  - {key}: {float(before_val):.2f} → {float(after_val):.2f} ({direction} {abs(delta):.2f})"
-                    )
-                except (ValueError, TypeError):
-                    pass
-
-        delta_text = "\n".join(delta_info) if delta_info else "  (Không có dữ liệu delta)"
-        reasoning = item.plan.reasoning if item.plan else ""
-        diagnosis_text = (
-            f"Chẩn đoán: {item.diagnosis.summary}\n"
-            if item.diagnosis and item.diagnosis.summary
-            else ""
-        )
-
-        feedback_parts.append(
-            f"\n🔄 Vòng {item.iteration}:\n"
-            f"{diagnosis_text}"
-            f"Các thao tác đã thực hiện:\n{actions_text}\n"
-            f"Biến thiên chỉ số kỹ thuật:\n{delta_text}\n"
-            f"Quyết định: {item.decision}\n"
-            f"Lý do: {reasoning}"
-        )
-
-    feedback_parts.append(
-        "\n⚠️ Dựa trên lịch sử trên, hãy TINH CHỈNH nhẹ hoặc chuyển sang xử lý vấn đề chưa được giải quyết. "
-        "KHÔNG lặp lại cùng thao tác với cùng tham số nếu chỉ số không cải thiện."
-    )
-
-    return "\n".join(feedback_parts)
+    rows = []
+    for h in history[-2:]:
+        rows.append({"iteration": h.iteration, "executed": [x.model_dump() for x in h.executed],
+                     "planned": h.plan.model_dump() if h.plan else None,
+                     "metrics_before": h.metrics_before, "metrics_after": h.metrics_after,
+                     "review": h.review.model_dump() if h.review else None,
+                     "defect_status": h.defect_status, "decision": h.decision,
+                     "rolled_back": h.rolled_back})
+    return "\nPHẢN HỒI CÁC VÒNG TRƯỚC (planned là dự kiến, executed mới là thực thi):\n" + json.dumps(rows, ensure_ascii=False, default=str)
 
 
 def _rule_based_plan(

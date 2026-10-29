@@ -64,6 +64,8 @@ from .workspace_schemas import (
     MAX_USER_PROMPT,
     AnalysisNoteIn,
     AnswersIn,
+    ConversationIn,
+    ExecuteProposalIn,
     RatingIn,
     RatingOut,
     RefineIn,
@@ -75,6 +77,7 @@ from .workspace_schemas import (
 )
 from .workspace_service import (
     API_BASE,
+    active_session,
     add_message,
     answers_content,
     export_payload,
@@ -82,6 +85,7 @@ from .workspace_service import (
     next_version,
     original_diagnosis,
     overlay_is_stale,
+    pipeline_slot,
     plain,
     rating_dict,
     record_analyze,
@@ -581,6 +585,9 @@ def answer_questions(
     gọi run_pipeline với ground truth.
     """
     item = owned_session(db, user, session_id)
+    if item.conversation:
+        raise ApiError(409, "invalid_state")
+
     # Danh sách câu hỏi có thể rỗng (không còn câu phong cách): chỉ None mới là chưa hỏi
     if not item.thread_id or item.questions is None:
         raise ApiError(409, "invalid_state")
@@ -743,6 +750,15 @@ def refine_treatment(
     phiên bản phác đồ mới; ghi góp ý vào bộ nhớ ca bệnh.
     """
     item = owned_session(db, user, session_id)
+    if item.conversation:
+        return conversation_chat(
+            session_id,
+            ConversationIn(message=body.feedback, revision=item.conversation["revision"]),
+            user,
+            db,
+            settings,
+        )
+
     # Gộp khoảng trắng/xuống dòng; nội dung giữ nguyên để rule tiếng Việt của refine() đọc
     feedback = " ".join(body.feedback.split())[:500]
     if not feedback:
@@ -842,6 +858,8 @@ def activate_treatment(
     if item.status != "done":
         raise ApiError(409, "session_busy" if item.status == "running" else "invalid_state")
     item.active_treatment_id = treatment.id
+    if item.conversation:
+        item.conversation = {**item.conversation, "status": "superseded"}
     db.commit()
     return session_detail(db, item)
 
@@ -966,3 +984,207 @@ def sample_thumbnail(sample_id: str, user: User = Depends(current_user)) -> Resp
         media_type="image/jpeg",
         headers={"Cache-Control": "private, max-age=3600"},
     )
+
+
+# ---------------- hội thoại và thực thi phương án ----------------
+
+
+@router.post("/sessions/{session_id}/chat", response_model=SessionDetailOut)
+def conversation_chat(
+    session_id: str,
+    body: ConversationIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+    settings: AppSettings = Depends(get_settings),
+) -> SessionDetailOut:
+    """Trao đổi và lưu phương án; không thực thi thao tác lên pixel."""
+    from .conversation_service import update_proposal
+    from .workspace_service import draft_diagnosis
+
+    item = owned_session(db, user, session_id)
+    previous = dict(item.conversation or {})
+    if body.revision != previous.get("revision", 0):
+        raise ApiError(409, "invalid_state")
+    prior_status = _claim(db, item, ("awaiting_answers", "done"))
+    try:
+        with active_session(item.id), pipeline_slot(settings):
+            if body.revision != (item.conversation or {}).get("revision", 0):
+                raise ApiError(409, "invalid_state")
+            diagnosis = draft_diagnosis(db, item)
+            if previous.get("diagnosis"):
+                from src.agent.state import DiagnosisReport
+
+                diagnosis = DiagnosisReport.model_validate(previous["diagnosis"])
+            if diagnosis is None:
+                raise ApiError(409, "invalid_state")
+            original_art = _session_artifact(db, item, "original")
+            original = _load_session_image(settings, item, original_art)
+            base = _owned_treatment(db, item, None) if item.active_treatment_id else None
+            current_art = db.get(Artifact, base.artifact_id) if base else None
+            current = _load_session_image(settings, item, current_art) if current_art else None
+            if previous.get("reviewed_treatment_id") != item.active_treatment_id:
+                previous = {
+                    key: previous[key]
+                    for key in ("revision", "requirements", "diagnosis")
+                    if key in previous
+                }
+            history = db.scalars(
+                select(Message).where(Message.session_id == item.id).order_by(Message.id)
+            ).all()
+            proposal, diagnosis, reply = update_proposal(
+                previous,
+                body.message.strip(),
+                diagnosis,
+                original,
+                current,
+                [RegionOperation.model_validate(a) for a in base.actions] if base else [],
+                [{"role": m.role, "content": m.content} for m in history],
+            )
+            proposal.update(
+                reviewed_treatment_id=item.active_treatment_id,
+                input_artifact_id=current_art.id
+                if proposal["source_mode"] == "incremental" and current_art
+                else original_art.id,
+                root_original_artifact_id=original_art.id,
+            )
+            item.conversation = proposal
+            if body.message.strip():
+                add_message(db, item, "user", "analysis_note", {"text": body.message.strip()})
+            add_message(db, item, "assistant", "notice", {"text": reply, "proposal": proposal})
+            item.status = prior_status
+            db.commit()
+    except Exception:
+        db.rollback()
+        item.status = prior_status
+        db.commit()
+        raise
+    return session_detail(db, item)
+
+
+@router.post("/sessions/{session_id}/execute", response_model=SessionDetailOut)
+def execute_proposal(
+    session_id: str,
+    body: ExecuteProposalIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+    settings: AppSettings = Depends(get_settings),
+) -> SessionDetailOut:
+    """Chạy snapshot đã lưu đúng một lần, không lập phương án mới ngầm."""
+    from src.agent.graph import (
+        analyze_node,
+        decide_node,
+        evaluate_node,
+        finalize_node,
+        initial_doctor_state,
+        process_node,
+        review_node,
+    )
+    from src.agent.state import DiagnosisReport, TreatmentPlan
+
+    item = owned_session(db, user, session_id)
+    proposal = dict(item.conversation or {})
+    completed_runs = db.scalars(
+        select(Run).where(Run.session_id == item.id, Run.status == "done")
+    ).all()
+    for completed in completed_runs:
+        if completed.result.get("execution_key") == body.idempotency_key:
+            if completed.result.get("proposal", {}).get("revision") != body.revision:
+                raise ApiError(409, "invalid_state")
+            return session_detail(db, item)
+    if proposal.get("execution_key") == body.idempotency_key:
+        if proposal.get("executed_revision") != body.revision:
+            raise ApiError(409, "invalid_state")
+        return session_detail(db, item)
+    if proposal.get("revision") != body.revision or proposal.get("status") != "ready":
+        raise ApiError(409, "invalid_state")
+    prior_status = _claim(db, item, ("awaiting_answers", "done"))
+    try:
+        with active_session(item.id), pipeline_slot(settings):
+            if (
+                item.conversation != proposal
+                or proposal.get("reviewed_treatment_id") != item.active_treatment_id
+            ):
+                raise ApiError(409, "invalid_state")
+            artifact = db.get(Artifact, proposal["input_artifact_id"])
+            if artifact is None or artifact.session_id != item.id:
+                raise ApiError(409, "invalid_state")
+            image = _load_session_image(settings, item, artifact)
+            truth = (
+                _load_session_image(settings, item, _session_artifact(db, item, "ground_truth"))
+                if item.options.get("has_ground_truth")
+                else None
+            )
+            state = initial_doctor_state(
+                image, ground_truth=truth, is_synthetic=truth is not None, max_iterations=1
+            )
+            state["diagnosis"] = DiagnosisReport.model_validate(proposal["diagnosis"])
+            state["treatment_plan"] = TreatmentPlan(
+                reasoning=proposal["reply"],
+                actions=[RegionOperation.model_validate(a) for a in proposal["actions"]],
+            )
+            started = time.monotonic()
+            state.update(analyze_node(state))
+            state.update(process_node(state))
+            root_artifact = db.get(Artifact, proposal["root_original_artifact_id"])
+            if root_artifact is None or root_artifact.session_id != item.id:
+                raise ApiError(409, "invalid_state")
+            state["original_image"] = _load_session_image(settings, item, root_artifact)
+            state.update(evaluate_node(state))
+            state.update(decide_node(state))
+            state.update(review_node(state))
+            state.update(finalize_node(state))
+            parent_treatment_id = item.active_treatment_id
+            parent = db.get(Treatment, parent_treatment_id) if parent_treatment_id else None
+            replay_actions = list(proposal["actions"])
+            if proposal["source_mode"] == "incremental" and parent:
+                replay_actions = [*parent.actions, *replay_actions]
+            if state.get("rolled_back"):
+                replay_actions = (
+                    list(parent.actions)
+                    if parent and proposal["source_mode"] == "incremental"
+                    else []
+                )
+            run = record_process(
+                db, settings, item, state, int((time.monotonic() - started) * 1000), item.case_id
+            )
+            run.result = {
+                **run.result,
+                "proposal": proposal,
+                "input_artifact_id": artifact.id,
+                "execution_key": body.idempotency_key,
+            }
+            treatment = db.get(Treatment, item.active_treatment_id)
+            if treatment is not None:
+                treatment.parent_id = parent_treatment_id
+                treatment.actions = replay_actions
+            proposal.update(
+                status="applied",
+                execution_key=body.idempotency_key,
+                executed_revision=body.revision,
+            )
+            item.conversation = proposal
+            add_message(
+                db,
+                item,
+                "assistant",
+                "notice",
+                {
+                    "text": (
+                        (
+                            "Ảnh đã được giữ lại phiên bản trước vì lượt xử lý chưa đạt yêu cầu. "
+                            if state.get("rolled_back")
+                            else "Đã hoàn tất lượt xử lý theo phương án đã chọn. "
+                        )
+                        + str((run.result.get("outcome") or {}).get("reason", ""))
+                        + " Bạn có thể trao đổi để làm rõ điểm chưa ổn và điều chỉnh phương án trước khi bấm Xử lý lại."
+                    ),
+                    "run_id": run.id,
+                },
+            )
+            db.commit()
+    except Exception:
+        db.rollback()
+        item.status = prior_status
+        db.commit()
+        raise
+    return session_detail(db, item)

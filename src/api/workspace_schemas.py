@@ -99,6 +99,7 @@ class SessionSummaryOut(BaseModel):
 class SessionDetailOut(SessionSummaryOut):
     """Toàn bộ phiên, đọc từ CSDL (không chạy lại pipeline)."""
 
+    conversation: Dict[str, Any] = Field(default_factory=dict)
     options: Dict[str, Any]
     original: Optional[ArtifactOut] = None
     ground_truth: Optional[ArtifactOut] = None
@@ -186,3 +187,17 @@ class SystemOut(BaseModel):
     max_upload_mb: int
     # Môi trường phân vùng thật của máy chủ (interpreter, face/semantic, mobile_sam)
     region_runtime: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ConversationIn(BaseModel):
+    """Tin nhắn hoặc yêu cầu chuẩn bị phương án, không thực thi ảnh."""
+
+    message: str = Field(default="", max_length=2000)
+    revision: int = Field(ge=0)
+
+
+class ExecuteProposalIn(BaseModel):
+    """Thực thi đúng phiên bản phương án đã hiển thị."""
+
+    revision: int = Field(ge=1)
+    idempotency_key: str = Field(min_length=1, max_length=100)

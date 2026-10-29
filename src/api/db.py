@@ -48,7 +48,10 @@ class Database:
         create_all không sửa bảng đã có: thêm cột mới vào CSDL cũ bằng ALTER TABLE (chưa dùng
         Alembic). Mỗi phần tử là (bảng, cột, kiểu SQL kèm giá trị mặc định).
         """
-        additions = (("processing_sessions", "draft_edits", "JSON DEFAULT '[]'"),)
+        additions = (
+            ("processing_sessions", "draft_edits", "JSON DEFAULT '[]'"),
+            ("processing_sessions", "conversation", "JSON DEFAULT '{}'"),
+        )
         inspector = inspect(self.engine)
         with self.engine.begin() as connection:
             for table, column, ddl in additions:
@@ -67,7 +70,11 @@ class Database:
                 select(ProcessingSession).where(ProcessingSession.status == "running")
             ).all()
             for item in stuck:
-                item.status = "failed"
+                item.status = (
+                    ("done" if item.active_treatment_id else "awaiting_answers")
+                    if item.conversation
+                    else "failed"
+                )
                 item.error_code = "server_restarted"
                 db.add(
                     Message(

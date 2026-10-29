@@ -12,8 +12,6 @@ import type {
   Variant,
 } from "@/api/types";
 import { CompareSlider } from "@/components/result/CompareSlider";
-import { RatingBox } from "@/components/result/RatingBox";
-import { treatmentLabel } from "@/lib/actions";
 import { TreatmentHistory } from "@/components/result/TreatmentHistory";
 import {
   AnalysisUpdateNote,
@@ -88,10 +86,6 @@ export function ChatContainer({
   const customReady =
     (detail.draft_edits ?? []).length > 0 ||
     messages.some((m, i) => i > currentDiagnosis && m.kind === "analysis_note");
-  const activeTreatment = detail.treatments.find((t) => t.id === detail.active_treatment_id);
-  const activeLabel = activeTreatment
-    ? treatmentLabel(activeTreatment, detail.variants)
-    : "kết quả pipeline";
   const hasPrompt = messages.some((message) => message.kind === "user_prompt");
 
   const renderMessage = (message: Message, index: number): React.ReactNode => {
@@ -106,7 +100,7 @@ export function ChatContainer({
           <DiagnosisBubble
             diagnosis={live ? (latestDiagnosis(detail) ?? stored) : stored}
             live={live}
-            questions={questionList}
+            questions={questionList.filter(q => q.id !== "approach")}
             draft={actions.draft}
             onDraftChange={actions.onDraftChange}
             edits={detail.draft_edits ?? []}
@@ -154,21 +148,6 @@ export function ChatContainer({
             onFocusInput={actions.onFocusInput}
             onOpenExecution={() => actions.onOpenPane("execution")}
           >
-            <RatingBox
-              // Đổi phiên bản đang xem → form đánh giá đọc lại đánh giá của phiên bản đó
-              key={detail.active_treatment_id ?? "none"}
-              sessionId={detail.id}
-              runId={detail.process.run_id}
-              treatmentId={detail.active_treatment_id}
-              treatmentLabel={activeLabel}
-              existing={
-                detail.ratings.find(
-                  (r) =>
-                    r.run_id === detail.process?.run_id &&
-                    r.treatment_id === detail.active_treatment_id,
-                ) ?? null
-              }
-            />
             <TreatmentHistory
               treatments={detail.treatments}
               variants={detail.variants}

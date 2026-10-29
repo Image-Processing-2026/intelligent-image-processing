@@ -1,4 +1,4 @@
-import { BarChart3, Loader2, Play, X } from "lucide-react";
+import { BarChart3, X } from "lucide-react";
 
 import type { DiagnosisEdit, DiagnosisReport, Question } from "@/api/types";
 import { SeverityBadge } from "@/components/session/DiagnosisCard";
@@ -46,7 +46,6 @@ export function DiagnosisBubble({
   customReady,
   onRemoveEdit,
   onQuickNote,
-  onStart,
   onOpenDetails,
   pending,
 }: DiagnosisBubbleProps) {
@@ -184,10 +183,6 @@ export function DiagnosisBubble({
             </p>
           ) : null}
           <div className="flex flex-wrap gap-2">
-            <Button type="button" onClick={onStart} disabled={pending || needsCustom}>
-              {pending ? <Loader2 className="animate-spin" aria-hidden /> : <Play aria-hidden />}
-              Bắt đầu xử lý
-            </Button>
             <Button type="button" variant="outline" onClick={onOpenDetails}>
               <BarChart3 aria-hidden />
               Xem chi tiết chẩn đoán

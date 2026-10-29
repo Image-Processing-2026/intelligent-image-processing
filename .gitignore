@@ -78,6 +78,7 @@ artifacts/*
 !artifacts/region_engine_person_output.png
 
 # Web app frontend (web/)
+/node_modules/
 web/node_modules/
 web/dist/
 web/coverage/

@@ -55,19 +55,19 @@ describe("latest backend compatibility", () => {
   });
 
   it("keeps the input and edit chips locked while an analysis note is pending", async () => {
-    const fetchMock = mockApi([...base(WITH_EDIT), { method: "POST", path: `${PATH}/analysis-notes`, pending: true }]);
+    const fetchMock = mockApi([...base(WITH_EDIT), { method: "POST", path: `${PATH}/chat`, pending: true }]);
     const user = userEvent.setup();
     renderApp(`/s/${SESSION_ID}`);
     const input = await screen.findByPlaceholderText(NOTE_PLACEHOLDER);
     await user.type(input, "mặt còn tối");
     await user.click(screen.getByRole("button", { name: "Gửi bổ sung phân tích" }));
     expect(screen.getByRole("button", { name: /Xóa chỉnh sửa:/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Bắt đầu xử lý" })).toBeDisabled();
-    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/analysis-notes"))).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Xử lý ảnh" })).toBeDisabled();
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/chat"))).toHaveLength(1);
   });
 
   it("reloads the overlay when a saved analysis changes but its artifact URL stays the same", async () => {
-    mockApi([...base(WITH_EDIT), { method: "POST", path: `${PATH}/analysis-notes`, body: { ...WITH_EDIT, updated_at: "2026-10-27T09:00:00.123456+00:00" } }]);
+    mockApi([...base(WITH_EDIT), { method: "POST", path: `${PATH}/chat`, body: { ...WITH_EDIT, updated_at: "2026-10-27T09:00:00.123456+00:00" } }]);
     // Màn hình rộng: bảng soi nằm cạnh khung chat, không phải drawer modal
     const original = window.matchMedia;
     window.matchMedia = ((query: string) => ({ ...original(query), matches: true })) as typeof window.matchMedia;

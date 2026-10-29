@@ -24,6 +24,8 @@ def install_v2():
     from src.agent import fusion as f
     from src.agent import intent, refine
     from src.agent import perception as p
+    if getattr(p, "PROMPT_VERSION", None) == "perceive-v2":
+        return  # V2 đã là mặc định; không nối prompt hoặc bọc Clarify lần nữa.
     from src.agent import review as r
     from src.agent import vlm_diagnostician as v
     p.PERCEIVE_PROMPT += """
@@ -190,6 +192,12 @@ def main():
     files = [f for f in (ROOT / "src").rglob("*") if f.is_file() and "__pycache__" not in f.parts] + [Path(__file__), ROOT / "scripts/benchmark_brain.py"]
     snapshot = out / "snapshot"
     if not (out / "protocol.json").exists():
+        from src.agent.perception import PROMPT_VERSION
+        if PROMPT_VERSION == "perceive-v2":
+            raise RuntimeError(
+                "V2 is now the product default; current src is no longer a V1 baseline. "
+                "Use the frozen pilot snapshots or scripts/prompt_ab_basic.py for historical A/B."
+            )
         for file in files:
             target = snapshot / file.relative_to(ROOT)
             target.parent.mkdir(parents=True, exist_ok=True)

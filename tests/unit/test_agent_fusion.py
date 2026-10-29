@@ -402,8 +402,10 @@ class TestFixabilityAndPlanning:
             ask_user=[Defect(type="backlit_subject", region="face", severity=3)],
             preserve=[PreserveItem(aspect="silhouette", region="face")],
         )
-        # Chỉ lỗi ask_user, không có lỗi sửa được: không có gì để đề xuất
-        assert build_questions(report) == []
+        [question] = build_questions(report)
+        assert question.default == "recommend"
+        assert question.choices[0].label == "Giữ nguyên"
+        assert "chưa chắc là lỗi" in question.text
         report.defects = [Defect(type="noise", severity=2)]
         [question] = build_questions(report)
         assert "mặc định giữ nguyên" in question.text
@@ -420,6 +422,7 @@ class TestVerifyIntegration:
                 "answers": [
                     {"hypothesis_id": "h1", "verdict": "defect", "confidence": 0.8},
                     {"hypothesis_id": "h2", "verdict": "maybe"},
+                    {"hypothesis_id": "h3", "verdict": "uncertain"},
                     "rác",
                 ]
             }
@@ -428,7 +431,7 @@ class TestVerifyIntegration:
 
     def test_verify_schema_has_closed_verdicts(self):
         verdict = VERIFY_RESPONSE_SCHEMA["properties"]["answers"]["items"]["properties"]["verdict"]
-        assert verdict["enum"] == ["defect", "intentional", "texture", "not_present"]
+        assert verdict["enum"] == ["defect", "intentional", "texture", "not_present", "uncertain"]
 
     @patch.dict("os.environ", FAKE_KEY)
     @patch("src.agent.vlm_diagnostician.genai")

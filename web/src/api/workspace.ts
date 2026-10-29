@@ -156,3 +156,10 @@ export function useMemoryStats() {
     queryFn: () => apiFetch<MemoryStats>("/workspace/memory"),
   });
 }
+
+export function conversationChat(id: string, revision: number, message = "") {
+  return apiFetch<SessionDetail>(`${sessionPath(id)}/chat`, {method: "POST", json: {revision, message}});
+}
+export function executeProposal(id: string, revision: number, idempotencyKey: string) {
+  return apiFetch<SessionDetail>(`${sessionPath(id)}/execute`, {method: "POST", json: {revision, idempotency_key: idempotencyKey}});
+}

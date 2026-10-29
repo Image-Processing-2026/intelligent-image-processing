@@ -134,7 +134,11 @@ def recover_orphaned(db: Session, items: List[ProcessingSession]) -> bool:
             and not is_active(item.id)
             and _age_seconds(item.updated_at) > STALE_GRACE_SECONDS
         ):
-            item.status = "failed"
+            item.status = (
+                ("done" if item.active_treatment_id else "awaiting_answers")
+                if item.conversation
+                else "failed"
+            )
             item.error_code = "interrupted"
             add_message(
                 db,
@@ -601,9 +605,12 @@ def session_detail(db: Session, item: ProcessingSession) -> SessionDetailOut:
     ).all()
     ratings = db.scalars(select(Rating).where(Rating.session_id == item.id)).all()
     draft = draft_diagnosis(db, item) if item.status == "awaiting_answers" else None
+    if item.status == "awaiting_answers" and (item.conversation or {}).get("diagnosis"):
+        draft = DiagnosisReport.model_validate(item.conversation["diagnosis"])
     overlay = by_kind.get("region_overlay")
     return SessionDetailOut(
         **summary.model_dump(),
+        conversation=item.conversation or {},
         options=item.options or {},
         original=artifact_out(by_kind["original"]) if "original" in by_kind else None,
         ground_truth=artifact_out(by_kind["ground_truth"]) if "ground_truth" in by_kind else None,
@@ -720,6 +727,7 @@ def export_payload(db: Session, item: ProcessingSession) -> Dict[str, Any]:
             "title": item.title,
             "status": item.status,
             "options": item.options or {},
+            "conversation": item.conversation or {},
             "draft_edits": item.draft_edits or [],
             "created_at": item.created_at,
             "updated_at": item.updated_at,

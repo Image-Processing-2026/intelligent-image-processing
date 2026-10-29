@@ -92,6 +92,9 @@ class ProcessingSession(Base):
     # Các DiagnosisEdit (dict) người dùng đã bổ sung khi chat "bổ sung phân tích"; NULL ở phiên cũ
     draft_edits: Mapped[Optional[list[Any]]] = mapped_column(JSON, default=list, nullable=True)
     # Không đặt ForeignKey để tránh vòng phụ thuộc bảng với treatments
+    conversation: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        JSON, default=dict, nullable=True
+    )
     active_treatment_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     error_code: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     created_at: Mapped[str] = mapped_column(String(40), default=utc_now)

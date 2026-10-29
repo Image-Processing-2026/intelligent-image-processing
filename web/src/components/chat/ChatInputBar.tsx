@@ -70,6 +70,7 @@ export interface ChatInputBarProps {
   onSendNote?: (message: string) => Promise<unknown>;
   /** Callback tùy biến khi gửi góp ý tinh chỉnh */
   onRefine?: (feedback: string) => Promise<unknown>;
+  onDraftTextChange?: (text: string) => void;
 
   /** Khóa thao tác từ bên ngoài */
   disabled?: boolean;
@@ -118,6 +119,7 @@ export function ChatInputBar({
   onNewSession,
   onSendNote,
   onRefine,
+  onDraftTextChange,
   disabled = false,
   placeholder,
   autoFocus = false,
@@ -139,6 +141,7 @@ export function ChatInputBar({
     me.data?.settings.max_iterations ?? 3,
   );
   const [text, setText] = useState("");
+  useEffect(() => { onDraftTextChange?.(text); }, [text, onDraftTextChange]);
   const [isDragging, setIsDragging] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [busy, setBusy] = useState(false);

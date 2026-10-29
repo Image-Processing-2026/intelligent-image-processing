@@ -768,3 +768,18 @@ No `state.py` change; the new values travel as dicts in `HistoryItem.defect_stat
   and per-action `executed` inside `history`.
 - Temporary, uncalibrated (BL-10): `REVIEW_TIMEOUT_MS`, `REVIEW_MAX_CALLS`, `CROP_SIZE`,
   `MAX_CHANGE_CROPS`, `MIN_CHANGE_LEVEL`, `SUSPECT_DARK_L`, `SUSPECT_MIN_LIFT`.
+
+## Hội thoại và phương án xử lý (2026-10-30)
+
+Web workspace sử dụng hai thao tác riêng:
+
+- `POST /api/v1/workspace/sessions/{id}/chat`: `{message, revision}`. `message` rỗng để chuẩn bị phương án đầu tiên. Không render ảnh. Trả `SessionDetailOut.conversation` gồm revision, actions, diagnosis, requirements, source_mode, input_artifact_id, root_original_artifact_id, reviewed_treatment_id, reply và status.
+- `POST /api/v1/workspace/sessions/{id}/execute`: `{revision, idempotency_key}`. Chỉ chạy phương án ready ở revision hiện hành. Server đọc actions và nguồn ảnh từ snapshot DB. Retry cùng key/revision trả kết quả đã có; phương án cũ trả 409.
+
+`source_mode=rebuild`: toàn bộ recipe từ ảnh gốc. `source_mode=incremental`: chỉ actions bổ sung trên kết quả đang phản hồi. Treatment lưu recipe tích lũy để các lượt sau có thể dựng lại từ ảnh gốc; Run lưu snapshot thực thi, input và báo cáo thực tế. `Treatment.parent_id` chỉ phiên bản cha trong lịch sử, không thay thế input_artifact_id.
+
+State hội thoại lưu ở cột JSON `processing_sessions.conversation`, có migration additive cho DB cũ. Tin nhắn assistant lưu snapshot phương án; Run lưu snapshot đã thực thi. Phân tích gốc không bị ghi đè. Conversation diagnosis là bản hiện hành ở phase phân tích.
+
+Trong luồng mới, một click thực thi một snapshot, đánh giá và review/rollback; không tự re-plan và chạy tiếp. Gửi chat trong phase kết quả chỉ cập nhật phương án. UI bỏ chọn approach và form rating; evaluator/reviewer nội bộ và rating lịch sử vẫn giữ.
+
+Các API stateless/batch và Gradio là consumer legacy, vẫn giữ pipeline cũ. Route workspace `/answers` bị chặn khi session đã có conversation; `/refine` của session đó chuyển thành chat. Web gọi trực tiếp chat/execute. Khi không có Gemini key, hệ thống dùng rule parser và thông báo yêu cầu chưa hiểu; không giả lập câu trả lời AI đầy đủ.

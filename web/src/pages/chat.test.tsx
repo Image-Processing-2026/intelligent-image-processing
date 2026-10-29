@@ -65,14 +65,14 @@ describe("chat thread", () => {
     const fetchMock = mockApi([
       ...BASE,
       { path: SESSION_PATH, body: DETAIL },
-      { method: "POST", path: `${SESSION_PATH}/analysis-notes`, body: WITH_EDIT },
+      { method: "POST", path: `${SESSION_PATH}/chat`, body: WITH_EDIT },
     ]);
     const user = userEvent.setup();
     renderApp(`/s/${SESSION_ID}`);
     await user.click(await screen.findByRole("button", { name: "Làm sáng khuôn mặt" }));
     await waitFor(() => {
-      const post = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/analysis-notes"));
-      expect(JSON.parse(String(post?.[1]?.body))).toEqual({ message: "Làm sáng khuôn mặt" });
+      const post = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/chat"));
+      expect(JSON.parse(String(post?.[1]?.body))).toEqual({ revision: 1, message: "Làm sáng khuôn mặt" });
     });
   });
 });
@@ -117,29 +117,12 @@ const ASKING_APPROACH: SessionDetail = {
   ),
 };
 
-describe("recommend or custom question", () => {
-  it("starts with the recommendation by default", async () => {
-    mockApi([...BASE, { path: SESSION_PATH, body: ASKING_APPROACH }]);
+describe("conversation replaces approach selection", () => {
+  it("offers execution without recommend/custom radios", async () => {
+    mockApi([...BASE, {path: SESSION_PATH, body: ASKING_APPROACH}]);
     renderApp(`/s/${SESSION_ID}`);
-    expect(await screen.findByRole("radio", { name: /Theo đề xuất của AI/ })).toBeChecked();
-    expect(screen.getByRole("button", { name: "Bắt đầu xử lý" })).toBeEnabled();
-  });
-
-  it("asks for a description before processing a custom approach", async () => {
-    mockApi([...BASE, { path: SESSION_PATH, body: ASKING_APPROACH }]);
-    const user = userEvent.setup();
-    renderApp(`/s/${SESSION_ID}`);
-    await user.click(await screen.findByRole("radio", { name: /Cách khác/ }));
-    expect(screen.getByRole("button", { name: "Bắt đầu xử lý" })).toBeDisabled();
-    expect(screen.getByText(/Hãy mô tả cách bạn muốn xử lý/)).toBeInTheDocument();
-  });
-
-  it("allows a custom approach once the user has described it", async () => {
-    mockApi([...BASE, { path: SESSION_PATH, body: { ...WITH_EDIT, messages: ASKING_APPROACH.messages } }]);
-    const user = userEvent.setup();
-    renderApp(`/s/${SESSION_ID}`);
-    await user.click(await screen.findByRole("radio", { name: /Cách khác/ }));
-    expect(screen.getByRole("button", { name: "Bắt đầu xử lý" })).toBeEnabled();
+    expect(await screen.findByRole("button", {name: "Xử lý ảnh"})).toBeEnabled();
+    expect(screen.queryByRole("radio", {name: /Theo đề xuất/})).toBeNull();
   });
 });
 

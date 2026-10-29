@@ -21,32 +21,14 @@ const FEEDBACK_PLACEHOLDER = /Nhập góp ý tinh chỉnh cho kết quả/;
 const SESSION_PATH = `/workspace/sessions/${SESSION_ID}`;
 
 describe("refine by feedback", () => {
-  it("sends feedback for the active version and shows the new version", async () => {
-    const fetchMock = mockApi([
-      ...BASE,
-      { path: SESSION_PATH, body: DONE },
-      { method: "POST", path: `${SESSION_PATH}/refine`, body: REFINED },
-    ]);
-    const user = userEvent.setup();
+  it("sends feedback as chat without executing an image", async () => {
+    const fetchMock = mockApi([...BASE, {path: SESSION_PATH, body: DONE}, {method: "POST", path: `${SESSION_PATH}/chat`, body: DONE}]);
     renderApp(`/s/${SESSION_ID}`);
     const box = await screen.findByPlaceholderText(FEEDBACK_PLACEHOLDER);
-    await user.type(box, "da hơi vàng");
-    await user.click(screen.getByRole("button", { name: "Gửi góp ý tinh chỉnh" }));
-
-    expect(await screen.findByText(/Đã tạo phiên bản/)).toHaveTextContent("v2 từ v1");
-    const post = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/refine"));
-    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
-      feedback: "da hơi vàng",
-      treatment_id: PIPELINE_TREATMENT.id,
-    });
-    expect(screen.getByText("Giảm ám vàng toàn ảnh")).toBeInTheDocument();
-    expect(screen.getByText("Góp ý của bạn")).toBeInTheDocument();
-    expect(box).toHaveValue("");
-
-    const history = screen.getByRole("region", { name: "Lịch sử phiên bản phác đồ" });
-    const current = within(history).getByText("Đang dùng").closest("li");
-    expect(current).toHaveTextContent("v2 · Tinh chỉnh theo góp ý");
-    expect(current).toHaveTextContent("Lạnh hơn (bớt vàng) (mức 1)");
+    await userEvent.setup().type(box, "da hơi vàng");
+    await userEvent.setup().click(screen.getByRole("button", {name: "Gửi góp ý tinh chỉnh"}));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/chat"))).toBe(true));
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/execute"))).toBe(false);
   });
 
   it("keeps the feedback text when refining fails", async () => {
@@ -55,7 +37,7 @@ describe("refine by feedback", () => {
       { path: SESSION_PATH, body: DONE },
       {
         method: "POST",
-        path: `${SESSION_PATH}/refine`,
+        path: `${SESSION_PATH}/chat`,
         status: 500,
         body: { error: { code: "pipeline_failed", message: "Xử lý ảnh không thành công." } },
       },
@@ -91,7 +73,7 @@ describe("refine by feedback", () => {
     ).toBeInTheDocument();
     const current = within(history).getByText("Đang dùng").closest("li");
     expect(current).toHaveTextContent("v1 · Kết quả pipeline");
-    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/refine"))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/chat"))).toBe(false);
   });
 
   it("says plainly when the feedback was not understood", async () => {

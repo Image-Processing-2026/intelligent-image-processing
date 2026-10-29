@@ -22,6 +22,7 @@ export const SUMMARY: SessionSummary = {
 };
 
 export const DETAIL: SessionDetail = {
+  conversation: {revision: 1, status: "ready", reply: "Phương án hiện hành", source_mode: "rebuild", source_reason: "Dùng ảnh gốc", actions: []},
   draft_edits: [],
   draft_diagnosis: null,
   region_overlay_url: null,

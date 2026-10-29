@@ -50,3 +50,23 @@ Gallery giữ nhãn X/Y, có crop đồng tọa độ và mở PNG đầy đủ.
 ```
 
 Runner bỏ qua lượt đã có result.json; giữ snapshot/protocol của lần chuẩn bị. Muốn thí nghiệm khác dùng `--output` mới. Chưa thử Clarify/Refine theo hội thoại, chưa ablation và chưa có chấm người dùng cho bộ mới. Không tuyên bố V2 tốt hơn dựa vào ACCEPT hoặc số pixel đổi.
+
+
+## Đã nhận chấm mù người dùng
+
+Đã nhập `ratings-2026-10-29-basic.json`: đủ 85 trường. Báo cáo giải mã và kiểm tra pixel: `data/prompt_ab/2026-10-29-basic/human-ratings-report.md`; dữ liệu gốc và giải mã được lưu cạnh báo cáo.
+
+Trong 7 ca basic đầu ra khác nhau: V2 được chọn 4, V1 1, cả hai không đạt 1, chưa rõ 1. Hai phiếu ưu tiên Y trên ảnh đền/đồ chơi xanh bị loại khỏi thống kê thắng/thua vì X/Y giống hệt pixel; giữ nguyên phiếu gốc. V2 đạt rõ trên bốn ca mà V1 không đạt, nhưng ca hoa tối V2 không đạt và tác dụng phụ nặng, V1 đạt một phần với tác dụng phụ nhẹ. Ba đối chứng đều đạt; hai ca giới hạn chưa xác định mục tiêu.
+
+Có tín hiệu cải thiện cục bộ và suy giảm thực tế; chưa đủ cơ sở đưa toàn bộ V2 thành mặc định. Tất cả phiếu có hướng đều chọn Y, nên cần kiểm tra ảnh hưởng vị trí bằng chấm đảo vị trí trước kết luận mạnh.
+
+
+## V2 trở thành mặc định theo yêu cầu người dùng
+
+Ngày 29/10/2026, sau khi xem kết quả chấm mù, người dùng yêu cầu đưa V2 thành mặc định. Đã đưa các thay đổi của ứng viên đã thử vào mã production: Perceive, Verify, Plan/history, Review, Clarify và Refine. Review ghi `review-v2`, Perceive đánh dấu `perceive-v2`.
+
+Verify cho phép `uncertain` trên wire schema và bỏ câu trả lời đó khi hợp nhất để dùng nhánh chưa kiểm chứng hiện hữu, đúng với ứng viên đã thử; chưa bổ sung một cơ chế abstention mới. Parser vẫn giữ khả năng bỏ qua JSON sai định dạng. Clarify mặc định hỏi giữ hay mô tả cách sửa khi chỉ còn ask_user.
+
+V2 là mặc định do quyết định của người dùng, không phải kết luận V2 luôn tốt hơn. Ca hoa tối bị sửa quá tay vẫn là hạn chế đã biết. Không sửa cơ chế rollback/chỉnh cộng dồn trong lần đổi mặc định này. Snapshot và kết quả A/B cũ giữ nguyên. Runner lịch sử không được tự gán nhãn V1 cho mã production đã chuyển sang V2; chỉ tiếp tục từ snapshot cũ hoặc dùng bộ basic với baseline đã đóng băng.
+
+Kiểm tra sau khi đổi mặc định: 217 test liên quan tới prompt/fusion/intent/perception/review/refine đều qua (30.33 giây, chạy ngoài sandbox để HTTP TestClient cục bộ hoạt động). Ruff và git diff --check qua. Đã đối chiếu AST để xác nhận 5 system prompt khớp nguyên văn với V2 trong snapshot của bộ basic.

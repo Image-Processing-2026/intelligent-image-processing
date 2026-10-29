@@ -45,7 +45,7 @@ REVIEW_MODEL_ENV = "REVIEW_MODEL"
 REVIEW_TIMEOUT_MS = 60_000
 # Ngân sách lời gọi Gemini cho một lượt review: lần đầu + một lần thử lại lỗi tạm thời
 REVIEW_MAX_CALLS = 2
-PROMPT_VERSION = "review-v1"
+PROMPT_VERSION = "review-v2"
 
 # Crop ghép cặp (gốc | kết quả) quanh vùng thay đổi lớn nhất. Tạm thời, chưa hiệu chỉnh (BL-10)
 CROP_SIZE = 384
@@ -123,6 +123,8 @@ Trả về JSON:
 - reason: lý do ngắn gọn, không suy luận dài.
 Chỉ nêu điều quan sát được trong ảnh gửi kèm. Không bịa vùng không có trong crop.
 """.strip()
+
+REVIEW_PROMPT += '\nĐánh giá mức đạt mục tiêu và bảo toàn phong cách riêng biệt. Không coi ảnh sáng hơn là tự động tốt hơn. Nếu vùng mục tiêu quá nhỏ không đủ soi, trả UNCERTAIN.'
 
 
 @dataclass

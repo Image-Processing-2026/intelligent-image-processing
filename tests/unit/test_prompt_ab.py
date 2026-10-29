@@ -5,12 +5,16 @@ import sys
 from pathlib import Path
 
 
-def test_v2_uncertain_and_history_contract():
+def test_default_v2_uncertain_and_history_contract():
     code = '''
 from scripts.prompt_ab import install_v2
 from src.agent import perception as p, fusion as f, vlm_diagnostician as v
 from src.agent.state import HistoryItem, TreatmentPlan
+assert p.PROMPT_VERSION == 'perceive-v2'
+before = (p.PERCEIVE_PROMPT, v.SYSTEM_PROMPT)
 install_v2()
+install_v2()
+assert before == (p.PERCEIVE_PROMPT, v.SYSTEM_PROMPT)
 assert 'uncertain' in p.VERIFY_RESPONSE_SCHEMA['properties']['answers']['items']['properties']['verdict']['enum']
 assert p.parse_verify_answers({'answers':[{'hypothesis_id':'h1','verdict':'uncertain'}]}) == {}
 answer = p.parse_verify_answers({'answers':[{'hypothesis_id':'h1','verdict':'defect','confidence':0.8}]})

@@ -151,6 +151,8 @@ và strength (1 nhẹ, 2 rõ). Chỉ dùng các kind cho phép.
 - Nếu góp ý không yêu cầu thay đổi gì về ảnh, trả về danh sách rỗng.
 """
 
+FEEDBACK_PROMPT += "\nYêu cầu sở thích (ấm hơn, tối hơn) không cần xác nhận là lỗi. Phân biệt với nhận định kỹ thuật. 'Vẫn hơi' không mặc nhiên cần strength 2; xét mức độ người dùng mô tả."
+
 FEEDBACK_SCHEMA: Dict[str, Any] = {
     "type": "object",
     "properties": {

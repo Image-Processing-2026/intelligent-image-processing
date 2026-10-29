@@ -114,3 +114,5 @@ mạng; số trên không áp dụng cho trường hợp đó.
 - Ảnh được tải lại mỗi lần mở phiên (`Cache-Control: no-cache`, chưa có 304), để ảnh đã xóa hoặc của
   người khác trên cùng trình duyệt không hiện lại từ cache.
 - Bundle JS khoảng 580 kB (gzip 177 kB) trong một file; với app chạy local thì chấp nhận được.
+
+Luồng hội thoại hiện tại dùng `/chat` để làm rõ và cập nhật phương án, `/execute` để chạy khi người dùng bấm “Xử lý ảnh”/“Xử lý lại”. UI hiển thị nguồn ảnh và giữ lịch sử kết quả. Tham khảo `docs/plan_conversational_processing.md` và contract trong `docs/interfaces.md`.

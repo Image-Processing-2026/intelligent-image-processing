@@ -116,6 +116,8 @@ VERIFY_ENABLED = True
 # Hợp nhất P6; benchmark vlm_only tắt để đo riêng lời VLM
 FUSION_ENABLED = True
 
+PROMPT_VERSION = "perceive-v2"
+
 PERCEIVE_PROMPT = """
 Bạn là "AI Image Doctor" - GIAI ĐOẠN 1: QUAN SÁT & CHẨN ĐOÁN (chưa lập kế hoạch xử lý).
 Bạn nhận: ẢNH TOÀN KHUNG; các CROP 100 % độ phân giải có nhãn (A, B, …) do hệ thống đo chọn
@@ -157,6 +159,8 @@ Từ vòng 2 trở đi bạn nhận ẢNH GỐC và ẢNH HIỆN TẠI: chỉ ch
 (crop và số đo lấy từ ẢNH HIỆN TẠI).
 Viết lighting, evidence, reason và summary bằng tiếng Việt có dấu.
 """
+
+PERCEIVE_PROMPT += '\nPhân biệt quan sát trực tiếp với suy đoán phong cách. Chỉ gán preserve khi có dấu hiệu\nthẩm mỹ rõ; thiếu sáng trên mặt không tự chứng minh chủ ý silhouette. Khi chưa chắc,\nnêu sự mơ hồ trong summary; không tự khẳng định ý định người chụp.\n'
 
 PERCEIVE_RESPONSE_SCHEMA: Dict[str, Any] = {
     "type": "object",

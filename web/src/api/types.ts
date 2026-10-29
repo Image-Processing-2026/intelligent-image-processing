@@ -176,6 +176,7 @@ export interface SessionOptions {
 }
 
 export interface SessionDetail extends SessionSummary {
+  conversation?: {revision: number; status: string; reply: string; source_reason: string; source_mode: string; actions: {operation: string; region_id: string; parameters: Record<string, unknown>}[]};
   options: SessionOptions;
   original: Artifact | null;
   ground_truth: Artifact | null;
