@@ -1,44 +1,35 @@
+[English](README.md) | [Tiếng Việt](README.vi.md)
+
 # AI Image Doctor
 
-Xử lý ảnh khép vòng có tác tử, làm bài cho môn Xử lý ảnh. Gemini VLM và LangGraph chẩn đoán và điều phối; mọi
-thao tác trên điểm ảnh đều dùng thuật toán cổ điển (OpenCV, scikit-image, NumPy), không dùng AI tạo sinh
-(ADR-001).
+A closed-loop image-processing project for a university Image Processing course. Gemini and LangGraph diagnose and orchestrate; OpenCV, scikit-image and NumPy perform classical pixel operations. Generative pixel synthesis is outside the project scope.
 
-Tài liệu: `CONTEXT.md` (mục tiêu, phân công), `docs/interfaces.md` (hợp đồng giữa các module),
-`docs/decisions.md` (ADR), `CONTRIBUTING.md` (quy trình git), `docs/frontend/` (web app).
+## Quickstart
 
-## Cài đặt
+Python 3.10+, Node.js 20+, and npm are required for the web application. Run from the repository root:
 
 ```powershell
-pip install -r requirements-dev.txt
-```
-
-Khóa Gemini đặt trong `.env` (xem `.env.example`). Không có khóa thì pipeline chạy rule-based.
-
-## Chạy
-
-**Web app** (React + FastAPI, có tài khoản, lưu phiên): xem [web/README.md](web/README.md). Bản
-production-local gồm build một lần rồi chạy một server:
-
-```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
 npm --prefix web ci
 npm --prefix web run build
 uvicorn src.api.main:app --port 8000
 ```
 
-Mở http://localhost:8000. Khi phát triển giao diện thì chạy `uvicorn src.api.main:app --reload --port 8000`
-và `npm --prefix web run dev` (http://localhost:5173).
+Open http://localhost:8000, register a local account, and upload an image. Copy `.env.example` to `.env` to configure Gemini; leave `GEMINI_API_KEY` empty for rule-based operation. A configured key can still fall back after a failed call. Inspect the reported source of each diagnosis/plan.
 
-**Gradio** (demo cũ, gọi pipeline trực tiếp): `python frontend/app.py`, mở http://localhost:7860. Xem
-[frontend/README.md](frontend/README.md).
+For development, run the backend with `--reload` and `npm --prefix web run dev` in another terminal; open http://localhost:5173. Gradio is a separate legacy demo: `python frontend/app.py`.
 
-## Dữ liệu
+## Documentation
 
-- `data/app/`: tài khoản, phiên xử lý và ảnh của web app (gitignored).
-- `data/memory/cases.sqlite`: bộ nhớ ca bệnh; tắt bằng `CASE_MEMORY_PATH=""`.
-- `data/real/`: ảnh thật dùng làm mẫu; ảnh không nằm trong git (xem `data/README.md`).
+Start at the [documentation index](docs/README.md). Read [architecture](docs/architecture.md), [algorithms](docs/algorithms.md), [evaluation](docs/evaluation.md), [user guide](docs/user-guide.md), and [API guide](docs/api.md).
 
-## Kiểm tra
+See [web setup](web/README.md), [contracts](docs/interfaces.md), [contributing](CONTRIBUTING.md) and [decisions](docs/decisions.md). Historical plans and reports are indexed separately.
+
+## Data and checks
+
+`data/app/` contains local accounts, sessions and images. `data/memory/cases.sqlite` stores case memory; `CASE_MEMORY_PATH=""` disables it. Sample images are not guaranteed to be present in a clone; see [data setup](data/README.md).
 
 ```powershell
 ruff check src/ tests/
@@ -47,4 +38,4 @@ npm --prefix web run typecheck
 npm --prefix web test -- --run
 ```
 
-CI chạy `ruff check` và `pytest tests/unit/` trên Python 3.10. Test chạy offline, không cần khóa.
+The server includes legacy routes without the workspace authentication boundary. Use a local server for demos; review the [API limitations](docs/api.md) before network exposure.
