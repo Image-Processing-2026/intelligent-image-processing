@@ -123,3 +123,39 @@ def test_measure_noise_returns_sigma_for_downstream_denoising() -> None:
     assert sigma is not None
     assert abs(sigma - 8.0) / 8.0 <= 0.15
     assert section.estimates["sigma_luma"].value == pytest.approx(sigma)
+
+
+def _framed(gray: np.ndarray, border: int = 24) -> np.ndarray:
+    """Đặt ảnh xám vào khung hằng số (như ảnh chụp màn hình) và trả RGB."""
+    size = gray.shape[0] + 2 * border
+    canvas = np.full((size, size), 220, dtype=np.uint8)
+    canvas[border:-border, border:-border] = gray
+    return np.stack([canvas] * 3, axis=2)
+
+
+def test_constant_border_does_not_zero_the_noise_estimate() -> None:
+    rgb = _framed(_noisy_gray(20.0, 25.0))
+    estimate = measure_image(rgb).report.noise["sigma_luma"]
+    assert estimate.value == pytest.approx(20.0, rel=0.15)
+
+
+def _correlated_gray(sigma: float, seed: int = 0) -> np.ndarray:
+    """Ảnh phẳng + nhiễu tương quan không gian (lọc [1 2 1]/4 theo hai chiều), std ≈ sigma."""
+    rng = np.random.default_rng(seed)
+    kernel = np.array([0.25, 0.5, 0.25])
+    noise = rng.normal(0.0, 1.0, (SIZE + 2, SIZE + 2))
+    noise = np.apply_along_axis(np.convolve, 0, noise, kernel, "same")
+    noise = np.apply_along_axis(np.convolve, 1, noise, kernel, "same")[1:-1, 1:-1]
+    noise *= sigma / noise.std()
+    return np.clip(128.0 + noise, 0, 255).astype(np.uint8)
+
+
+def test_spatially_correlated_noise_is_not_reported_as_clean() -> None:
+    rgb = np.stack([_correlated_gray(20.0)] * 3, axis=2)
+    estimate = measure_image(rgb).report.noise["sigma_luma"]
+    assert estimate.value > 9.0
+
+
+def test_clean_image_with_frame_stays_low() -> None:
+    rgb = _framed(np.clip(_texture(40.0), 0, 255).astype(np.uint8))
+    assert measure_image(rgb).report.noise["sigma_luma"].value < 1.0

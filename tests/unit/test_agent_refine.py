@@ -194,3 +194,106 @@ class TestRefine:
         assert [a.parameters["gamma"] for a in second.actions] == [1.15, 1.15]
         assert second.image.shape == image.shape
         assert second.quality_score is not None
+
+
+class TestGeminiFirst:
+    """Có API key thì Gemini luôn đọc góp ý; luật chỉ là dự phòng."""
+
+    @patch.dict("os.environ", FAKE_KEY)
+    def test_gemini_is_called_even_when_rules_match(self):
+        image = np.zeros((16, 16, 3), np.uint8)
+        data = {"adjustments": [{"kind": "less_noise", "region": "full", "strength": 2}]}
+        with patch("src.agent.refine.call_gemini_json", return_value=data) as fake:
+            adjustments, source = parse_feedback(
+                "vẫn còn noise", image, image, [_action("denoise", strength=1.0)]
+            )
+        fake.assert_called_once()
+        contents = fake.call_args.args[2]
+        assert any("denoise" in part for part in contents if isinstance(part, str))
+        assert source == "vlm"
+        assert adjustments == [Adjustment(kind="less_noise", strength=2)]
+
+    @patch.dict("os.environ", FAKE_KEY)
+    def test_gemini_failure_falls_back_to_rules(self):
+        with patch("src.agent.refine.call_gemini_json", side_effect=RuntimeError("503")):
+            assert parse_feedback("tối quá") == ([Adjustment(kind="brighter", strength=2)], "rules")
+
+    def test_repeated_noise_feedback_escalates_to_nlm(self):
+        actions = [_action("denoise", method="bilateral", strength=1.5)]
+        result, _ = apply_adjustments(actions, [Adjustment(kind="less_noise", strength=2)])
+        assert result[0].operation == "denoise"
+        assert result[0].parameters["method"] == "nlm"
+        assert result[0].parameters["strength"] == 2.0
+
+
+# ============================================================
+# Không chồng thao tác cùng loại; bớt làm mịn
+# ============================================================
+class TestNoStacking:
+    def test_repeated_sharper_raises_the_existing_sharpen(self):
+        recipe = [_action("sharpen", method="unsharp_mask", amount=0.7)]
+        actions, notes = apply_adjustments(recipe, [Adjustment(kind="sharper", strength=2)])
+        assert [a.operation for a in actions] == ["sharpen"]
+        assert actions[0].parameters["amount"] == pytest.approx(1.2)
+        assert notes == ["nét hơn trên toàn ảnh"]
+
+    def test_sharper_at_the_ceiling_is_reported(self):
+        recipe = [_action("sharpen", method="unsharp_mask", amount=2.0)]
+        actions, notes = apply_adjustments(recipe, [Adjustment(kind="sharper", strength=2)])
+        assert len(actions) == 1 and actions[0].parameters["amount"] == 2.0
+        assert notes == ["nét hơn trên toàn ảnh: đã ở mức tối đa"]
+
+    def test_sharper_on_another_region_adds_a_sharpen(self):
+        recipe = [_action("sharpen", method="unsharp_mask", amount=0.7)]
+        actions, _ = apply_adjustments(recipe, [Adjustment(kind="sharper", region="face")])
+        assert [a.target_prompt for a in actions] == ["full", "face"]
+
+    def test_less_noise_upgrades_in_place_without_a_second_denoise(self):
+        recipe = [_action("denoise", method="bilateral", strength=1.5)]
+        actions, _ = apply_adjustments(recipe, [Adjustment(kind="less_noise", strength=2)])
+        assert len(actions) == 1
+        assert actions[0].parameters == {"method": "nlm", "strength": 2.0}
+
+    def test_less_noise_never_downgrades_the_method(self):
+        recipe = [_action("denoise", method="nlm", strength=1.2)]
+        actions, _ = apply_adjustments(recipe, [Adjustment(kind="less_noise", strength=1)])
+        assert actions[0].parameters == {"method": "nlm", "strength": 1.5}
+
+    def test_less_noise_at_the_ceiling_is_reported(self):
+        recipe = [_action("denoise", method="nlm", strength=2.0)]
+        actions, notes = apply_adjustments(recipe, [Adjustment(kind="less_noise", strength=2)])
+        assert actions[0].parameters == {"method": "nlm", "strength": 2.0}
+        assert notes == ["khử nhiễu trên toàn ảnh: đã ở mức tối đa"]
+
+    def test_stacked_recipe_from_older_versions_is_collapsed(self):
+        recipe = [
+            _action("denoise", method="nlm", strength=2.0),
+            _action("denoise", method="bilateral", strength=1.5),
+            _action("sharpen", method="unsharp_mask", amount=0.7),
+            _action("sharpen", method="unsharp_mask", amount=0.7),
+        ]
+        actions, _ = apply_adjustments(recipe, [])
+        assert [(a.operation, a.parameters) for a in actions] == [
+            ("denoise", {"method": "nlm", "strength": 2.0}),
+            ("sharpen", {"method": "unsharp_mask", "amount": 0.7}),
+        ]
+
+    def test_less_denoise_reduces_the_existing_denoise(self):
+        recipe = [_action("denoise", method="nlm", strength=2.0)]
+        actions, notes = apply_adjustments(recipe, [Adjustment(kind="less_denoise", strength=2)])
+        assert actions[0].parameters == {"method": "nlm", "strength": 1.0}
+        assert notes == ["giảm khử nhiễu trên toàn ảnh"]
+
+    @pytest.mark.parametrize(
+        "text",
+        ["nó bị mịn quá mất hết các đường nét, chi tiết rồi", "ảnh như tranh sơn dầu"],
+    )
+    def test_oversmoothed_feedback_maps_to_less_denoise(self, text):
+        assert ("less_denoise", "full", 2) in _parsed(text) or (
+            "less_denoise",
+            "full",
+            1,
+        ) in _parsed(text)
+
+    def test_clearer_lines_maps_to_sharper(self):
+        assert _parsed("làm các đường nét đậm hơn nữa") == [("sharper", "full", 1)]

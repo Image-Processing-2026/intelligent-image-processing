@@ -10,6 +10,7 @@ import os
 import threading
 import time
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, TypeVar
 
@@ -77,11 +78,89 @@ def pipeline_slot(settings: AppSettings) -> Iterator[None]:
         slots.release()
 
 
+# ---------------- theo dõi phiên đang chạy ----------------
+# Phiên 'running' mà tiến trình này không còn chạy gì cho nó (luồng chết, bị hủy) là phiên mồ côi:
+# không có ai ghi kết quả nên nó sẽ "chạy mãi". Server khởi động lại thì db._recover_interrupted lo.
+_ACTIVE: Dict[str, int] = {}
+_ACTIVE_LOCK = threading.Lock()
+# Khoảng chờ giữa lúc phiên được đánh dấu 'running' và lúc pipeline thật sự đăng ký chạy
+# (đọc ảnh từ đĩa); trong khoảng này phiên chưa bị coi là mồ côi.
+STALE_GRACE_SECONDS = 120
+
+
+@contextmanager
+def active_session(session_id: Optional[str]) -> Iterator[None]:
+    """Đăng ký phiên đang được tiến trình này xử lý (kể cả lúc xếp hàng chờ slot)."""
+    if session_id is None:
+        yield
+        return
+    with _ACTIVE_LOCK:
+        _ACTIVE[session_id] = _ACTIVE.get(session_id, 0) + 1
+    try:
+        yield
+    finally:
+        with _ACTIVE_LOCK:
+            _ACTIVE[session_id] -= 1
+            if _ACTIVE[session_id] <= 0:
+                del _ACTIVE[session_id]
+
+
+def is_active(session_id: str) -> bool:
+    """Tiến trình này đang xử lý phiên không."""
+    with _ACTIVE_LOCK:
+        return session_id in _ACTIVE
+
+
+def _age_seconds(timestamp: str) -> float:
+    """Số giây từ một mốc ISO-8601 (utc_now) đến hiện tại; lỗi định dạng → rất lớn."""
+    try:
+        moment = datetime.fromisoformat(timestamp)
+    except (TypeError, ValueError):
+        return float("inf")
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - moment).total_seconds()
+
+
+def recover_orphaned(db: Session, items: List[ProcessingSession]) -> bool:
+    """
+    Đưa các phiên 'running' mồ côi (không có luồng nào xử lý, quá STALE_GRACE_SECONDS) sang
+    'failed' kèm thông báo để người dùng hỏi ý lại. Trả True nếu có phiên được sửa.
+    """
+    fixed = False
+    for item in items:
+        if (
+            item.status == "running"
+            and not is_active(item.id)
+            and _age_seconds(item.updated_at) > STALE_GRACE_SECONDS
+        ):
+            item.status = "failed"
+            item.error_code = "interrupted"
+            add_message(
+                db,
+                item,
+                "system",
+                "notice",
+                {"code": "interrupted", "text": MESSAGES["interrupted"]},
+            )
+            fixed = True
+    if fixed:
+        db.commit()
+    return fixed
+
+
 def run_timed(
-    settings: AppSettings, fn: Callable[..., T], *args: Any, **kwargs: Any
+    settings: AppSettings,
+    fn: Callable[..., T],
+    *args: Any,
+    session_id: Optional[str] = None,
+    **kwargs: Any,
 ) -> Tuple[T, int]:
-    """Gọi một hàm agent trong slot pipeline; trả (kết quả, thời gian ms)."""
-    with pipeline_slot(settings):
+    """
+    Gọi một hàm agent trong slot pipeline; trả (kết quả, thời gian ms). session_id (nếu có)
+    đánh dấu phiên đang được xử lý để không bị coi là mồ côi.
+    """
+    with active_session(session_id), pipeline_slot(settings):
         started = time.perf_counter()
         result = fn(*args, **kwargs)
         return result, int((time.perf_counter() - started) * 1000)

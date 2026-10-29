@@ -68,18 +68,17 @@ describe("result view", () => {
     expect(screen.getByText(/ở độ phân giải gốc 640×480/)).toBeInTheDocument();
   });
 
-  it("shows the iteration timeline with plan, reasoning and knowledge ids", async () => {
+  it("shows the executed actions and reasoning in the inspection side pane", async () => {
     mockApi([...BASE, { path: SESSION_PATH, body: DONE }]);
     const user = userEvent.setup();
     renderApp(`/s/${SESSION_ID}`);
-    await user.click(await screen.findByRole("button", { name: /02 Xử lý/ }));
-    await user.click(screen.getByText("Chi tiết các vòng & chỉ số"));
-    const timeline = screen.getByRole("region", { name: "Các vòng xử lý" });
-    await user.click(within(timeline).getByRole("button", { name: /Vòng 1/ }));
-    expect(within(timeline).getByText("Chỉnh gamma @ Toàn ảnh (gamma=1.4)")).toBeInTheDocument();
-    expect(within(timeline).getByText("Lý do: Ảnh tối, tăng gamma.")).toBeInTheDocument();
-    expect(within(timeline).getByText("underexposed_global")).toBeInTheDocument();
-    expect(within(timeline).getByText("92,1")).toBeInTheDocument(); // chỉ số sau
+    await user.click(await screen.findByRole("button", { name: "Xem thông số thực thi" }));
+    const pane = await screen.findByRole("region", { name: "Bảng soi kỹ thuật" });
+    expect(within(pane).getByRole("tab", { name: "Thực thi" })).toHaveAttribute("aria-selected", "true");
+    expect(within(pane).getByText("Vòng 1")).toBeInTheDocument();
+    await user.click(within(pane).getByRole("tab", { name: "Lý do" }));
+    expect(within(pane).getByText("Ảnh tối, tăng gamma.")).toBeInTheDocument();
+    expect(within(pane).getByText(/underexposed_global/)).toBeInTheDocument();
   });
 
   it("keeps technical JSON collapsed until opened", async () => {

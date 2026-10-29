@@ -8,11 +8,11 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/lib/theme";
 import LoginPage from "@/pages/LoginPage";
-import NewSessionPage from "@/pages/NewSessionPage";
+import ChatSessionPage from "@/pages/ChatSessionPage";
 import MemoryPage from "@/pages/MemoryPage";
 import RegisterPage from "@/pages/RegisterPage";
 import NotFoundPage from "@/pages/NotFoundPage";
-import SessionPage from "@/pages/SessionPage";
+import NewChatPage from "@/pages/NewChatPage";
 import SettingsPage from "@/pages/SettingsPage";
 
 export function createQueryClient() {
@@ -37,8 +37,8 @@ export function AppRoutes() {
         </Route>
         <Route element={<RequireAuth />}>
           <Route element={<AppShell />}>
-            <Route path="/" element={<NewSessionPage />} />
-            <Route path="/s/:sid" element={<SessionPage />} />
+            <Route path="/" element={<NewChatPage />} />
+            <Route path="/s/:sid" element={<ChatSessionPage />} />
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<NotFoundPage />} />

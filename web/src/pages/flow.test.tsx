@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
@@ -19,6 +19,7 @@ const BASE = [
   { path: "/health", body: { status: "ok" } },
   { path: "/workspace/sessions", body: [SUMMARY] },
 ];
+const NOTE_PLACEHOLDER = /Nhập phản hồi hoặc yêu cầu chỉnh sửa chẩn đoán/;
 const SESSION_PATH = `/workspace/sessions/${SESSION_ID}`;
 
 const NO_VARIANTS = {
@@ -39,9 +40,8 @@ describe("answering questions", () => {
     const user = userEvent.setup();
     renderApp(`/s/${SESSION_ID}`);
 
-    expect(await screen.findByRole("heading", { name: "Bổ sung phân tích" })).toBeInTheDocument();
     expect(screen.queryByRole("radio")).toBeNull(); // không còn câu hỏi phong cách
-    await user.click(screen.getByRole("button", { name: "Bắt đầu xử lý" }));
+    await user.click(await screen.findByRole("button", { name: "Bắt đầu xử lý" }));
 
     expect(await screen.findByRole("heading", { name: "Kết quả xử lý" })).toBeInTheDocument();
     const post = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/answers"));
@@ -81,16 +81,15 @@ describe("answering questions", () => {
     const user = userEvent.setup();
     renderApp(`/s/${SESSION_ID}`);
 
-    await user.type(await screen.findByLabelText("Tin nhắn bổ sung"), "mặt còn tối");
-    await user.click(screen.getByRole("button", { name: "Gửi bổ sung" }));
+    await user.type(await screen.findByPlaceholderText(NOTE_PLACEHOLDER), "mặt còn tối");
+    await user.click(screen.getByRole("button", { name: "Gửi bổ sung phân tích" }));
 
     const chip = "Thêm: Thiếu sáng @ Khuôn mặt (mức 2)";
     expect(await screen.findByRole("button", { name: `Xóa chỉnh sửa: ${chip}` })).toBeInTheDocument();
     const note = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/analysis-notes"));
     expect(JSON.parse(String(note?.[1]?.body))).toEqual({ message: "mặt còn tối" });
-    expect(screen.getByLabelText("Tin nhắn bổ sung")).toHaveValue(""); // đã gửi xong thì xóa ô nhập
+    expect(screen.getByPlaceholderText(NOTE_PLACEHOLDER)).toHaveValue(""); // đã gửi xong thì xóa ô nhập
     expect(screen.getByText("Bạn bổ sung")).toBeInTheDocument(); // lỗi do người dùng thêm
-    expect(screen.getByRole("img", { name: "Ảnh gốc với vùng được tô màu" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: `Xóa chỉnh sửa: ${chip}` }));
     await waitFor(() =>
@@ -114,21 +113,24 @@ describe("answering questions", () => {
     ]);
     const user = userEvent.setup();
     renderApp(`/s/${SESSION_ID}`);
-    await user.type(await screen.findByLabelText("Tin nhắn bổ sung"), "nền cháy là cố ý");
-    await user.click(screen.getByRole("button", { name: "Gửi bổ sung" }));
+    await user.type(await screen.findByPlaceholderText(NOTE_PLACEHOLDER), "nền cháy là cố ý");
+    await user.click(screen.getByRole("button", { name: "Gửi bổ sung phân tích" }));
     expect(await screen.findByText("Phiên không còn chờ trả lời.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Tin nhắn bổ sung")).toHaveValue("nền cháy là cố ý");
+    expect(screen.getByPlaceholderText(NOTE_PLACEHOLDER)).toHaveValue("nền cháy là cố ý");
   });
 
-  it("warns when a user-added region has low confidence", async () => {
+  it("shows regions with low confidence in the inspection side pane", async () => {
     mockApi([...BASE, { path: SESSION_PATH, body: WITH_EDIT }]);
     const user = userEvent.setup();
     renderApp(`/s/${SESSION_ID}`);
-    const [viewRegion] = await screen.findAllByRole("button", { name: "Xem vùng" });
-    await user.click(viewRegion);
-    expect(
-      await screen.findByText("Vùng có thể chưa chuẩn, hãy nói rõ trong khung chat."),
-    ).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Xem chi tiết chẩn đoán" }));
+    const pane = await screen.findByRole("region", { name: "Bảng soi kỹ thuật" });
+    expect(within(pane).getByRole("img", { name: "Ảnh gốc với vùng được tô màu" })).toBeInTheDocument();
+    expect(within(pane).getByText("Tin cậy thấp")).toBeInTheDocument();
+    await user.click(within(pane).getByRole("tab", { name: "Số đo" }));
+    expect(within(pane).getByRole("tab", { name: "Số đo" })).toHaveAttribute("aria-selected", "true");
+    await user.click(within(pane).getByRole("button", { name: "Đóng bảng chi tiết" }));
+    expect(screen.queryByRole("region", { name: "Bảng soi kỹ thuật" })).toBeNull();
   });
 
   it("locks the form and shows the waiting text while the pipeline runs", async () => {

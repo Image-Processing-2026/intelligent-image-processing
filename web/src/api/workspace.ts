@@ -15,10 +15,15 @@ export const sessionKey = (id: string) => ["workspace", "session", id] as const;
 
 const sessionPath = (id: string) => `/workspace/sessions/${encodeURIComponent(id)}`;
 
+/** Chu kỳ tải lại khi còn phiên đang chạy: tải lại trang vẫn thấy kết quả khi xong. */
+export const RUNNING_POLL_MS = 3000;
+
 export function useSessions() {
   return useQuery({
     queryKey: SESSIONS_KEY,
     queryFn: () => apiFetch<SessionSummary[]>("/workspace/sessions"),
+    refetchInterval: (query) =>
+      query.state.data?.some((item) => item.status === "running") ? RUNNING_POLL_MS : false,
   });
 }
 
@@ -27,6 +32,8 @@ export function useSession(id: string | undefined) {
     queryKey: sessionKey(id ?? ""),
     queryFn: () => apiFetch<SessionDetail>(sessionPath(id ?? "")),
     enabled: Boolean(id),
+    refetchInterval: (query) =>
+      query.state.data?.status === "running" ? RUNNING_POLL_MS : false,
   });
 }
 
@@ -43,6 +50,7 @@ export interface NewSessionInput {
   sample?: string | null;
   groundTruth?: File | null;
   maxIterations: number;
+  userPrompt?: string | null;
 }
 
 export function createSession(input: NewSessionInput): Promise<SessionDetail> {
@@ -51,6 +59,7 @@ export function createSession(input: NewSessionInput): Promise<SessionDetail> {
   if (input.sample) form.append("sample", input.sample);
   if (input.groundTruth) form.append("ground_truth", input.groundTruth);
   form.append("max_iterations", String(input.maxIterations));
+  if (input.userPrompt) form.append("user_prompt", input.userPrompt);
   return apiFetch<SessionDetail>("/workspace/sessions", { method: "POST", body: form });
 }
 

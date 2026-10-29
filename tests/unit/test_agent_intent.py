@@ -55,29 +55,32 @@ class TestQuestions:
         assert build_questions(_diagnosis()) == []
         assert build_questions(None) == []
 
-    def test_ambiguities_are_prioritised_and_capped(self):
+    def test_asks_one_recommend_or_custom_question(self):
         diagnosis = _diagnosis(
             Defect(type="underexposed", severity=2),
             Defect(type="color_cast_warm", severity=1),
-            Defect(type="noise", severity=2),
-            Defect(type="color_cast_cool", severity=1),
+            Defect(type="noise", severity=3),
+            preserve=[PreserveItem(aspect="warm_tone")],
         )
-        questions = build_questions(diagnosis)
-        assert [q.id for q in questions] == ["mood", "warm", "grain"]
-        assert len(questions) == MAX_QUESTIONS
+        [question] = build_questions(diagnosis)
+        assert len(build_questions(diagnosis)) == MAX_QUESTIONS == 1
+        assert question.id == "approach"
+        assert [c.value for c in question.choices] == ["recommend", "custom"]
+        assert question.default == "recommend"
+        # Đề xuất nêu lỗi nặng trước và phần giữ nguyên
+        assert question.text.index("hạt") < question.text.index("tối")
+        assert "warm_tone" in question.text
 
-    def test_defaults_follow_the_diagnosis(self):
-        intentional = _diagnosis(preserve=[PreserveItem(aspect="warm_tone")])
-        accidental = _diagnosis(Defect(type="color_cast_warm", severity=1))
-        assert build_questions(intentional)[0].default == "keep"
-        assert build_questions(accidental)[0].default == "fix"
+    def test_choices_have_no_automatic_effect(self):
+        [question] = build_questions(_diagnosis(Defect(type="noise", severity=2)))
+        assert all(c.keep is None and c.fix is None for c in question.choices)
+        intent = intent_from_answers([question], {"approach": "custom"}, "giữ hạt film")
+        assert [p.aspect for p in intent.keep] == ["film_grain"]
+        assert intent.fix == []
 
-    def test_backlit_subject_brighten_fixes_backlight(self):
-        diagnosis = _diagnosis(Defect(type="backlit_subject", region="face", severity=2))
-        [mood] = build_questions(diagnosis)
-        assert "ngược sáng" in mood.text
-        brighten = next(c for c in mood.choices if c.value == "brighten")
-        assert brighten.fix == "backlit_subject"
+    def test_unfixable_defects_alone_ask_nothing(self):
+        diagnosis = _diagnosis(Defect(type="motion_blur", severity=3, fixable=False))
+        assert build_questions(diagnosis) == []
 
     def test_questions_are_deterministic(self):
         diagnosis = _diagnosis(Defect(type="noise", severity=2))
@@ -106,8 +109,7 @@ class TestAnswers:
         assert parse_notes(notes) == expected
 
     def test_explicit_answers_win_over_notes(self):
-        questions = build_questions(_diagnosis(Defect(type="color_cast_warm", severity=1)))
-        intent = intent_from_answers(questions, {"warm": "keep"}, "khử vàng đi")
+        intent = intent_from_answers([], {"warm": "keep"}, "khử vàng đi")
         assert intent.answers["warm"] == "keep"
         assert [p.aspect for p in intent.keep] == ["warm_tone"]
         assert intent.fix == []
@@ -180,7 +182,7 @@ class TestInteractivePipeline:
     def test_session_asks_then_applies_the_intent(self):
         started = start_session(_dark_image(), max_iterations=2)
         assert started.status == "needs_input"
-        assert [q.id for q in started.questions] == ["mood"]
+        assert [q.id for q in started.questions] == ["approach"]
         assert started.diagnosis is not None
 
         done = answer_session(started.session_id, {}, "giữ tông ấm")

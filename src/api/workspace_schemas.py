@@ -12,6 +12,8 @@ MAX_ITERATIONS_RANGE = (1, 5)
 NUM_VARIANTS_RANGE = (1, 3)
 # Số chỉnh sửa chẩn đoán tối đa người dùng tích lũy trong một phiên (chat bổ sung phân tích)
 MAX_DRAFT_EDITS = 20
+# Độ dài tối đa của yêu cầu ban đầu gửi kèm ảnh khi tạo phiên (bằng tin nhắn bổ sung phân tích)
+MAX_USER_PROMPT = 1000
 DEFAULT_USER_SETTINGS = {"max_iterations": 3, "num_variants": 3}
 
 

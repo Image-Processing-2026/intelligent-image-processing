@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { DETAIL, DONE, ITER_ARTIFACT, SESSION_ID, SUMMARY, WITH_EDIT } from "@/test/fixtures";
 import { ALICE, mockApi, renderApp } from "@/test/utils";
 import { buildFlowSteps } from "./flow-data";
@@ -8,6 +8,7 @@ import { retainedEvaluation } from "./assessment";
 import { RoundAssessment } from "./RoundAssessment";
 import type { SessionDetail } from "@/api/types";
 
+const NOTE_PLACEHOLDER = /Nhập phản hồi hoặc yêu cầu chỉnh sửa chẩn đoán/;
 const PATH = `/workspace/sessions/${SESSION_ID}`;
 const base = (detail: SessionDetail) => [
   { path: "/auth/me", body: ALICE }, { path: "/health", body: { status: "ok" } },
@@ -53,49 +54,44 @@ describe("latest backend compatibility", () => {
     expect(step.output.some((f) => f.label.includes("person") && f.value.includes("9"))).toBe(true);
   });
 
-  it("keeps pending analysis mutations locked after switching phases", async () => {
+  it("keeps the input and edit chips locked while an analysis note is pending", async () => {
     const fetchMock = mockApi([...base(WITH_EDIT), { method: "POST", path: `${PATH}/analysis-notes`, pending: true }]);
     const user = userEvent.setup();
     renderApp(`/s/${SESSION_ID}`);
-    await user.type(await screen.findByLabelText("Tin nhắn bổ sung"), "mặt còn tối");
-    await user.click(screen.getByRole("button", { name: "Gửi bổ sung" }));
-    await user.click(screen.getByRole("button", { name: "02 Xử lý" }));
-    await user.click(screen.getByRole("button", { name: "01 Phân tích" }));
-    expect(screen.getByLabelText("Tin nhắn bổ sung")).toBeDisabled();
+    const input = await screen.findByPlaceholderText(NOTE_PLACEHOLDER);
+    await user.type(input, "mặt còn tối");
+    await user.click(screen.getByRole("button", { name: "Gửi bổ sung phân tích" }));
     expect(screen.getByRole("button", { name: /Xóa chỉnh sửa:/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Bắt đầu xử lý" })).toBeDisabled();
     expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/analysis-notes"))).toHaveLength(1);
   });
 
   it("reloads the overlay when a saved analysis changes but its artifact URL stays the same", async () => {
     mockApi([...base(WITH_EDIT), { method: "POST", path: `${PATH}/analysis-notes`, body: { ...WITH_EDIT, updated_at: "2026-10-27T09:00:00.123456+00:00" } }]);
+    // Màn hình rộng: bảng soi nằm cạnh khung chat, không phải drawer modal
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({ ...original(query), matches: true })) as typeof window.matchMedia;
+    onTestFinished(() => { window.matchMedia = original; });
     const user = userEvent.setup();
     renderApp(`/s/${SESSION_ID}`);
+    await user.click(await screen.findByRole("button", { name: "Xem chi tiết chẩn đoán" }));
     const image = await screen.findByRole("img", { name: "Ảnh gốc với vùng được tô màu" });
     const before = image.getAttribute("src");
-    await user.type(screen.getByLabelText("Tin nhắn bổ sung"), "mặt còn tối");
-    await user.click(screen.getByRole("button", { name: "Gửi bổ sung" }));
+    await user.type(screen.getByPlaceholderText(NOTE_PLACEHOLDER), "mặt còn tối");
+    await user.click(screen.getByRole("button", { name: "Gửi bổ sung phân tích" }));
     await waitFor(() => expect(image.getAttribute("src")).not.toBe(before));
   });
 
-  it("restores the region overlay when selecting a region after showing the original", async () => {
-    mockApi(base(WITH_EDIT));
-    const user = userEvent.setup();
-    renderApp(`/s/${SESSION_ID}`);
-    await user.click(await screen.findByRole("button", { name: "Hiện ảnh gốc" }));
-    await user.click(screen.getAllByRole("button", { name: "Xem vùng" })[0]);
-    expect(screen.getByRole("img", { name: "Ảnh gốc với vùng được tô màu" })).toBeInTheDocument();
-  });
-
-  it("labels rejected attempts and uses the retained image as the next round input", async () => {
+  it("labels rejected attempts in the execution tab of the side pane", async () => {
     const detail = { ...DONE, artifacts: [...DONE.artifacts, { ...ITER_ARTIFACT, id: "attempt2", url: "/attempt2.png" }],
       process: { ...DONE.process!, history: [ { ...tracked, rolled_back: true }, { ...tracked, iteration: 2 } ],
         artifacts: { ...DONE.process!.artifacts, intermediate: [ITER_ARTIFACT.id, "attempt2"] } } };
     mockApi(base(detail));
     const user = userEvent.setup();
     renderApp(`/s/${SESSION_ID}`);
-    await user.click(await screen.findByRole("button", { name: "02 Xử lý" }));
-    expect(screen.getByText(/Ảnh thử của vòng 1 đã bị loại bỏ/)).toBeInTheDocument();
-    await user.click(within(screen.getByRole("complementary", { name: "Flow log" })).getByRole("button", { name: "Vòng 2" }));
-    expect(screen.getByRole("img", { name: "Đầu vào vòng 2" })).toHaveAttribute("src", DONE.original!.url);
+    await user.click(await screen.findByRole("button", { name: "Xem thông số thực thi" }));
+    const pane = await screen.findByRole("region", { name: "Bảng soi kỹ thuật" });
+    expect(within(pane).getByText(/Vòng này đã bị rollback/)).toBeInTheDocument();
+    expect(within(pane).getAllByText(/Mức 3 → 1/).length).toBeGreaterThan(0);
   });
 });

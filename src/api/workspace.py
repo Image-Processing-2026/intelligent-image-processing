@@ -61,6 +61,7 @@ from .storage import (
 from .workspace_schemas import (
     MAX_DRAFT_EDITS,
     MAX_ITERATIONS_RANGE,
+    MAX_USER_PROMPT,
     AnalysisNoteIn,
     AnswersIn,
     RatingIn,
@@ -86,6 +87,7 @@ from .workspace_service import (
     record_analyze,
     record_failure,
     record_process,
+    recover_orphaned,
     refresh_region_overlay,
     run_timed,
     save_run_image,
@@ -165,6 +167,7 @@ def list_sessions(
         .where(ProcessingSession.user_id == user.id)
         .order_by(ProcessingSession.updated_at.desc())
     ).all()
+    recover_orphaned(db, list(items))
     return summaries(db, list(items))
 
 
@@ -175,6 +178,7 @@ def create_session(
     ground_truth: Optional[UploadFile] = File(None),
     max_iterations: Optional[int] = Form(None),
     title: Optional[str] = Form(None),
+    user_prompt: Optional[str] = Form(None),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
     settings: AppSettings = Depends(get_settings),
@@ -182,11 +186,19 @@ def create_session(
     """
     Tạo phiên từ ảnh upload hoặc ảnh mẫu, rồi chạy chẩn đoán vòng 1 và sinh câu hỏi ý định
     (start_session). Lỗi chẩn đoán không làm mất phiên: phiên ở trạng thái 'failed' kèm lỗi
-    tiếng Việt để người dùng thử lại.
+    tiếng Việt để người dùng thử lại. user_prompt (tùy chọn) được lưu thành tin nhắn đầu tiên
+    và, sau khi có chẩn đoán, parse thành edit nháp như một tin nhắn bổ sung phân tích.
     """
     has_file = file is not None and bool(file.filename)
     if has_file == bool(sample):
         raise ApiError(422, "validation", fields={"file": "Chọn một ảnh hoặc một ảnh mẫu."})
+    prompt = (user_prompt or "").strip()
+    if len(prompt) > MAX_USER_PROMPT:
+        raise ApiError(
+            422,
+            "validation",
+            fields={"user_prompt": f"Yêu cầu tối đa {MAX_USER_PROMPT} ký tự."},
+        )
     defaults = user_settings(user)
     iterations = _check_range(
         max_iterations or defaults.max_iterations, MAX_ITERATIONS_RANGE, "max_iterations"
@@ -232,6 +244,16 @@ def create_session(
         _add_artifact(db, item, "thumbnail", save_thumbnail(image, base, "thumb.jpg"))
         if truth is not None:
             _add_artifact(db, item, "ground_truth", save_png(truth, base, "ground_truth.png"))
+        # Ghi trước khi chẩn đoán: là tin nhắn đầu tiên và không mất khi chẩn đoán lỗi (rollback)
+        if prompt:
+            db.flush()  # cần id của artifact gốc
+            add_message(
+                db,
+                item,
+                "user",
+                "user_prompt",
+                {"text": prompt, "original_artifact_id": original.id},
+            )
         db.commit()
     except Exception:
         db.rollback()
@@ -246,10 +268,12 @@ def create_session(
             max_iterations=iterations,
             user_id=str(user.id),
             image_metadata=metadata,
+            session_id=item.id,
         )
         record_analyze(db, item, result, duration, original)
         if result.diagnosis is not None:
             refresh_region_overlay(db, settings, item, image, result.diagnosis)
+        _apply_user_prompt(db, settings, item)
     except Exception as exc:
         logger.exception("Diagnosis failed for processing session %s", item.id)
         db.rollback()
@@ -263,7 +287,9 @@ def get_session(
     session_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ) -> SessionDetailOut:
     """Toàn bộ phiên đọc từ CSDL (không chạy pipeline)."""
-    return session_detail(db, owned_session(db, user, session_id))
+    item = owned_session(db, user, session_id)
+    recover_orphaned(db, [item])
+    return session_detail(db, item)
 
 
 @router.patch("/sessions/{session_id}", response_model=SessionSummaryOut)
@@ -415,6 +441,50 @@ def _sync_overlay(db: Session, settings: AppSettings, item: ProcessingSession, d
         logger.warning("Could not refresh region overlay of session %s", item.id, exc_info=True)
 
 
+def _apply_user_prompt(db: Session, settings: AppSettings, item: ProcessingSession) -> None:
+    """
+    Parse yêu cầu ban đầu (message 'user_prompt') thành edit nháp trên chẩn đoán vừa lưu, như
+    một tin nhắn bổ sung phân tích: ghi draft_edits và message 'analysis_update' sau message
+    'diagnosis' (để _unparsed_notes nối prompt không hiểu vào notes). Không có prompt, chưa có
+    chẩn đoán hoặc phiên không chờ trả lời → bỏ qua; lỗi parse chỉ ghi log, không làm hỏng phiên.
+    """
+    if item.status != "awaiting_answers":
+        return
+    message = db.scalar(
+        select(Message)
+        .where(Message.session_id == item.id, Message.kind == "user_prompt")
+        .order_by(Message.id)
+    )
+    text = str((message.content or {}).get("text", "")).strip() if message else ""
+    base = original_diagnosis(db, item) if text else None
+    if base is None:
+        return
+    try:
+        edits, source = parse_edits(text, base)
+        edits = edits[:MAX_DRAFT_EDITS]
+        draft = apply_edits(base, edits)
+    except Exception:
+        logger.warning("Could not parse user prompt of session %s", item.id, exc_info=True)
+        return
+    dumped = [edit.model_dump(mode="json") for edit in edits]
+    item.draft_edits = dumped
+    add_message(
+        db,
+        item,
+        "assistant",
+        "analysis_update",
+        {
+            "text": text,
+            "edits": dumped,
+            "source": source,
+            "draft_diagnosis": draft.model_dump(mode="json"),
+            "unparsed": not edits,
+            "from_prompt": True,
+        },
+    )
+    _sync_overlay(db, settings, item, draft)
+
+
 @router.post("/sessions/{session_id}/analysis-notes", response_model=SessionDetailOut)
 def add_analysis_note(
     session_id: str,
@@ -541,10 +611,17 @@ def answer_questions(
                 max_iterations=int(item.options.get("max_iterations", 3)),
                 intent=intent,
                 user_id=str(user.id),
+                session_id=item.id,
             )
         else:
             result, duration = run_timed(
-                settings, answer_session, thread_id, answers, notes, edits=edits
+                settings,
+                answer_session,
+                thread_id,
+                answers,
+                notes,
+                edits=edits,
+                session_id=item.id,
             )
             if result.status != "done" or result.state is None:
                 raise RuntimeError(f"Thread {thread_id} returned status {result.status}")
@@ -602,14 +679,16 @@ def clarify_again(
             _load_session_image(settings, item, original),
             max_iterations=int(item.options.get("max_iterations", 3)),
             user_id=str(user.id),
+            session_id=item.id,
         )
         record_analyze(db, item, result, duration, original)
-        # Chẩn đoán mới → bỏ các edit của lần phân tích trước
+        # Chẩn đoán mới → bỏ các edit của lần phân tích trước, chỉ parse lại yêu cầu ban đầu
         item.draft_edits = []
         if result.diagnosis is not None:
             refresh_region_overlay(
                 db, settings, item, _load_session_image(settings, item, original), result.diagnosis
             )
+        _apply_user_prompt(db, settings, item)
         db.commit()
     except Exception as exc:
         logger.exception("Clarify failed for processing session %s", item.id)

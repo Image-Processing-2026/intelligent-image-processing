@@ -6,6 +6,13 @@ vài chiều. Ngưỡng năng lượng được lặp theo σ hiện tại đế
 
 Trị riêng nhỏ nhất của mẫu hữu hạn bị lệch thấp (định luật Marchenko–Pastur), nên được hiệu chỉnh
 theo số mẫu hiệu dụng. Immerkær (1996) giữ làm chỉ số phụ, lệch khi có texture.
+
+Hai trường hợp phá giả định "nhiễu trắng trên patch có thông tin":
+- Patch hằng số tuyệt đối (viền ảnh chụp màn hình, letterbox, vùng cháy sáng) có phương sai 0 nên
+  kéo σ về 0; các patch này bị loại khỏi tập chọn khi còn đủ patch khác.
+- Nhiễu tương quan không gian (ảnh đã resample, demosaic, nén) làm phổ trị riêng lệch mạnh, trị
+  riêng nhỏ nhất ≈ 0 dù nhiễu rõ. Khi đó dùng độ lệch chuẩn phần dư sau khi trừ đa thức bậc 2 trên
+  các patch phẳng nhất (thay cho trị riêng nhỏ nhất).
 """
 
 import math
@@ -38,8 +45,28 @@ MAX_ITERATIONS = 12
 CONVERGENCE_TOL = 0.01
 CHUNK_PATCHES = 100_000
 IMMERKAER_CONFIDENCE = 0.5
+# Patch có phương sai trong patch dưới ngưỡng này (mức xám²) coi là hằng số, không mang thông tin nhiễu.
+MIN_PATCH_VAR = 0.25
+# σ từ trị riêng nhỏ nhất thấp hơn tỉ lệ này so với σ phần dư đa thức → nhiễu tương quan.
+COLORED_RATIO = 0.5
+# Tỉ lệ patch có phần dư thấp nhất làm tập "phẳng" khi nhiễu tương quan (lớn hơn FALLBACK_FRACTION
+# vì σ phần dư của nhiễu tương quan đã thấp hơn σ thật, ~0.6–0.75 trên ảnh tổng hợp).
+COLORED_FRACTION = 0.25
+POLY_PARAMS = 6
 
 _IMMERKAER_KERNEL = np.array([[1, -2, 1], [-2, 4, -2], [1, -2, 1]], dtype=np.float64)
+
+
+def _poly_residual_projector() -> np.ndarray:
+    """Ma trận (DIM, DIM) chiếu patch lên phần dư sau khi khớp đa thức bậc 2 hai biến."""
+    axis = np.arange(PATCH, dtype=np.float64) - (PATCH - 1) / 2.0
+    yy, xx = np.meshgrid(axis, axis, indexing="ij")
+    x, y = xx.ravel(), yy.ravel()
+    basis = np.stack([np.ones_like(x), x, y, x * x, x * y, y * y], axis=1)
+    return np.eye(DIM) - basis @ np.linalg.pinv(basis)
+
+
+_POLY_RESIDUAL = _poly_residual_projector()
 
 
 @dataclass
@@ -140,27 +167,52 @@ def _sigma_from_stats(stats: _Stats) -> np.ndarray:
     return sigmas
 
 
-def _fallback_selection(energy: np.ndarray) -> np.ndarray:
-    """Chọn FALLBACK_FRACTION patch có năng lượng gradient thấp nhất."""
-    k = min(energy.size, max(MIN_EFF_SAMPLES, int(round(FALLBACK_FRACTION * energy.size))))
-    threshold = np.partition(energy.ravel(), k - 1)[k - 1]
-    return energy <= threshold
+def _fallback_selection(energy: np.ndarray, usable: np.ndarray) -> np.ndarray:
+    """Chọn FALLBACK_FRACTION patch (trong `usable`) có năng lượng gradient thấp nhất."""
+    pool = int(usable.sum())
+    k = min(pool, max(MIN_EFF_SAMPLES, int(round(FALLBACK_FRACTION * pool))))
+    masked = np.where(usable, energy, np.inf)
+    threshold = np.partition(masked.ravel(), k - 1)[k - 1]
+    return usable & (energy <= threshold)
+
+
+def _patch_variance(plane: np.ndarray) -> np.ndarray:
+    """Phương sai mức xám trong patch 7×7 tại tâm patch lưới (float64)."""
+    p = plane.astype(np.float64)
+    mean = cv2.boxFilter(p, cv2.CV_64F, (PATCH, PATCH), normalize=True)
+    mean_sq = cv2.boxFilter(p * p, cv2.CV_64F, (PATCH, PATCH), normalize=True)
+    nh, nw = _grid_shape(*plane.shape)
+    return _sample_centers(np.maximum(mean_sq - mean * mean, 0.0), nh, nw)
+
+
+def _poly_residual_variance(plane: np.ndarray, selected: np.ndarray) -> np.ndarray:
+    """Phương sai phần dư (sau đa thức bậc 2) của các patch được chọn, theo thứ tự lưới."""
+    out = np.zeros(selected.shape, dtype=np.float64)
+    dof = DIM - POLY_PARAMS
+    for rows, block in _patch_blocks(plane):
+        residual = block @ _POLY_RESIDUAL
+        out[rows] = np.einsum("ij,ij->i", residual, residual).reshape(-1, selected.shape[1]) / dof
+    return out
 
 
 def _fit_plane(plane: np.ndarray) -> _PlaneFit:
-    """Ước lượng σ bằng lặp chọn patch phẳng (Liu 2013)."""
+    """Ước lượng σ bằng lặp chọn patch phẳng (Liu 2013), chịu được viền hằng số và nhiễu tương quan."""
     nh, nw = _grid_shape(*plane.shape)
     if nh == 0 or nw == 0:
         return _PlaneFit(math.nan, np.zeros((0, 0), bool), np.zeros((0, 0)), 0)
     energy = _patch_energy(plane)
-    selected = _fallback_selection(energy)
+    # Patch hằng số (viền, vùng cháy) không mang thông tin nhiễu; ảnh toàn hằng số thì dùng tất cả.
+    usable = _patch_variance(plane) > MIN_PATCH_VAR
+    if int(usable.sum()) < MIN_EFF_SAMPLES:
+        usable = np.ones_like(usable)
+    selected = _fallback_selection(energy, usable)
     sigma = _sigma_of_selection(plane, selected)
     for _ in range(MAX_ITERATIONS):
         if not math.isfinite(sigma):
             break
-        candidate = energy <= GRAD_THRESHOLD_MARGIN * NOISE_GRAD_ENERGY * sigma * sigma
+        candidate = usable & (energy <= GRAD_THRESHOLD_MARGIN * NOISE_GRAD_ENERGY * sigma * sigma)
         if int(candidate.sum()) < MIN_FLAT_PATCHES:
-            candidate = _fallback_selection(energy)
+            candidate = _fallback_selection(energy, usable)
         new_sigma = _sigma_of_selection(plane, candidate)
         selected = candidate
         if not math.isfinite(new_sigma):
@@ -169,7 +221,31 @@ def _fit_plane(plane: np.ndarray) -> _PlaneFit:
         sigma = new_sigma
         if converged:
             break
+    sigma, selected = _correct_colored_noise(plane, energy, usable, selected, sigma)
     return _PlaneFit(sigma=sigma, selected=selected, energy=energy, n_flat=int(selected.sum()))
+
+
+def _correct_colored_noise(
+    plane: np.ndarray, energy: np.ndarray, usable: np.ndarray, selected: np.ndarray, sigma: float
+) -> Tuple[float, np.ndarray]:
+    """Thay σ bằng σ phần dư đa thức khi phổ patch lệch mạnh (nhiễu tương quan không gian).
+
+    Với nhiễu trắng, σ phần dư ≈ σ trị riêng nhỏ nhất nên không đổi. Với nhiễu tương quan, trị riêng
+    nhỏ nhất ≈ 0 nhưng phần dư vẫn lớn. Lấy patch có phần dư thấp nhất làm tập "phẳng" mới.
+    """
+    if not math.isfinite(sigma) or int(selected.sum()) < MIN_EFF_SAMPLES:
+        return sigma, selected
+    residual = _poly_residual_variance(plane, selected)
+    sigma_poly = math.sqrt(float(residual[selected].mean()))
+    if sigma >= COLORED_RATIO * sigma_poly:
+        return sigma, selected
+    pool = int(usable.sum())
+    k = min(pool, max(MIN_EFF_SAMPLES, int(round(COLORED_FRACTION * pool))))
+    masked = np.where(usable, _poly_residual_variance(plane, usable), np.inf)
+    threshold = np.partition(masked.ravel(), k - 1)[k - 1]
+    flat = usable & (masked <= threshold)
+    sigma_flat = math.sqrt(float(masked[flat].mean()))
+    return max(sigma, sigma_flat), flat
 
 
 def _sigma_of_selection(plane: np.ndarray, selected: np.ndarray) -> float:

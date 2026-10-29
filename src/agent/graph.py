@@ -54,7 +54,15 @@ from .planner import (
     validate_and_sort_plan,
 )
 from .regions import canonical_region, is_person_region
-from .review import derive_outcome, review_candidate, review_context_from_state, same_image
+from .review import (
+    ReviewContext,
+    _defect_dicts,
+    derive_outcome,
+    image_sha256,
+    review_candidate,
+    review_context_from_state,
+    same_image,
+)
 from .state import (
     DiagnosisReport,
     DoctorState,
@@ -639,15 +647,7 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
     # không phải điểm toàn ảnh tăng. Có theo dõi được lỗi nào thì chỉ lỗi `worse` mới là suy thoái
     tracked = _track_defects(state, plan) if has_actions and not unchanged and not is_syn else []
     history_entry.defect_status = [change.model_dump() for change in tracked]
-    if is_syn:
-        regressed = _is_degraded_synthetic(eval_result, history)
-    elif tracked:
-        regressed = any(change.status == "worse" for change in tracked)
-    else:
-        regressed = _is_degraded_real(eval_result, history)
-    degraded = has_actions and not unchanged and regressed
     # P7: tác dụng phụ do xử lý của vòng này (halo, nhiễu vùng tối tăng, banding…), ảnh thực.
-    # Severity ≥ SIDE_EFFECT_ROLLBACK_SEVERITY → coi như suy thoái → rollback
     check = (
         _side_effects_check(state)
         if has_actions and not unchanged and not is_syn and previous_image is not None
@@ -656,6 +656,20 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
     history_entry.side_effect_check = check
     history_entry.executed = list(state.get("executed_actions") or [])
     history_entry.side_effects = list(check.previous)
+    # LLM luôn tham gia đánh giá ảnh thực: vòng này có cải thiện không, đã đủ tốt để ship chưa
+    judge = _judge_iteration(state, check) if has_actions and not unchanged and not is_syn else None
+    history_entry.review = judge
+    verdict = judge.verdict if judge is not None and judge.status == "completed" else None
+    if is_syn:
+        regressed = _is_degraded_synthetic(eval_result, history)
+    elif tracked:
+        regressed = any(change.status == "worse" for change in tracked)
+    else:
+        # Điểm heuristic có thể phạt oan (vd. khử nhiễu mạnh làm Laplacian tụt): ACCEPT/REVISE
+        # của reviewer thắng luật mềm; số đo cứng (lỗi `worse`, tác dụng phụ) thì không bị thắng
+        regressed = _is_degraded_real(eval_result, history) and verdict not in ("ACCEPT", "REVISE")
+    degraded = has_actions and not unchanged and (regressed or verdict == "REJECT")
+    # Severity ≥ SIDE_EFFECT_ROLLBACK_SEVERITY → coi như suy thoái → rollback
     risky = [
         (effect["kind"], effect["severity"])
         for effect in check.previous
@@ -687,6 +701,10 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
         #    mục tiêu vẫn được báo SHIP)
         if is_syn:
             decision = _decide_synthetic(eval_result, history)
+        elif verdict == "ACCEPT":
+            decision = "SHIP"
+        elif verdict == "REVISE":
+            decision = "RE_PROCESS"
         elif tracked:
             decision = _decide_tracked(tracked)
         else:
@@ -738,10 +756,33 @@ def decide_node(state: DoctorState) -> Dict[str, Any]:
         "history": new_history,
         "intermediate_images": new_intermediates,
     }
+    if judge is not None:
+        update["review"] = judge
     if rolled_back:
         # evaluation_result đang mô tả ảnh bị loại: tính lại cho ảnh thực sự được trả
         update["evaluation_result"] = _evaluate_returned(state, final_image, iteration)
     return update
+
+
+def _judge_iteration(state: DoctorState, check: SideEffectCheck) -> Optional[ReviewResult]:
+    """
+    Reviewer (Gemini) nhận xét ảnh của vòng này so với ảnh vòng trước và ảnh gốc: có cải thiện
+    không (ACCEPT/REVISE/REJECT), đủ tốt để ship chưa (ACCEPT). Không key hoặc lỗi gọi →
+    status khác 'completed' và decide_node dùng luật đo lường như trước.
+    """
+    history = list(state.get("history") or [])
+    first = next((item.diagnosis for item in history if item.diagnosis is not None), None)
+    first = first or state.get("diagnosis")
+    context = ReviewContext(
+        intent=state.get("intent"),
+        defects=_defect_dicts(first),
+        executed=list(state.get("executed_actions") or []),
+        side_effects=check,
+        iterations=int(state["iteration"]),
+    )
+    return review_candidate(
+        state["original_image"], state.get("previous_image"), state["current_image"], context
+    )
 
 
 def _evaluate_returned(state: DoctorState, image: np.ndarray, iteration: int) -> Dict[str, Any]:
@@ -775,6 +816,16 @@ def review_node(state: DoctorState) -> Dict[str, Any]:
     )
     if reference_run or same_image(returned, original):
         return {"review": ReviewResult(status="not_run", reason="nothing to review")}
+
+    # decide_node đã cho reviewer xem đúng ảnh này: dùng lại, không gọi Gemini lần nữa
+    existing = state.get("review")
+    if (
+        not state.get("rolled_back")
+        and existing is not None
+        and existing.status == "completed"
+        and existing.candidate_sha256 == image_sha256(returned)
+    ):
+        return {"review": existing}
 
     # Sau rollback ảnh trả chính là ảnh trước vòng cuối: không còn ảnh "trước" để đối chiếu
     previous = None if state.get("rolled_back") else state.get("previous_image")

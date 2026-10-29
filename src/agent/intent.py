@@ -1,11 +1,10 @@
 """
 Hiểu ý định người dùng trước khi xử lý (Phase 4).
 
-Sau lần chẩn đoán đầu tiên, agent hỏi tối đa MAX_QUESTIONS câu. Câu hỏi được sinh TẤT ĐỊNH
-từ chẩn đoán: chỉ hỏi về chỗ thật sự mơ hồ (ám vàng là chủ ý hay lỗi, giữ không khí tối hay
-làm sáng, giữ hạt hay làm mịn); ảnh không có chỗ mơ hồ thì không có câu hỏi nào. Mỗi lựa chọn
-mang sẵn tác động (giữ một aspect hoặc sửa một loại lỗi), nên câu trả lời được chuyển thành
-IntentProfile mà không cần VLM. Ý định người dùng ghi đè chẩn đoán của VLM.
+Sau lần chẩn đoán đầu tiên, agent hỏi đúng MỘT câu: xử lý theo đề xuất của AI hay theo cách
+khác. Đề xuất được dựng TẤT ĐỊNH từ chẩn đoán (lỗi sửa được và phần cần giữ); chọn "cách
+khác" thì người dùng mô tả yêu cầu ở khung chat (ghi chú và edit), và yêu cầu đó được chuyển
+thành IntentProfile mà không cần VLM. Ý định người dùng ghi đè chẩn đoán của VLM.
 """
 
 import re
@@ -13,23 +12,18 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, Field
 
-from .fusion import INTENTIONAL_ASPECT, VERIFY_PHRASES
+from .fusion import VERIFY_PHRASES
 from .perception import _drop_preserved_defects
 from .regions import canonical_region
 from .state import Defect, DiagnosisEdit, DiagnosisReport, IntentProfile, PreserveItem
 from .user_analysis import apply_edits
 
-MAX_QUESTIONS = 3
-MAX_AMBIGUITY_QUESTIONS = MAX_QUESTIONS
+MAX_QUESTIONS = 1
 USER_DEFECT_SEVERITY = 2
 
-# Câu hỏi về chỗ mơ hồ đã được một câu ask_user (fusion) bao phủ thì không hỏi lại
-TOPIC_DEFECTS: Dict[str, Tuple[str, ...]] = {
-    "mood": ("underexposed", "backlit_subject"),
-    "warm": ("color_cast_warm",),
-    "grain": ("noise",),
-    "cool": ("color_cast_cool",),
-}
+APPROACH_QUESTION_ID = "approach"
+APPROACH_RECOMMEND = "recommend"
+APPROACH_CUSTOM = "custom"
 
 # Sửa một loại lỗi nghĩa là bỏ các aspect cần giữ mâu thuẫn với nó
 FIX_CONFLICTS: Dict[str, Tuple[str, ...]] = {
@@ -63,132 +57,58 @@ class Question(BaseModel):
     default: str
 
 
-def _has_defect(diagnosis: DiagnosisReport, *types: str, full_only: bool = False) -> bool:
-    """Chẩn đoán có lỗi (severity >= 1) thuộc một trong các loại này không."""
-    return any(
-        defect.type in types and (not full_only or defect.region == "full")
-        for defect in diagnosis.actionable_defects
-    )
+def _where(region: str) -> str:
+    """Vùng viết cho người dùng: 'toàn ảnh' hoặc tên vùng."""
+    return "toàn ảnh" if canonical_region(region) == "full" else canonical_region(region)
 
 
-def _has_preserve(diagnosis: DiagnosisReport, *aspects: str) -> bool:
-    """Chẩn đoán có đặc điểm cần giữ thuộc một trong các aspect này không."""
-    return any(item.aspect in aspects for item in diagnosis.preserve)
-
-
-def _mood_question(diagnosis: DiagnosisReport) -> Optional[Question]:
-    """Ảnh/chủ thể tối: giữ không khí tối hay làm sáng."""
-    backlit = _has_defect(diagnosis, "backlit_subject")
-    dark = backlit or _has_defect(diagnosis, "underexposed")
-    intentional = _has_preserve(diagnosis, "low_key", "silhouette")
-    if not (dark or intentional):
-        return None
-    subject = "Chủ thể đang tối do ngược sáng" if backlit else "Ảnh đang khá tối"
-    return Question(
-        id="mood",
-        text=f"{subject}. Bạn muốn giữ không khí tối (low-key, bóng đổ) hay làm sáng rõ?",
-        choices=[
-            Choice(value="keep_dark", label="Giữ không khí tối", keep="low_key"),
-            Choice(
-                value="brighten",
-                label="Làm sáng rõ",
-                fix="backlit_subject" if backlit else "underexposed",
-            ),
-        ],
-        default="keep_dark" if intentional else "brighten",
-    )
-
-
-def _tone_question(diagnosis: DiagnosisReport, warm: bool) -> Optional[Question]:
-    """Ảnh có tông ấm/lạnh: chủ ý cần giữ hay ám màu cần khử."""
-    cast, aspect = ("color_cast_warm", "warm_tone") if warm else ("color_cast_cool", "cool_tone")
-    if not (_has_defect(diagnosis, cast) or _has_preserve(diagnosis, aspect)):
-        return None
-    tone = "vàng/ấm" if warm else "xanh/lạnh"
-    scene = "đèn vàng, hoàng hôn" if warm else "tuyết, giờ xanh"
-    return Question(
-        id="warm" if warm else "cool",
-        text=(
-            f"Ảnh đang có tông {tone}. Đó là không khí bạn muốn giữ ({scene}) "
-            "hay là ám màu cần khử?"
-        ),
-        choices=[
-            Choice(value="keep", label=f"Giữ tông {tone.split('/')[1]}", keep=aspect),
-            Choice(value="fix", label=f"Khử ám {tone.split('/')[0]}", fix=cast),
-        ],
-        default="keep" if _has_preserve(diagnosis, aspect) else "fix",
-    )
-
-
-def _grain_question(diagnosis: DiagnosisReport) -> Optional[Question]:
-    """Ảnh có hạt: làm mịn hay giữ hạt kiểu film."""
-    if not (_has_defect(diagnosis, "noise") or _has_preserve(diagnosis, "film_grain")):
-        return None
-    return Question(
-        id="grain",
-        text="Ảnh có hạt nhiễu. Bạn muốn làm mịn, hay giữ hạt như ảnh film?",
-        choices=[
-            Choice(value="smooth", label="Làm mịn", fix="noise"),
-            Choice(value="keep", label="Giữ hạt film", keep="film_grain"),
-        ],
-        default="keep" if _has_preserve(diagnosis, "film_grain") else "smooth",
-    )
-
-
-def _ask_user_questions(diagnosis: DiagnosisReport) -> List[Question]:
+def recommendation_text(diagnosis: DiagnosisReport) -> str:
     """
-    Câu hỏi từ DiagnosisReport.ask_user (fusion P6: lỗi nặng trên chủ thể nhưng VLM coi là chủ
-    ý): giữ như chủ ý hay sửa. Mặc định giữ (preserve thắng khi người dùng không trả lời).
+    Đề xuất xử lý của AI, tất định từ chẩn đoán: các lỗi sửa được (nặng trước), phần sẽ giữ
+    nguyên (preserve) và lỗi fusion còn nghi ngờ (ask_user, mặc định giữ nguyên).
     """
-    questions: List[Question] = []
-    seen = set()
-    for defect in diagnosis.ask_user:
-        region = canonical_region(defect.region)
-        if (defect.type, region) in seen:
-            continue
-        seen.add((defect.type, region))
-        phenomenon = VERIFY_PHRASES.get(defect.type, (defect.type, "", ""))[0]
-        where = "Ảnh" if region == "full" else f"Vùng '{region}'"
-        aspect = INTENTIONAL_ASPECT.get(defect.type)
-        questions.append(
-            Question(
-                id=f"ask_{defect.type}_{region}",
-                text=(
-                    f"{where} {phenomenon} khá rõ (mức {defect.severity}/3), có thể là chủ ý. "
-                    "Bạn muốn giữ nguyên hay sửa?"
-                ),
-                choices=[
-                    Choice(value="keep", label="Giữ nguyên (chủ ý)", keep=aspect),
-                    Choice(value="fix", label="Sửa lỗi này", fix=defect.type),
-                ],
-                default="keep",
-            )
+    fixes = [
+        f"{VERIFY_PHRASES.get(d.type, (d.type,))[0]} @ {_where(d.region)} (mức {d.severity}/3)"
+        for d in sorted(diagnosis.actionable_defects, key=lambda d: -d.severity)
+    ]
+    parts = ["Sửa: " + "; ".join(fixes) + "."] if fixes else []
+    if diagnosis.preserve:
+        kept = "; ".join(f"{p.aspect} @ {_where(p.region)}" for p in diagnosis.preserve)
+        parts.append(f"Giữ nguyên: {kept}.")
+    if diagnosis.ask_user:
+        unsure = "; ".join(
+            f"{VERIFY_PHRASES.get(d.type, (d.type,))[0]} @ {_where(d.region)}"
+            for d in diagnosis.ask_user
         )
-    return questions
+        parts.append(f"Chưa chắc là lỗi hay chủ ý (mặc định giữ nguyên): {unsure}.")
+    return " ".join(parts)
 
 
 def build_questions(diagnosis: Optional[DiagnosisReport]) -> List[Question]:
     """
-    Câu hỏi cho một chẩn đoán: tối đa MAX_AMBIGUITY_QUESTIONS câu về chỗ mơ hồ (theo thứ tự
-    ưu tiên: lỗi fusion cần hỏi (ask_user), không khí tối, tông ấm, hạt, tông lạnh); có thể rỗng.
-    Tất định, nên sinh lại khi resume cho đúng cùng câu hỏi.
+    Câu hỏi cho một chẩn đoán: đúng một câu "theo đề xuất hay cách khác" khi AI có điều gì để
+    đề xuất; rỗng khi ảnh không có lỗi cần xử lý. Tất định, nên sinh lại khi resume cho đúng
+    cùng câu hỏi.
     """
-    ambiguities: List[Question] = []
-    if diagnosis is not None:
-        ambiguities = _ask_user_questions(diagnosis)
-        asked = {defect.type for defect in diagnosis.ask_user}
-        candidates = (
-            _mood_question(diagnosis),
-            _tone_question(diagnosis, warm=True),
-            _grain_question(diagnosis),
-            _tone_question(diagnosis, warm=False),
+    if diagnosis is None or not diagnosis.actionable_defects:
+        return []
+    return [
+        Question(
+            id=APPROACH_QUESTION_ID,
+            text=(
+                f"AI đề xuất xử lý như sau. {recommendation_text(diagnosis)} "
+                "Bạn muốn xử lý theo đề xuất này hay theo cách khác?"
+            ),
+            choices=[
+                Choice(value=APPROACH_RECOMMEND, label="Theo đề xuất của AI"),
+                Choice(
+                    value=APPROACH_CUSTOM,
+                    label="Cách khác (mô tả yêu cầu của bạn ở khung chat bên dưới)",
+                ),
+            ],
+            default=APPROACH_RECOMMEND,
         )
-        ambiguities += [
-            question
-            for question in candidates
-            if question is not None and not asked & set(TOPIC_DEFECTS.get(question.id, ()))
-        ]
-    return ambiguities[:MAX_AMBIGUITY_QUESTIONS]
+    ]
 
 
 # ---------------------------------------------------------

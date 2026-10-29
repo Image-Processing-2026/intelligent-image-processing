@@ -35,6 +35,7 @@ MESSAGES: Dict[str, str] = {
     "pipeline_failed": "Xử lý ảnh không thành công. Bạn có thể thử lại.",
     "internal": "Có lỗi phía máy chủ. Vui lòng thử lại.",
     "server_restarted": "Máy chủ đã khởi động lại khi đang xử lý. Hãy thử lại.",
+    "interrupted": "Lần xử lý bị gián đoạn nên không có kết quả. Hãy thử lại.",
 }
 
 # HTTPException (ví dụ từ Starlette) không mang code riêng → suy từ mã HTTP

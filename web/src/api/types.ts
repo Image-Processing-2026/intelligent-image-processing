@@ -104,6 +104,7 @@ export interface Question {
 }
 
 export type MessageKind =
+  | "user_prompt"
   | "diagnosis"
   | "questions"
   | "answers"
@@ -217,7 +218,7 @@ export interface ProcessResult {
   rolled_back: boolean;
   is_synthetic: boolean;
   case_id: string | null;
-  artifacts: { final: string; intermediate: string[] };
+  artifacts: { final: string; intermediate: string[]; executed_overlay?: string | null };
   sources: { diagnosis: string[]; plan: string[] };
 }
 
@@ -269,7 +270,24 @@ export interface Treatment {
   created_at: string;
 }
 
+/** Báo cáo thực thi một action (executor ghi): yêu cầu so với thực tế. */
+export interface ExecutedAction {
+  region_id: string;
+  operation: string;
+  requested_mode?: string | null;
+  actual_mode?: string | null;
+  backend?: string;
+  fallback_reason?: string | null;
+  feather_requested?: number | null;
+  feather_actual?: number | null;
+  strength_scale?: number;
+  mask_area?: number | null;
+  skipped?: boolean;
+  skip_reason?: string | null;
+}
+
 export interface HistoryItem {
+  executed?: ExecutedAction[];
   defect_status?: DefectChange[];
   side_effects?: ProcessingSideEffect[];
   iteration: number;

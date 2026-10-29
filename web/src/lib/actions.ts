@@ -73,6 +73,7 @@ export const ADJUSTMENT_LABELS: Record<string, string> = {
   sharper: "Nét hơn",
   softer: "Mềm hơn",
   less_noise: "Bớt nhiễu",
+  less_denoise: "Bớt làm mịn",
 };
 
 /** Nhãn ngắn của một phiên bản phác đồ, ví dụ "v2 · Phiên bản đã chọn (Tự nhiên)". */

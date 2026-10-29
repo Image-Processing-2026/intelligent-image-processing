@@ -84,3 +84,6 @@ web/coverage/
 
 # Phân vùng ngữ nghĩa: model tải về (scripts/fetch_segmentation_models.py)
 models/segmentation/
+
+# Bằng chứng A/B cục bộ: snapshot, request ảnh và kết quả benchmark
+data/prompt_ab/

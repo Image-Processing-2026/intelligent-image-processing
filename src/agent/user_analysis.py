@@ -72,13 +72,14 @@ DEFECT_RULES: Tuple[Tuple[str, str], ...] = (
     ("oversaturated", r"rực quá|quá rực|lòe loẹt|màu gắt|quá đậm màu"),
     ("undersaturated", r"nhạt màu|màu nhạt|thiếu màu|xỉn"),
     ("low_contrast", r"\bbệt\b|thiếu tương phản|nhạt nhòa|phẳng"),
-    ("noise", r"nhiễu|sạn|lấm tấm|\bhạt\b"),
-    ("blur", r"\bmờ\b|nhòe|(không|chưa|thiếu) nét"),
+    ("noise", r"nhiễu|\bnoise\b|\bnoisy\b|sạn|lấm tấm|\bhạt\b"),
+    ("blur", r"\bmờ\b|\bblur(ry)?\b|nhòe|(không|chưa|thiếu) nét"),
     ("overexposed", r"cháy|chói|quá sáng|sáng quá|bệch"),
     ("underexposed", r"\btối\b|thiếu sáng|chìm"),
 )
 # Phủ định/chủ ý: "không (bị) X", "X là cố ý", "đừng sửa X"; "không nét" lại là lỗi mờ
 _NEGATION = re.compile(r"\b(không|chẳng|chả)\b(?!\s*nét)|đừng (sửa|chỉnh|làm)|cố ý|chủ ý|chủ đích")
+_WRONG_CLAIM = re.compile(r"\bsai\b|nhầm|không phải|bỏ qua|\bbỏ\b")
 _INTENT_WORDS = re.compile(r"cố ý|chủ ý|chủ đích")
 STRONG_PATTERN = re.compile(r"quá|rất|nhiều|hẳn|lắm|nặng")
 WEAK_PATTERN = re.compile(r"hơi|chút|một tí|nhẹ")
@@ -184,7 +185,8 @@ tin nhắn của họ thành các chỉnh sửa có cấu trúc:
 - add_defect: người dùng nói ảnh có một lỗi mà phân tích chưa nêu (type thuộc danh sách cho
   phép, region là "full" hoặc tên vùng ngắn bằng tiếng Anh như "face", "sky", "background",
   "person", severity 1 nhẹ - 3 nặng).
-- remove_defect: người dùng nói một lỗi đã nêu là sai hoặc là cố ý.
+- remove_defect: CHỈ khi người dùng nói rõ một lỗi đã nêu là sai, không có hoặc là cố ý. Yêu cầu
+  sửa/khử/xử lý một lỗi ("sửa ảnh bị noise") KHÔNG phải remove_defect: đó là add_defect.
 - keep: người dùng muốn giữ một đặc điểm thẩm mỹ (aspect thuộc danh sách cho phép).
 Nếu tin nhắn không nói gì về lỗi hay điều cần giữ, trả về danh sách rỗng.
 """
@@ -227,7 +229,13 @@ def summarize_diagnosis(diagnosis: Optional[DiagnosisReport]) -> str:
 def _parse_vlm_edits(data: Dict[str, Any], text: str) -> List[DiagnosisEdit]:
     """Chuyển JSON của Gemini thành edit hợp lệ; edit hỏng bị bỏ và ghi log."""
     parsed: List[DiagnosisEdit] = []
+    # Chỉ nhận remove_defect khi tin nhắn thật sự phủ định/cố ý; "sửa ảnh bị noise" từng bị VLM
+    # hiểu nhầm thành "bỏ nhiễu" và pipeline kết thúc ngay vòng đầu không xử lý gì
+    can_remove = bool(_NEGATION.search(text.casefold()) or _WRONG_CLAIM.search(text.casefold()))
     for raw in data.get("edits") or []:
+        if raw.get("op") == "remove_defect" and not can_remove:
+            logger.warning("Dropping remove_defect without negation in %r", text)
+            continue
         try:
             parsed.append(
                 DiagnosisEdit(

@@ -617,12 +617,15 @@ form `actions` as a JSON list of `RegionOperation`) returns
 `{image_base64, width, height, applied_actions}`. `/process` and `/sessions` accept `user_id`
 (default `"default"`). `/refine` accepts an optional `case_id` to record understood feedback.
 `GET /api/v1/memory?user_id=` returns `{enabled, cases, feedback}`.
-- `POST /api/v1/sessions` (file, `max_iterations`) →
+- `POST /api/v1/sessions` (file, `max_iterations`, optional `user_prompt` ≤ 1000 chars) →
   `{session_id, status: "needs_input", questions, diagnosis}`.
 - `POST /api/v1/sessions/{id}/answers` (JSON `{answers, notes}`) →
   `{status: "done", result: ProcessResponse}`. Returns 404 for an unknown session and 409 when
   the session is not waiting for input. `DELETE /api/v1/sessions/{id}` → 204.
 - **Workspace (web app, `/api/v1/workspace`) — analysis chat before processing:**
+  - `POST /sessions` (multipart `file` or `sample`, optional `ground_truth`, `max_iterations`, `title`, `user_prompt` ≤ 1000 chars) → `SessionDetailOut`.
+    When `user_prompt` is provided, it is saved as the first message (`role: "user"`, `kind: "user_prompt"`). After initial diagnosis is completed, `user_prompt` is parsed with `user_analysis.parse_edits` into `draft_edits` (up to `MAX_DRAFT_EDITS = 20`) and an `analysis_update` message (`from_prompt=True`) is added right after `diagnosis`/`questions`. If unparsed, it is forwarded into notes when processing starts.
+  - `POST /sessions/{id}/clarify` clears existing edits and re-parses the stored `user_prompt` against the refreshed diagnosis.
   - `POST /sessions/{id}/analysis-notes` (JSON `{message}`, ≤ 1000 chars) parses one Vietnamese
     message with `user_analysis.parse_edits` against the draft diagnosis, appends the edits to
     `ProcessingSession.draft_edits` (max 20, else 422) and stores two messages: `analysis_note`
@@ -640,6 +643,18 @@ form `actions` as a JSON list of `RegionOperation`) returns
     the set of regions; a failure only logs a warning and leaves the URL `null`.
   - `processing_sessions.draft_edits` is added to an existing SQLite file at startup
     (`Database._add_missing_columns`); there is no Alembic.
+  - **Workspace Messages (`MessageKind`):**
+    - `user_prompt`: Role `user`. Initial user instruction attached with the original image upload (`{text, original_artifact_id}`).
+    - `diagnosis`: Role `assistant`. Clinical diagnosis summary and region analysis.
+    - `questions`: Role `assistant`. At most one clarification question, `approach` (`recommend` default | `custom`), whose text carries the AI recommendation; `custom` means the user describes the request in the chat (notes/edits), with no automatic effect on the intent.
+    - `analysis_note`: Role `user`. Follow-up user note providing additional analysis guidance.
+    - `analysis_update`: Role `assistant`. System confirmation of parsed edits or unparsed notice (`{text, edits, source, draft_diagnosis, unparsed, from_prompt}`).
+    - `answers`: Role `user`. Recorded user clarification answers and notes.
+    - `result`: Role `assistant`. Execution result, compare slider artifacts, and outcome badge.
+    - `feedback`: Role `user`. Refinement feedback on the processed image.
+    - `refine_result`: Role `assistant`. Updated treatment and new compare artifacts after refine.
+    - `render_result`: Role `assistant`. On-demand preview re-render result.
+    - `notice`: Role `assistant`. System warning or error notification.
 - `POST /api/v1/refine` (file, `actions` JSON, `feedback`) →
   `{image_base64, width, height, actions, adjustments, notes, source}`, where `source` is
   `rules`, `vlm` or `none`. Send the returned `actions` back with the next feedback.
@@ -738,6 +753,8 @@ No `state.py` change; the new values travel as dicts in `HistoryItem.defect_stat
   reach the PSNR/SSIM targets), `UNVERIFIED`, `NOT_MET`, `KEPT_ORIGINAL` (returned image equals
   the original although a fix was wanted), `NO_CHANGE` (nothing needed fixing). Running out of
   iterations or a high heuristic score alone never gives `ACCEPTED`.
+- Per-iteration judging: on real images `decide_node` calls the reviewer for every iteration that changed pixels (`ACCEPT` → SHIP, `REVISE` → RE_PROCESS, `REJECT` → rollback; no verdict → rule-based decision). `review_node` reuses that verdict when it covers the returned image.
+- Orphaned sessions: `GET /sessions` and `GET /sessions/{id}` move a `running` session that no worker thread is processing (and older than `STALE_GRACE_SECONDS`) to `failed` with a notice `interrupted`; the web client polls running sessions every 3 s.
 - `DoctorState.review` / `HistoryItem.review` (`ReviewResult`): `review.review_candidate` sends the
   original, the previous image and the candidate, plus paired crops around the largest changes and
   around dark areas lifted by `SIDE_EFFECT_SUSPECT_KINDS` (`black_lift`), to Gemini. Verdicts:

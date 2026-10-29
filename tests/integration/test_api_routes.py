@@ -211,18 +211,18 @@ def test_session_flow_asks_then_returns_the_result():
     assert started.status_code == 200
     body = started.json()
     assert body["status"] == "needs_input"
-    assert body["questions"][-1]["id"] == "mood"
+    assert body["questions"][-1]["id"] == "approach"
     session_id = body["session_id"]
 
     done = client.post(
         f"/api/v1/sessions/{session_id}/answers",
-        json={"answers": {"mood": "brighten"}, "notes": "giữ tông ấm"},
+        json={"answers": {"approach": "custom"}, "notes": "giữ tông ấm"},
     )
     assert done.status_code == 200
     result = done.json()["result"]
     assert done.json()["status"] == "done"
     assert result["intent"]["style"] is None
-    assert result["intent"]["answers"]["mood"] == "brighten"
+    assert result["intent"]["answers"]["approach"] == "custom"
     assert isinstance(result["treatment"], list)
 
     again = client.post(f"/api/v1/sessions/{session_id}/answers", json={})

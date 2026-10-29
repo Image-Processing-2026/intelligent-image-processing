@@ -397,15 +397,17 @@ class TestFixabilityAndPlanning:
         assert [a.operation for a in guarded.actions] == ["denoise"]
         assert "no_sharpen" in guarded.reasoning
 
-    def test_ask_user_becomes_a_clarify_question(self):
+    def test_ask_user_is_part_of_the_recommendation_text(self):
         report = DiagnosisReport(
             ask_user=[Defect(type="backlit_subject", region="face", severity=3)],
             preserve=[PreserveItem(aspect="silhouette", region="face")],
         )
-        questions = build_questions(report)
-        assert questions[0].id == "ask_backlit_subject_face"
-        assert {c.fix for c in questions[0].choices} >= {"backlit_subject"}
-        assert questions == build_questions(report)  # tất định (chạy lại khi resume)
+        # Chỉ lỗi ask_user, không có lỗi sửa được: không có gì để đề xuất
+        assert build_questions(report) == []
+        report.defects = [Defect(type="noise", severity=2)]
+        [question] = build_questions(report)
+        assert "mặc định giữ nguyên" in question.text
+        assert question == build_questions(report)[0]  # tất định (chạy lại khi resume)
 
 
 # ============================================================

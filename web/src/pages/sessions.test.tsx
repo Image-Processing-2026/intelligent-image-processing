@@ -24,7 +24,7 @@ describe("new session page", () => {
     mockApi([...BASE, { path: "/workspace/sessions", body: [] }]);
     const user = userEvent.setup({ applyAccept: false });
     renderApp("/");
-    const input = await screen.findByLabelText("Kéo thả ảnh vào đây");
+    const input = await screen.findByLabelText("Tải ảnh lên");
     await user.upload(input, new File(["GIF89a"], "anim.gif", { type: "image/gif" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Chỉ hỗ trợ ảnh JPEG, PNG hoặc WEBP.",
@@ -41,11 +41,11 @@ describe("new session page", () => {
     ]);
     const user = userEvent.setup();
     renderApp("/");
-    const input = await screen.findByLabelText("Kéo thả ảnh vào đây");
+    const input = await screen.findByLabelText("Tải ảnh lên");
     await user.upload(input, new File(["png"], "coffee.png", { type: "image/png" }));
     await user.click(screen.getByRole("button", { name: "Bắt đầu chẩn đoán" }));
 
-    expect(await screen.findByRole("heading", { name: "Chẩn đoán ban đầu" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Chẩn đoán ảnh" })).toBeInTheDocument();
     expect(screen.getByText("Chẩn đoán: Luật (rule_based)")).toBeInTheDocument();
     expect(screen.getAllByText("Thiếu sáng").length).toBeGreaterThan(0);
     expect(screen.getByText("Mức 2: Vừa")).toBeInTheDocument();
@@ -72,7 +72,7 @@ describe("new session page", () => {
     ]);
     const user = userEvent.setup();
     renderApp("/");
-    const input = await screen.findByLabelText("Kéo thả ảnh vào đây");
+    const input = await screen.findByLabelText("Tải ảnh lên");
     await user.upload(input, new File(["x"], "fake.png", { type: "image/png" }));
     await user.click(screen.getByRole("button", { name: "Bắt đầu chẩn đoán" }));
     expect(await screen.findByText("Chỉ hỗ trợ ảnh JPEG, PNG hoặc WEBP.")).toBeInTheDocument();

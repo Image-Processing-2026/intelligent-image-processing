@@ -382,5 +382,5 @@ def test_create_with_real_rule_based_diagnosis(client: TestClient) -> None:
     body = response.json()
     assert body["status"] == "awaiting_answers"
     assert body["diagnosis"]["source"] == "rule_based"
-    assert body["questions"][-1]["id"] == "mood"
+    assert body["questions"][-1]["id"] == "approach"
     assert any(defect["type"] == "underexposed" for defect in body["diagnosis"]["defects"])

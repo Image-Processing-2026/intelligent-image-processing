@@ -17,6 +17,7 @@ const BASE = [
   { path: "/health", body: { status: "ok" } },
   { path: "/workspace/sessions", body: [SUMMARY] },
 ];
+const FEEDBACK_PLACEHOLDER = /Nhập góp ý tinh chỉnh cho kết quả/;
 const SESSION_PATH = `/workspace/sessions/${SESSION_ID}`;
 
 describe("refine by feedback", () => {
@@ -28,10 +29,9 @@ describe("refine by feedback", () => {
     ]);
     const user = userEvent.setup();
     renderApp(`/s/${SESSION_ID}`);
-    const box = await screen.findByPlaceholderText("Ví dụ: da hơi vàng, trời gắt quá");
-    expect(screen.getByText(/Góp ý sẽ áp vào phiên bản đang xem \(v1 · Kết quả pipeline\)/)).toBeInTheDocument();
+    const box = await screen.findByPlaceholderText(FEEDBACK_PLACEHOLDER);
     await user.type(box, "da hơi vàng");
-    await user.click(screen.getByRole("button", { name: "Gửi góp ý" }));
+    await user.click(screen.getByRole("button", { name: "Gửi góp ý tinh chỉnh" }));
 
     expect(await screen.findByText(/Đã tạo phiên bản/)).toHaveTextContent("v2 từ v1");
     const post = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/refine"));
@@ -62,10 +62,10 @@ describe("refine by feedback", () => {
     ]);
     const user = userEvent.setup();
     renderApp(`/s/${SESSION_ID}`);
-    const box = await screen.findByPlaceholderText("Ví dụ: da hơi vàng, trời gắt quá");
+    const box = await screen.findByPlaceholderText(FEEDBACK_PLACEHOLDER);
     await user.type(box, "sáng hơn");
-    await user.click(screen.getByRole("button", { name: "Gửi góp ý" }));
-    expect(await screen.findByText("Xử lý ảnh không thành công.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Gửi góp ý tinh chỉnh" }));
+    expect((await screen.findAllByText("Xử lý ảnh không thành công.")).length).toBeGreaterThan(0);
     expect(box).toHaveValue("sáng hơn");
   });
 

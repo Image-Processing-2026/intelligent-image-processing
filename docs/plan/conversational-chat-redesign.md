@@ -106,7 +106,7 @@ Khung chat hiển thị danh sách `session.messages[]` dựa theo `message.kind
 
 ### Phase 1: Nâng cấp Backend (`src/api/`) (1 ngày)
 
-- [ ] **Ticket BE-1: Tiếp nhận `user_prompt` và lưu message khởi tạo**
+- [x] **Ticket BE-1: Tiếp nhận `user_prompt` và lưu message khởi tạo**
   - **File:** `src/api/workspace.py`, `src/api/workspace_schemas.py`.
   - **Nội dung:**
     - Cập nhật schema `SessionCreateRequest` / form multipart hỗ trợ `user_prompt: Optional[str] = Form(None)`.
@@ -115,7 +115,7 @@ Khung chat hiển thị danh sách `session.messages[]` dựa theo `message.kind
     - Cập nhật `clarify_again` để re-parse lại `user_prompt` đã lưu sau khi làm mới chẩn đoán.
   - **Kiểm thử:** Viết unit test trong `tests/unit/test_api_workspace.py` gửi ảnh + text, xác nhận thứ tự message đúng và `draft_edits` được nạp sẵn.
 
-- [ ] **Ticket BE-2: Cập nhật tài liệu hợp đồng `docs/interfaces.md`**
+- [x] **Ticket BE-2: Cập nhật tài liệu hợp đồng `docs/interfaces.md`**
   - Ghi nhận `user_prompt` trong `SessionCreateRequest`.
   - Bổ sung định nghĩa `user_prompt` vào danh sách `MessageKind`.
 
@@ -123,7 +123,7 @@ Khung chat hiển thị danh sách `session.messages[]` dựa theo `message.kind
 
 ### Phase 2: Xây dựng Thanh nhập liệu đa phương thức (`ChatInputBar`) (1 ngày)
 
-- [ ] **Ticket FE-1: Xây dựng `ChatInputBar` với Paste & Kéo thả**
+- [x] **Ticket FE-1: Xây dựng `ChatInputBar` với Paste & Kéo thả**
   - **File:** `web/src/components/chat/ChatInputBar.tsx`.
   - **Nội dung:**
     - Hỗ trợ sự kiện `onPaste`: nhận tối đa 1 ảnh từ clipboard, kiểm tra MIME type (`image/png`, `image/jpeg`, `image/webp`) và giới hạn dung lượng ($\le 20MB$).
@@ -139,11 +139,11 @@ Khung chat hiển thị danh sách `session.messages[]` dựa theo `message.kind
 
 ### Phase 3: Dòng chảy tin nhắn Chat & Tương tác (1.5 ngày)
 
-- [ ] **Ticket FE-2: Polymorphic Message Renderer & Container**
+- [x] **Ticket FE-2: Polymorphic Message Renderer & Container**
   - **File:** `web/src/components/chat/ChatContainer.tsx`, `web/src/components/chat/bubbles/*`.
   - **Nội dung:** Xây dựng danh sách tin nhắn scroll tự động xuống đáy khi có message mới, render chuẩn xác 10 kind message theo bảng ở Mục 3.
 
-- [ ] **Ticket FE-3: `DiagnosisBubble` (Tích hợp trắc nghiệm, Edit chips & Pill actions)**
+- [x] **Ticket FE-3: `DiagnosisBubble` (Tích hợp trắc nghiệm, Edit chips & Pill actions)**
   - Hiển thị tóm tắt chẩn đoán tự nhiên.
   - Render các câu hỏi clarification (nếu có câu hỏi) dạng radio, mặc định chọn `default`.
   - Render danh sách chip `draft_edits` hiện có kèm nút ✕ (gọi `deleteAnalysisEdit`).
@@ -151,7 +151,7 @@ Khung chat hiển thị danh sách `session.messages[]` dựa theo `message.kind
   - Nút bấm **"Xem chi tiết chẩn đoán 📊"** (mở Side Pane đúng tab).
   - Nút chính **"Bắt đầu xử lý ngay 🚀"** (gọi `answerQuestions` với answers mặc định/đã chọn).
 
-- [ ] **Ticket FE-4: `ResultBubble` (Before/After Slider & Outcome Action)**
+- [x] **Ticket FE-4: `ResultBubble` (Before/After Slider & Outcome Action)**
   - Tích hợp `CompareSlider` trực tiếp trong bong bóng kết quả.
   - Hiển thị badge Outcome (`ACCEPTED`, `UNVERIFIED`,...).
   - Nút **"Chấp nhận kết quả ✅"**: gọi `saveRating("good")` và kích hoạt tải ảnh.
@@ -162,14 +162,14 @@ Khung chat hiển thị danh sách `session.messages[]` dựa theo `message.kind
 
 ### Phase 4: Bảng soi kỹ thuật bên phải (`InspectionSidePane`) (1.5 ngày)
 
-- [ ] **Ticket FE-5: Khung Side Pane Collapsible & Responsive**
+- [x] **Ticket FE-5: Khung Side Pane Collapsible & Responsive**
   - **File:** `web/src/components/sidepane/InspectionSidePane.tsx`.
   - **Nội dung:**
     - Desktop: chiếm 35% chiều rộng cạnh khung chat, có nút đóng/mở trên Top Bar.
     - Mobile ($< 1024px$): chuyển thành Sheet/Drawer trượt overlay đè lên màn hình.
     - 4 Tab: **Mặt nạ (Masks)**, **Số đo (Metrics)**, **Lý do (Reasoning)**, **Thực thi (Executed Diff)**.
 
-- [ ] **Ticket FE-6: Nội dung 4 Tab chuyên sâu**
+- [x] **Ticket FE-6: Nội dung 4 Tab chuyên sâu**
   - Ánh xạ chính xác các trường dữ liệu thực tế từ `SessionDetailOut` theo bảng ở Mục 2.2.
   - Không sinh thêm dữ liệu giả lập không có trong payload.
 
@@ -177,13 +177,13 @@ Khung chat hiển thị danh sách `session.messages[]` dựa theo `message.kind
 
 ### Phase 5: Tích hợp Router, Dọn dẹp & Kiểm thử (1 ngày)
 
-- [ ] **Ticket INT-1: Tích hợp Router & Trang Chat chính**
+- [x] **Ticket INT-1: Tích hợp Router & Trang Chat chính**
   - Route `/`: Hiển thị giao diện New Chat (khung chat trống với ô input sẵn sàng).
   - Route `/s/:sid`: Hiển thị `ChatSessionPage` với toàn bộ dòng chảy tin nhắn và Side Pane.
   - Đảm bảo tương thích ngược: các session cũ không có `user_prompt` sẽ lấy ảnh gốc hiển thị bình thường.
   - Dọn dẹp các import studio cũ không còn dùng trong trang chính.
 
-- [ ] **Ticket TEST-1: Kiểm thử hồi quy toàn diện**
+- [x] **Ticket TEST-1: Kiểm thử hồi quy toàn diện**
   - Frontend:
     - Chạy `npx vitest run` (không dùng `npm test` để tránh treo watch mode).
     - Chạy `npm run typecheck` và `npm run build`.
