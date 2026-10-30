@@ -28,7 +28,7 @@ Vì vậy, nhóm sử dụng VLM để nhận biết vấn đề và đề xuấ
 
 ### Slide 2 Dữ liệu và chuẩn hóa ảnh đầu vào
 
-[Góc slide: 03. Thời lượng: 60 giây. Mốc: 0:50–1:50. Chỉ lần lượt bốn ảnh minh họa.]
+[Góc slide: 03. Thời lượng: 50 giây. Mốc: 0:50–1:40. Chỉ lần lượt bốn ảnh minh họa.]
 
 Trước tiên, để kiểm tra thuật toán, nhóm tạo ảnh lỗi từ ảnh sạch. Như trên hình, các lỗi minh họa gồm nhiễu Gaussian, mờ chuyển động, thiếu sáng và tương phản thấp. Bộ sinh dữ liệu chính có bảy dạng suy giảm; bốn ảnh này là các ví dụ để thấy rõ sự khác nhau giữa các nhóm lỗi.
 
@@ -38,7 +38,7 @@ Với ảnh người dùng tải lên web, hệ thống kiểm tra file, xử l�
 
 ### Slide 3 Phân tích chất lượng bằng số đo
 
-[Góc slide: 04. Thời lượng: 55 giây. Mốc: 1:50–2:45. Chỉ luồng từ ảnh đến Measurement rồi Calibration.]
+[Góc slide: 04. Thời lượng: 50 giây. Mốc: 1:40–2:30. Chỉ luồng từ ảnh đến Measurement rồi Calibration.]
 
 Sau khi chuẩn hóa, Module 1 phân tích ảnh bằng các phép đo kỹ thuật. Ảnh được xem xét ở mức toàn cục và theo các ô nhỏ để nhận ra những vấn đề không xuất hiện đồng đều trên toàn ảnh.
 
@@ -48,13 +48,17 @@ Bước Calibration chuyển các phép đo thành mức độ lỗi từ không
 
 ### Slide 4 Đánh giá ảnh sau xử lý
 
-[Góc slide: 05. Thời lượng: 45 giây. Mốc: 2:45–3:30. Giữ câu bàn giao ở cuối.]
+[Góc slide: 05. Thời lượng: 60 giây. Mốc: 2:30–3:30. Chỉ công thức PSNR rồi ví dụ số. Giữ câu bàn giao ở cuối.]
 
-Module 1 còn đảm nhiệm việc đánh giá ảnh sau xử lý. Nếu có ảnh sạch tham chiếu, hệ thống có thể dùng MSE, PSNR và SSIM để đo mức sai khác và mức tương đồng cấu trúc. Cách này phù hợp với dữ liệu lỗi được tạo từ ảnh sạch.
+Module 1 còn đánh giá ảnh sau xử lý. Công thức tiêu biểu ở đây là PSNR, bằng mười nhân logarit cơ số mười của hai trăm năm mươi lăm bình phương chia MSE, đơn vị decibel.
 
-Với ảnh thật, thường không có ảnh chuẩn tương ứng. Khi đó, hệ thống dựa vào các phép đo chất lượng, lỗi theo vùng và có thể dùng BRISQUE hoặc NIQE nếu môi trường hỗ trợ. Điểm chất lượng nội bộ chỉ là một ước lượng, không nên xem là kết luận tuyệt đối về chất lượng ảnh.
+MSE là trung bình bình phương chênh lệch giữa ảnh đang đánh giá và ảnh sạch, trên mọi điểm ảnh và kênh màu. Hai trăm năm mươi lăm là mức cực đại của ảnh uint8. Khi sai số giảm, PSNR tăng. Ví dụ, MSE bằng một trăm cho PSNR khoảng hai mươi tám phẩy mười ba decibel.
 
-Như vậy, Module 1 cho biết ảnh có lỗi gì và thay đổi ra sao. Để sửa đúng chỗ, chúng ta cần xác định vùng tác động. Em xin chuyển sang thành viên phụ trách Module 2.
+Công thức này cần ảnh chuẩn phù hợp. Với ảnh thật không có ảnh sạch tương ứng, hệ thống dùng các phép đo không tham chiếu và review. Điểm nội bộ từ không đến một trăm là một thước đo khác, không phải PSNR. Module 1 cung cấp bằng chứng đánh giá, còn graph quyết định dừng.
+
+Để sửa đúng chỗ, chúng ta cần xác định vùng tác động. Em xin chuyển sang thành viên phụ trách Module 2.
+
+[Ghi nhớ khi hỏi đáp: PSNR = 10 log₁₀(255²/MSE), tương đương 20 log₁₀(255/√MSE) trong code. Với MSE gần 0, code trả 100 dB theo quy ước, trong khi công thức lý thuyết tiến tới vô hạn. Nguồn: src/analyzer_evaluator/reference_eval.py, các hàm _compute_mse và _compute_psnr.]
 
 ## Thành viên 2 Vùng và mặt nạ
 
@@ -116,7 +120,7 @@ Planner quy định thứ tự xử lý, còn engine thực thi thuật toán. M
 
 ### Slide 10 Khử nhiễu và đánh đổi chi tiết
 
-[Góc slide: 11. Thời lượng: 55 giây. Mốc: 7:30–8:25. Chỉ vùng mặt và chất liệu quần áo ở các ảnh.]
+[Góc slide: 11. Thời lượng: 45 giây. Mốc: 7:30–8:15. Chỉ vùng mặt và chất liệu quần áo ở các ảnh.]
 
 Hệ thống hỗ trợ các cách khử nhiễu như Gaussian, Median, Bilateral và Non Local Means. Gaussian làm trơn theo lân cận; Median hữu ích với nhiễu dạng xung; Bilateral kết hợp khoảng cách không gian và độ giống nhau về cường độ; còn Non Local Means khai thác sự tương đồng giữa các vùng ảnh.
 
@@ -126,13 +130,17 @@ Vì vậy, mục tiêu không chỉ là làm ảnh thật mịn. Cần cân bằ
 
 ### Slide 11 Gamma và CLAHE cho sáng và tương phản
 
-[Góc slide: 12. Thời lượng: 55 giây. Mốc: 8:25–9:20. Chỉ hai cặp ảnh.]
+[Góc slide: 12. Thời lượng: 65 giây. Mốc: 8:15–9:20. Chỉ công thức Gamma, ví dụ số và hai cặp ảnh.]
 
-Với ảnh thiếu sáng, hệ thống dùng hiệu chỉnh gamma qua bảng tra. Trong cách cài đặt của dự án, số mũ là một chia gamma, nên gamma lớn hơn một sẽ nâng sáng. Cặp ảnh bên trái cho thấy vùng tối trở nên dễ quan sát hơn sau xử lý.
+Với ảnh thiếu sáng, công thức tiêu biểu là hiệu chỉnh Gamma. Mức đầu ra s bằng hai trăm năm mươi lăm nhân với r chia hai trăm năm mươi lăm, tất cả lũy thừa một chia gamma. Trong đó, r và s là mức điểm ảnh vào và ra, còn gamma là tham số dương điều khiển độ sáng.
 
-Với ảnh tương phản thấp, hệ thống dùng CLAHE trên kênh độ sáng L của không gian màu LAB. Thuật toán cân bằng tương phản theo từng vùng nhỏ và giới hạn mức khuếch đại để giảm việc tăng nhiễu quá mức. Việc xử lý trên kênh độ sáng cũng giúp hạn chế thay đổi màu ngoài ý muốn.
+Sau khi chia cho hai trăm năm mươi lăm, giá trị nằm trong khoảng từ không đến một. Với gamma lớn hơn một, số mũ nhỏ hơn một làm các mức trung gian tăng lên. Ví dụ, mức vào sáu mươi bốn và gamma hai phẩy năm cho kết quả khoảng một trăm bốn mươi sáu phẩy sáu chín. Bảng tra trong code cắt phần thập phân và trả mức một trăm bốn mươi sáu, nên ảnh sáng hơn.
 
-Hai công cụ này giải quyết hai khía cạnh liên quan nhưng khác nhau: gamma điều chỉnh quan hệ sáng tối, còn CLAHE làm rõ chênh lệch cục bộ. Cả hai chỉ khai thác tín hiệu còn trong ảnh. Nếu vùng ảnh đã mất thông tin do clipping, tăng sáng hoặc tăng tương phản không thể khôi phục lại chi tiết thật đã mất.
+Chương trình tính sẵn bảng tra hai trăm năm mươi sáu mức để áp nhanh lên từng kênh. Nếu dùng mask, kết quả này tiếp tục được hòa trộn theo vùng như Module 2 đã giải thích.
+
+Với tương phản thấp, CLAHE xử lý kênh L trong LAB theo các vùng nhỏ và giới hạn mức khuếch đại. Cả hai công cụ chỉ làm rõ tín hiệu còn tồn tại, không khôi phục chi tiết đã mất do clipping.
+
+[Ghi nhớ khi hỏi đáp: s = 255 × (r/255)^(1/γ), với γ > 0. γ = 1 giữ mức sáng, γ < 1 làm tối các mức trung gian. Giá trị 0 và 255 giữ nguyên. Đây là công thức trước bước hòa trộn mask. Nguồn: src/processing_engine/exposure_contrast.py, các hàm _raw_gamma và apply_gamma.]
 
 ### Slide 12 Tăng nét và điều chỉnh màu
 
